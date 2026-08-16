@@ -315,22 +315,6 @@
 
       <div class="card">
         <h2>🚨 Round control</h2>
-        <label class="muted mb" style="display:block; font-size:.85rem"><input type="checkbox" id="announceToggle" checked> Buzzer sound + speak the buzzer's name</label>
-        <div class="row mb sound-settings">
-          <label for="buzzSound">Buzzer</label>
-          <select id="buzzSound" onchange="Sound.setBuzzChoice(this.value)"></select>
-          <button class="btn ghost small" onclick="Sound.buzz()">▶ Test</button>
-          <button class="btn ghost small" id="recBtn" onclick="Sound.toggleRecord()">🎙 Record your own</button>
-          <button class="btn ghost small" onclick="document.getElementById('soundFile').click()">📁 Upload</button>
-          <input type="file" id="soundFile" accept="audio/*" class="hidden" onchange="Sound.loadFile(this.files[0]); this.value=''">
-        </div>
-        <div class="row mb sound-settings">
-          <label for="voicePick">Accent</label>
-          <select id="voicePick" onchange="Sound.setVoice(this.value)"></select>
-          <label for="stylePick">Character</label>
-          <select id="stylePick" onchange="Sound.setStyle(this.value)"></select>
-          <button class="btn ghost small" onclick="Sound.testVoice()">▶ Test</button>
-        </div>
         <div class="row">
           <button class="btn big green" id="armBtn" onclick="App.armBuzzers()">ARM BUZZERS</button>
         </div>
@@ -348,6 +332,32 @@
           <button class="btn ghost small" onclick="App.endRound()">End round / reset buzzers</button>
           <button class="btn small" onclick="App.finale()">🏁 Final scores</button>
         </div>
+
+        <!-- Folded away: players pick their own buzzer and accent on their
+             phones, so these are only the fallback for anyone who hasn't.
+             They were sitting above ARM BUZZERS, which is the button actually
+             needed mid-game. -->
+        <details class="fold mt" style="background:transparent">
+          <summary style="font-size:.9rem">🔊 Sound &amp; voice defaults</summary>
+          <div class="fold-body">
+            <label class="muted mb" style="display:block; font-size:.85rem"><input type="checkbox" id="announceToggle" checked> Buzzer sound + speak the buzzer's name</label>
+            <div class="row mb sound-settings">
+              <label for="buzzSound">Buzzer</label>
+              <select id="buzzSound" onchange="Sound.setBuzzChoice(this.value)"></select>
+              <button class="btn ghost small" onclick="Sound.buzz()">▶ Test</button>
+              <button class="btn ghost small" id="recBtn" onclick="Sound.toggleRecord()">🎙 Record your own</button>
+              <button class="btn ghost small" onclick="document.getElementById('soundFile').click()">📁 Upload</button>
+              <input type="file" id="soundFile" accept="audio/*" class="hidden" onchange="Sound.loadFile(this.files[0]); this.value=''">
+            </div>
+            <div class="row sound-settings">
+              <label for="voicePick">Accent</label>
+              <select id="voicePick" onchange="Sound.setVoice(this.value)"></select>
+              <label for="stylePick">Character</label>
+              <select id="stylePick" onchange="Sound.setStyle(this.value)"></select>
+              <button class="btn ghost small" onclick="Sound.testVoice()">▶ Test</button>
+            </div>
+          </div>
+        </details>
       </div>
 
       <details class="fold" id="hallCard">
