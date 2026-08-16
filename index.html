@@ -132,6 +132,21 @@
   .mv.down { color: var(--red); }
   .mv.same { color: var(--muted); }
   .lb-note { font-size: .85rem; font-weight: 700; color: var(--gold); padding: 2px 8px 8px 8px; }
+  .lb-fast { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.12); font-size: .85rem; color: var(--cyan); font-weight: 700; }
+
+  /* ---- the finish ---- */
+  .fin-title { font-size: 1.2rem; font-weight: 900; color: var(--gold); margin-bottom: 10px; }
+  .fin-line { padding: 7px 8px; border-radius: 10px; font-weight: 700; text-align: left; }
+  .fin-line.me { background: rgba(255,209,102,.16); outline: 2px solid var(--gold); }
+  .fin-avg { color: var(--muted); font-weight: 600; font-size: .85rem; }
+  .fin-win { padding: 18px 10px; border-radius: 16px; background: linear-gradient(160deg, #ffd166, #ff9f1c); color: #2a1400; margin-bottom: 10px; font-size: 2.4rem; }
+  .fin-win.me { animation: winpulse .8s ease-in-out 3; }
+  @keyframes winpulse { 50% { transform: scale(1.05); box-shadow: 0 0 40px 10px rgba(255,209,102,.6); } }
+  .fin-name { font-size: 1.7rem; font-weight: 900; line-height: 1.15; }
+  .fin-score { font-size: 1rem; font-weight: 800; opacity: .85; }
+  .fin-sub { font-size: .95rem; font-weight: 700; opacity: .8; }
+  .fin-fast { padding: 12px 10px; border-radius: 14px; background: var(--panel2); color: var(--cyan); font-weight: 800; margin-bottom: 10px; }
+  .fin-fast.me { outline: 2px solid var(--cyan); }
 
   /* ---- speed / album-cover rounds ---- */
   #quizArtWrap {
@@ -281,6 +296,7 @@
         <div class="row mt">
           <button class="btn pink small" onclick="App.reveal()">💡 Reveal answer</button>
           <button class="btn ghost small" onclick="App.endRound()">End round / reset buzzers</button>
+          <button class="btn small" onclick="App.finale()">🏁 Final scores</button>
         </div>
       </div>
 
@@ -436,6 +452,7 @@
     </div>
     <button class="btn ghost small" onclick="Player.savePrefs(true)">▶ Hear it on the speaker</button>
   </div>
+  <div id="finaleBox" class="card hidden"></div>
   <div id="playerBoard" class="card hidden" style="text-align:left"></div>
 </div>
 
@@ -524,6 +541,7 @@ const App = {
     if (!isNaN(p)) Host.judge(true, p);
   },
   reveal() { Host.reveal(); },
+  finale() { Host.finale(); },
   endRound() { Host.endRound(); },
   toggleTeams(on) { Host.setTeamMode(on); },
   pushLeaderboard() { Host.pushBoard(); },
@@ -1629,7 +1647,32 @@ const Host = {
       });
       return Object.values(teams).sort((a, b) => b.score - a.score);
     }
-    return Object.values(this.players).map(p => ({ name: p.name, score: p.score })).sort((a, b) => b.score - a.score);
+    return Object.values(this.players)
+      .map(p => ({ name: p.name, score: p.score, avg: this.avgFor(p) }))
+      .sort((a, b) => b.score - a.score);
+  },
+
+  avgFor(p) {
+    if (!p.reactions || !p.reactions.length) return null;
+    return Math.round(p.reactions.reduce((s, x) => s + x, 0) / p.reactions.length);
+  },
+
+  // Reaction times are only recorded on correct buzzer answers, so this is a
+  // buzzer-round stat — quiz rounds don't feed it.
+  fastestFinger() {
+    const timed = Object.values(this.players)
+      .map(p => ({ name: p.name, avg: this.avgFor(p) }))
+      .filter(x => x.avg != null);
+    if (!timed.length) return null;
+    timed.sort((a, b) => a.avg - b.avg);
+    return timed[0];
+  },
+
+  // a player's own announcer settings, so the finale calls their name in the
+  // voice they picked
+  voiceFor(name) {
+    const p = Object.values(this.players).find(x => x.name.toLowerCase() === String(name).toLowerCase());
+    return p ? { voice: p.voice, style: p.style } : {};
   },
   // A bare list of names and scores reads as information, not a contest. Send
   // position, how far each player moved since the last push, and who they're
@@ -1647,12 +1690,14 @@ const Host = {
         move: (was == null) ? 0 : (was - pos),
         gap: i === 0 ? 0 : rows[i - 1].score - r.score,
         chasing: i === 0 ? null : rows[i - 1].name,
-        lead: i === 0 && rows[1] ? r.score - rows[1].score : 0
+        lead: i === 0 && rows[1] ? r.score - rows[1].score : 0,
+        avg: r.avg == null ? null : r.avg
       };
     });
     this.prevBoard = {};
     out.forEach(r => { this.prevBoard[r.name.toLowerCase()] = r.pos; });
-    this.broadcast({ type: 'board', rows: out, teamMode: this.teamMode });
+    const ff = this.teamMode ? null : this.fastestFinger();
+    this.broadcast({ type: 'board', rows: out, teamMode: this.teamMode, fastest: ff });
   },
 
   renderBuzzes() {
@@ -1683,6 +1728,59 @@ const Host = {
       tbody.appendChild(tr);
     });
   },
+  /* ---- the finish -------------------------------------------------------
+     The night used to just stop. This walks third, second and first up on
+     every phone, announcing each in that player's own chosen voice, then
+     crowns the fastest finger as a second prize. The host drives each stage
+     rather than letting phones run their own timers, so the speech on the
+     speaker and the reveal on the phones stay together.
+  --------------------------------------------------------------------- */
+  finale() {
+    const rows = this.boardRows();
+    if (!rows.length) { alert('Nobody has joined yet.'); return; }
+    if (this.finaleRunning) return;
+    this.finaleRunning = true;
+    Quiz.stop && Quiz.active && Quiz.stop();
+    this.endRound(false);
+
+    const fastest = this.teamMode ? null : this.fastestFinger();
+    const steps = [];
+    steps.push([0, () => {
+      this.broadcast({ type: 'finale', stage: 'intro' });
+      $('phaseBanner').className = 'phase-banner buzzed';
+      $('phaseBanner').textContent = '🏁 Final scores…';
+      Sound.say('And now, the final scores.');
+    }]);
+    if (rows[2]) steps.push([3200, () => {
+      this.broadcast({ type: 'finale', stage: 'place', place: 3, row: rows[2] });
+      const v = this.voiceFor(rows[2].name);
+      Sound.say('In third place, ' + rows[2].name, v.voice, v.style);
+    }]);
+    if (rows[1]) steps.push([3400, () => {
+      this.broadcast({ type: 'finale', stage: 'place', place: 2, row: rows[1] });
+      const v = this.voiceFor(rows[1].name);
+      Sound.say('In second place, ' + rows[1].name, v.voice, v.style);
+    }]);
+    steps.push([3400, () => {
+      this.broadcast({ type: 'finale', stage: 'winner', row: rows[0] });
+      Sound.buzz('fanfare');
+      const v = this.voiceFor(rows[0].name);
+      setTimeout(() => Sound.say('And the winner is, ' + rows[0].name + '!', v.voice, v.style), 900);
+      $('phaseBanner').textContent = '🏆 ' + rows[0].name + ' wins with ' + rows[0].score;
+    }]);
+    if (fastest) steps.push([4200, () => {
+      this.broadcast({ type: 'finale', stage: 'fastest', row: fastest });
+      Sound.say('Fastest finger of the night, ' + fastest.name + ', averaging ' + fastest.avg + ' milliseconds.');
+    }]);
+    steps.push([4200, () => {
+      this.broadcast({ type: 'finale', stage: 'table', rows, fastest });
+      this.finaleRunning = false;
+    }]);
+
+    let t = 0;
+    steps.forEach(([delay, fn]) => { t += delay; setTimeout(fn, t); });
+  },
+
   adjust(id) {
     const p = this.players[id];
     const v = parseInt(prompt('Adjust ' + p.name + '’s score by (e.g. 5 or -5):', '5'), 10);
@@ -2214,6 +2312,7 @@ const Player = {
         this.setStatus('');
         break;
       case 'board': this.renderBoard(msg); break;
+      case 'finale': this.renderFinale(msg); break;
       case 'team':
         this.team = msg.team || null;
         this.teamMode = !!msg.teamMode;
@@ -2319,6 +2418,53 @@ const Player = {
     this.vibe([60]);
   },
 
+  renderFinale(msg) {
+    const el = $('finaleBox');
+    const me = (this.name || '').toLowerCase();
+    const isMe = r => r && r.name && r.name.toLowerCase() === me;
+    this.hideExtras();
+    $('buzzBtn').classList.add('hidden');
+    $('quizPanel').classList.add('hidden');
+    $('myKitCard').classList.add('hidden');
+    el.classList.remove('hidden');
+    this.setStatus('');
+
+    if (msg.stage === 'intro') {
+      this._finaleHtml = '';
+      el.innerHTML = '<div class="fin-title">🏁 Final scores</div>';
+      this.vibe([60, 60, 60]);
+      return;
+    }
+    if (msg.stage === 'place') {
+      const medal = msg.place === 2 ? '🥈' : '🥉';
+      this._finaleHtml = '<div class="fin-line' + (isMe(msg.row) ? ' me' : '') + '">' + medal + ' ' +
+        esc(msg.row.name) + ' <b>' + msg.row.score + '</b>' + (isMe(msg.row) ? ' — that’s you' : '') + '</div>' + (this._finaleHtml || '');
+      el.innerHTML = '<div class="fin-title">🏁 Final scores</div>' + this._finaleHtml;
+      this.vibe([80]);
+      return;
+    }
+    if (msg.stage === 'winner') {
+      const mine = isMe(msg.row);
+      el.innerHTML = '<div class="fin-win' + (mine ? ' me' : '') + '">🏆<div class="fin-name">' + esc(msg.row.name) + '</div>' +
+        '<div class="fin-score">' + msg.row.score + ' points</div>' +
+        '<div class="fin-sub">' + (mine ? 'You won!' : 'takes it') + '</div></div>' + (this._finaleHtml || '');
+      this.vibe(mine ? [120, 60, 120, 60, 300] : [150]);
+      return;
+    }
+    if (msg.stage === 'fastest') {
+      el.innerHTML = '<div class="fin-fast' + (isMe(msg.row) ? ' me' : '') + '">⚡ Fastest finger<div class="fin-name">' +
+        esc(msg.row.name) + '</div><div class="fin-score">' + msg.row.avg + ' ms average</div></div>' + el.innerHTML;
+      this.vibe([60, 40, 60]);
+      return;
+    }
+    if (msg.stage === 'table') {
+      el.innerHTML = '<div class="fin-title">🏁 Final scores</div>' + msg.rows.map((r, i) =>
+        '<div class="fin-line' + (isMe(r) ? ' me' : '') + '">' + (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.') +
+        ' ' + esc(r.name) + ' <b>' + r.score + '</b>' + (r.avg != null ? ' <span class="fin-avg">' + r.avg + ' ms</span>' : '') + '</div>').join('') +
+        (msg.fastest ? '<div class="fin-line">⚡ Fastest finger: ' + esc(msg.fastest.name) + ' (' + msg.fastest.avg + ' ms)</div>' : '');
+    }
+  },
+
   renderBoard(msg) {
     const el = $('playerBoard');
     // in team mode the rows are teams, so match on this player's team
@@ -2343,7 +2489,10 @@ const Player = {
         '<span class="lb-score">' + r.score + '</span>' +
         '</div>' + (note ? '<div class="lb-note">' + esc(note) + '</div>' : '');
     }).join('');
-    el.innerHTML = '<h2 style="font-size:1rem">🏆 Leaderboard</h2>' + rows;
+    const ff = msg.fastest
+      ? '<div class="lb-fast">⚡ Fastest finger: ' + esc(msg.fastest.name) + ' · ' + msg.fastest.avg + ' ms</div>'
+      : '';
+    el.innerHTML = '<h2 style="font-size:1rem">🏆 Leaderboard</h2>' + rows + ff;
     el.classList.remove('hidden');
   },
 
@@ -2383,6 +2532,7 @@ const Player = {
   },
 
   hideExtras() {
+    $('finaleBox').classList.add('hidden');
     $('stealTimer').classList.add('hidden');
     $('revealBox').classList.add('hidden');
     $('playerBoard').classList.add('hidden');
