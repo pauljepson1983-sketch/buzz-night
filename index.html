@@ -1783,7 +1783,8 @@ const Quiz = {
       Host.endRound(false);
       Host.broadcast({ type: 'quizStart', total: this.questions.length });
       const short = this.questions.length < count;
-      $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' covers from ' + label +
+      const noun = { covers: 'covers', backdrops: 'stills', themes: 'themes', posters: 'posters' }[this.mode] || 'questions';
+      $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' ' + noun + ' from ' + label +
         (short ? '. (Only ' + this.available + ' different albums matched, so that is all there was.)' : '.');
       $('quizHostView').classList.remove('hidden');
       this.next();
