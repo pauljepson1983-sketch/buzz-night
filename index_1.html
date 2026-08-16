@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Buzz Night — Music &amp; TV Quiz</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root {
+    --bg: #14082b;
+    --bg2: #1f0f42;
+    --panel: #2a1758;
+    --panel2: #35206b;
+    --gold: #ffce3a;
+    --pink: #ff4fa3;
+    --cyan: #3fe0ff;
+    --green: #3ddc84;
+    --red: #ff5252;
+    --text: #f4efff;
+    --muted: #a99cc9;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at top, var(--bg2), var(--bg) 70%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .view { display: none; max-width: 1080px; margin: 0 auto; padding: 18px; }
+  .view.active { display: block; }
+  h1 { font-size: 2rem; letter-spacing: 1px; }
+  h1 .z { color: var(--gold); }
+  h2 { font-size: 1.15rem; margin-bottom: 8px; color: var(--gold); }
+  .sub { color: var(--muted); margin: 6px 0 18px; }
+  .card {
+    background: var(--panel); border-radius: 14px; padding: 16px;
+    margin-bottom: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.35);
+  }
+  .btn {
+    display: inline-block; border: none; border-radius: 10px; cursor: pointer;
+    padding: 12px 20px; font-size: 1rem; font-weight: 700; color: #1a0f35;
+    background: var(--gold); transition: transform .08s, filter .15s;
+  }
+  .btn:active { transform: scale(.96); }
+  .btn:disabled { filter: grayscale(.8) brightness(.6); cursor: not-allowed; }
+  .btn.alt { background: var(--cyan); }
+  .btn.pink { background: var(--pink); color: #fff; }
+  .btn.green { background: var(--green); }
+  .btn.red { background: var(--red); color: #fff; }
+  .btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--muted); }
+  .btn.small { padding: 7px 12px; font-size: .85rem; }
+  .btn.big { width: 100%; padding: 16px; font-size: 1.2rem; }
+  input[type=text], input[type=password] {
+    width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--panel2);
+    background: #1a0d38; color: var(--text); font-size: 1rem;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .grow { flex: 1; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  th { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; }
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .75rem; font-weight: 700; }
+  .tag.gold { background: var(--gold); color: #1a0f35; }
+  .tag.cyan { background: var(--cyan); color: #1a0f35; }
+  .tag.pink { background: var(--pink); color: #fff; }
+  .tag.grey { background: #4a3a78; color: var(--text); }
+  .muted { color: var(--muted); }
+  .center { text-align: center; }
+  .mt { margin-top: 12px; }
+  .mb { margin-bottom: 12px; }
+  .hidden { display: none !important; }
+
+  /* ---------- landing ---------- */
+  #landing { max-width: 520px; padding-top: 8vh; text-align: center; }
+  #landing .btn { margin: 8px; }
+
+  /* ---------- host layout ---------- */
+  .host-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 820px) { .host-grid { grid-template-columns: 1fr; } }
+  #qrBox { background: #fff; padding: 10px; border-radius: 10px; width: fit-content; margin: 10px auto; }
+  #roomCodeBig { font-size: 2.4rem; letter-spacing: 6px; color: var(--gold); font-weight: 800; }
+  .tracklist { max-height: 300px; overflow-y: auto; }
+  .track-item { padding: 9px 10px; border-radius: 8px; cursor: pointer; display: flex; gap: 10px; align-items: center; }
+  .track-item:hover { background: var(--panel2); }
+  .track-item.current { background: var(--panel2); outline: 2px solid var(--gold); }
+  .track-item img { width: 38px; height: 38px; border-radius: 6px; }
+  .track-item .t-name { font-weight: 700; }
+  .track-item .t-artist { font-size: .82rem; color: var(--muted); }
+  #seekBar { width: 100%; accent-color: var(--gold); }
+  .phase-banner {
+    border-radius: 12px; padding: 12px 16px; font-weight: 800; text-align: center;
+    font-size: 1.05rem; margin-bottom: 14px; background: var(--panel2);
+  }
+  .phase-banner.armed { background: var(--green); color: #103120; animation: pulse 1.2s infinite; }
+  .phase-banner.buzzed { background: var(--pink); color: #fff; }
+  @keyframes pulse { 50% { filter: brightness(1.18); } }
+  .judge-buttons .btn { margin: 4px 6px 4px 0; }
+
+  /* ---------- player ---------- */
+  #playerGame { max-width: 520px; text-align: center; padding-top: 10px; }
+  #buzzBtn {
+    width: min(78vw, 340px); height: min(78vw, 340px); border-radius: 50%;
+    border: none; font-size: 2.2rem; font-weight: 900; color: #fff; cursor: pointer;
+    background: radial-gradient(circle at 35% 30%, #ff7ab8, var(--pink) 60%, #b80f63);
+    box-shadow: 0 10px 0 #7d0a44, 0 16px 34px rgba(0,0,0,.5);
+    transition: transform .05s, box-shadow .05s, filter .2s;
+    margin: 16px auto; display: block; user-select: none; touch-action: manipulation;
+  }
+  #buzzBtn:active { transform: translateY(8px); box-shadow: 0 2px 0 #7d0a44, 0 6px 16px rgba(0,0,0,.5); }
+  #buzzBtn:disabled { filter: grayscale(.85) brightness(.55); cursor: default; }
+  #buzzBtn.armed { animation: glow 1s infinite; }
+  @keyframes glow { 50% { box-shadow: 0 10px 0 #7d0a44, 0 0 42px 12px rgba(255,79,163,.55); } }
+  #playerStatus { font-size: 1.15rem; font-weight: 700; min-height: 3.2rem; padding: 6px; }
+  #playerStatus.good { color: var(--green); }
+  #playerStatus.bad { color: var(--red); }
+  #stealTimer { font-size: 3rem; font-weight: 900; color: var(--gold); }
+  .reveal-box { background: var(--gold); color: #1a0f35; border-radius: 14px; padding: 16px; font-weight: 800; font-size: 1.2rem; }
+  #connDot { position: fixed; top: 10px; right: 12px; width: 12px; height: 12px; border-radius: 50%; background: var(--red); }
+  #connDot.on { background: var(--green); }
+</style>
+</head>
+<body>
+<div id="connDot" title="connection"></div>
+
+<!-- ================= LANDING ================= -->
+<div id="landing" class="view active">
+  <h1>BUZZ <span class="z">NIGHT</span></h1>
+  <p class="sub">Music &amp; TV quiz — phones are the buzzers</p>
+  <button class="btn big" onclick="App.startHostFlow()">🎙️ Host a game</button>
+  <button class="btn big alt" onclick="App.showJoin()">📱 Join a game</button>
+  <p class="muted mt" style="font-size:.85rem">Players: scanning the host's QR code brings you straight here.</p>
+</div>
+
+<!-- ================= HOST SETUP ================= -->
+<div id="hostSetup" class="view">
+  <h1>Host setup</h1>
+  <div class="card">
+    <h2>1 · Spotify</h2>
+    <p class="muted mb">Paste your Spotify app Client ID (from developer.spotify.com — see setup guide). Saved on this device.</p>
+    <div class="row">
+      <input type="text" id="clientIdInput" class="grow" placeholder="Spotify Client ID">
+      <button class="btn" id="spotifyLoginBtn" onclick="App.spotifyLogin()">Connect Spotify</button>
+    </div>
+    <p id="spotifyStatus" class="muted mt"></p>
+  </div>
+  <div class="card">
+    <h2>2 · Start the room</h2>
+    <p class="muted mb">Creates a room code + QR for players. You can start this before or after connecting Spotify.</p>
+    <button class="btn green" onclick="App.createRoom()">Create room</button>
+  </div>
+</div>
+
+<!-- ================= HOST GAME ================= -->
+<div id="hostGame" class="view">
+  <div class="row mb">
+    <h1 class="grow">BUZZ <span class="z">NIGHT</span> <span class="muted" style="font-size:1rem">host console</span></h1>
+    <span id="roomCodeBig"></span>
+  </div>
+  <div id="phaseBanner" class="phase-banner">Waiting…</div>
+
+  <div class="host-grid">
+    <div>
+      <div class="card" id="joinCard">
+        <h2>Players join here</h2>
+        <div class="center">
+          <div id="qrBox"></div>
+          <div id="joinUrl" class="muted" style="word-break:break-all; font-size:.85rem"></div>
+          <div class="row mt" style="justify-content:center">
+            <a id="waShare" class="btn small green" target="_blank" rel="noopener" style="text-decoration:none">📲 Share on WhatsApp</a>
+            <button class="btn ghost small" onclick="document.getElementById('joinCard').classList.add('hidden')">Hide QR</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>🎵 Music (only you see answers)</h2>
+        <div id="spotifyOffline">
+          <p class="muted">Spotify not connected — you can still run buzzers/scoring and play music from your Spotify app manually.</p>
+          <button class="btn small mt" onclick="App.showView('hostSetup')">Connect Spotify</button>
+        </div>
+        <div id="spotifyPanel" class="hidden">
+          <div class="row mb">
+            <input type="text" id="searchInput" class="grow" placeholder="Search a song / theme tune…">
+            <button class="btn small" onclick="App.searchTracks()">Search</button>
+            <button class="btn small alt" onclick="App.loadPlaylists()">My playlists</button>
+          </div>
+          <div id="playlistRow" class="row mb hidden"></div>
+          <div class="tracklist" id="trackList"></div>
+          <div class="mt">
+            <div class="row">
+              <button class="btn small green" id="playBtn" onclick="App.togglePlay()">▶ Play</button>
+              <button class="btn small" onclick="App.restartTrack()">⟲ Restart</button>
+              <button class="btn small alt" onclick="App.randomSeek()">🎲 Random spot</button>
+              <span id="nowPlaying" class="muted grow" style="font-size:.85rem"></span>
+            </div>
+            <input type="range" id="seekBar" min="0" max="1000" value="0" oninput="App.userSeek(this.value)">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>🚨 Round control</h2>
+        <label class="muted mb" style="display:block; font-size:.85rem"><input type="checkbox" id="announceToggle" checked> Buzzer sound + speak the buzzer's name</label>
+        <div class="row">
+          <button class="btn big green" id="armBtn" onclick="App.armBuzzers()">ARM BUZZERS</button>
+        </div>
+        <div id="judgePanel" class="hidden mt">
+          <p id="judgeWho" style="font-size:1.2rem; font-weight:800"></p>
+          <div class="judge-buttons">
+            <button class="btn green" onclick="App.judge(true, 10)">✔ Correct +10</button>
+            <button class="btn green" onclick="App.judge(true, 5)">✔ +5</button>
+            <button class="btn" onclick="App.judgeCustom()">✔ Custom pts</button>
+            <button class="btn red" onclick="App.judge(false)">✘ Wrong</button>
+          </div>
+        </div>
+        <div class="row mt">
+          <button class="btn pink small" onclick="App.reveal()">💡 Reveal answer</button>
+          <button class="btn ghost small" onclick="App.endRound()">End round / reset buzzers</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>⚡ This round — buzz order</h2>
+        <table id="buzzTable"><thead><tr><th>#</th><th>Player</th><th>Reaction</th><th></th></tr></thead><tbody></tbody></table>
+        <p class="muted" id="buzzEmpty">Nobody has buzzed yet.</p>
+      </div>
+      <div class="card">
+        <div class="row">
+          <h2 class="grow">🏆 Leaderboard</h2>
+          <label class="muted" style="font-size:.85rem"><input type="checkbox" id="teamToggle" onchange="App.toggleTeams(this.checked)"> Team mode</label>
+        </div>
+        <table id="scoreTable"><thead><tr><th>Player</th><th id="teamCol" class="hidden">Team</th><th>Score</th><th>Avg reaction</th><th></th></tr></thead><tbody></tbody></table>
+        <div class="row mt">
+          <button class="btn small alt" onclick="App.pushLeaderboard()">📣 Show on phones</button>
+          <button class="btn ghost small" onclick="App.resetScores()">Reset scores</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PLAYER JOIN ================= -->
+<div id="playerJoin" class="view">
+  <div style="max-width:420px; margin:0 auto; padding-top:6vh">
+    <h1 class="center">Join the game</h1>
+    <div class="card mt">
+      <input type="text" id="joinRoomInput" placeholder="Room code (e.g. K7PQ)" class="mb" autocapitalize="characters">
+      <input type="text" id="joinNameInput" placeholder="Your name" maxlength="14">
+      <button class="btn big green mt" onclick="App.joinGame()">Let me in!</button>
+      <p id="joinError" class="muted mt center"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PLAYER GAME ================= -->
+<div id="playerGame" class="view">
+  <h1>BUZZ <span class="z">NIGHT</span></h1>
+  <p class="muted"><span id="pName"></span> · <span id="pScore">0 pts</span> <span id="pTeam"></span></p>
+  <div id="playerStatus">Connecting…</div>
+  <div id="stealTimer" class="hidden"></div>
+  <div id="revealBox" class="reveal-box hidden"></div>
+  <button id="buzzBtn" disabled>BUZZ</button>
+  <div id="playerBoard" class="card hidden" style="text-align:left"></div>
+</div>
+
+<script>
+/* ======================================================================
+   Buzz Night — single-file quiz app.
+   Host console + player buzzer. PeerJS (free cloud broker) for realtime,
+   Spotify Web Playback SDK (host only, Premium) for music.
+   ====================================================================== */
+/* ---------- safe storage (falls back to memory if blocked) ---------- */
+const mem = {};
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch(e) { return mem[k] ?? null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch(e) { mem[k] = v; } },
+  del(k) { try { localStorage.removeItem(k); } catch(e) { delete mem[k]; } }
+};
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const PEER_PREFIX = 'buzznight-v1-';
+const REDIRECT_URI = location.origin + location.pathname;
+
+const App = {
+  role: null,
+
+  /* ================= routing ================= */
+  showView(id) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    $(id).classList.add('active');
+  },
+
+  init() {
+    const params = new URLSearchParams(location.search);
+    if (params.get('code') && store.get('pkce_verifier')) {
+      Spot.handleCallback(params.get('code'));
+      return;
+    }
+    if (params.get('room')) {
+      this.showJoin(params.get('room'));
+      return;
+    }
+    this.showView('landing');
+  },
+
+  startHostFlow() {
+    $('clientIdInput').value = store.get('spotify_client_id') || '';
+    Spot.updateStatus();
+    this.showView('hostSetup');
+  },
+
+  showJoin(roomCode) {
+    this.showView('playerJoin');
+    if (roomCode) $('joinRoomInput').value = roomCode.toUpperCase();
+    $('joinNameInput').value = store.get('player_name') || '';
+  },
+
+  /* ================= host ================= */
+  spotifyLogin() { Spot.login(); },
+  createRoom() { Host.create(); },
+  armBuzzers() { Host.arm(); },
+  judge(ok, pts) { Host.judge(ok, pts); },
+  judgeCustom() {
+    const p = parseInt(prompt('Points to award:', '15'), 10);
+    if (!isNaN(p)) Host.judge(true, p);
+  },
+  reveal() { Host.reveal(); },
+  endRound() { Host.endRound(); },
+  toggleTeams(on) { Host.setTeamMode(on); },
+  pushLeaderboard() { Host.pushBoard(); },
+  resetScores() { if (confirm('Reset all scores?')) Host.resetScores(); },
+  searchTracks() { Spot.search($('searchInput').value); },
+  loadPlaylists() { Spot.loadPlaylists(); },
+  togglePlay() { Spot.togglePlay(); },
+  restartTrack() { Spot.seekMs(0, true); },
+  randomSeek() { Spot.randomSeek(); },
+  userSeek(v) { Spot.userSeek(v); },
+
+  /* ================= player ================= */
+  joinGame() { Player.join(); }
+};
+
+/* ======================================================================
+   SPOTIFY (host only) — PKCE auth + Web Playback SDK
+   ====================================================================== */
+const Spot = {
+  token: null, refreshToken: null, expiresAt: 0,
+  player: null, deviceId: null, currentTrack: null, pollTimer: null,
+  seeking: false, isPaused: true, durationMs: 0,
+
+  get clientId() { return store.get('spotify_client_id') || ''; },
+
+  async login() {
+    const cid = $('clientIdInput').value.trim();
+    if (!cid) { alert('Paste your Spotify Client ID first (see setup guide).'); return; }
+    store.set('spotify_client_id', cid);
+    const verifier = [...crypto.getRandomValues(new Uint8Array(48))].map(b => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[b % 62]).join('');
+    store.set('pkce_verifier', verifier);
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+    const challenge = btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    const scopes = 'streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative';
+    location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
+      client_id: cid, response_type: 'code', redirect_uri: REDIRECT_URI,
+      scope: scopes, code_challenge_method: 'S256', code_challenge: challenge
+    });
+  },
+
+  async handleCallback(code) {
+    try {
+      const body = new URLSearchParams({
+        grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI,
+        client_id: this.clientId, code_verifier: store.get('pkce_verifier')
+      });
+      const r = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body
+      });
+      const d = await r.json();
+      if (d.access_token) this.saveTokens(d);
+      else alert('Spotify login failed: ' + (d.error_description || d.error || 'unknown'));
+    } catch(e) { alert('Spotify login failed: ' + e.message); }
+    store.del('pkce_verifier');
+    history.replaceState({}, '', REDIRECT_URI);
+    App.startHostFlow();
+  },
+
+  saveTokens(d) {
+    this.token = d.access_token;
+    if (d.refresh_token) { this.refreshToken = d.refresh_token; store.set('spotify_refresh', d.refresh_token); }
+    this.expiresAt = Date.now() + (d.expires_in - 60) * 1000;
+    store.set('spotify_token', this.token);
+    store.set('spotify_expires', String(this.expiresAt));
+  },
+
+  restore() {
+    this.token = store.get('spotify_token');
+    this.refreshToken = store.get('spotify_refresh');
+    this.expiresAt = parseInt(store.get('spotify_expires') || '0', 10);
+  },
+
+  async ensureToken() {
+    if (!this.token) this.restore();
+    if (this.token && Date.now() < this.expiresAt) return this.token;
+    if (!this.refreshToken) return null;
+    try {
+      const r = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: this.refreshToken, client_id: this.clientId })
+      });
+      const d = await r.json();
+      if (d.access_token) { this.saveTokens(d); return this.token; }
+    } catch(e) {}
+    return null;
+  },
+
+  async api(path, opts = {}) {
+    const t = await this.ensureToken();
+    if (!t) throw new Error('Not connected to Spotify');
+    const r = await fetch('https://api.spotify.com/v1' + path, {
+      ...opts, headers: {'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json', ...(opts.headers || {})}
+    });
+    if (r.status === 204) return null;
+    if (!r.ok) throw new Error('Spotify API ' + r.status);
+    const txt = await r.text();
+    return txt ? JSON.parse(txt) : null;
+  },
+
+  async updateStatus() {
+    this.restore();
+    const el = $('spotifyStatus');
+    const t = await this.ensureToken();
+    if (t) {
+      try {
+        const me = await this.api('/me');
+        el.textContent = '✅ Connected as ' + (me.display_name || me.id) + (me.product === 'premium' ? ' (Premium)' : ' — ⚠ not Premium: in-browser playback won’t work');
+      } catch(e) { el.textContent = 'Connected (couldn’t verify account)'; }
+    } else el.textContent = 'Not connected yet.';
+  },
+
+  async initPlayer() {
+    if (this.player || !(await this.ensureToken())) return;
+    await new Promise(res => {
+      window.onSpotifyWebPlaybackSDKReady = res;
+      const s = document.createElement('script');
+      s.src = 'https://sdk.scdn.co/spotify-player.js';
+      document.head.appendChild(s);
+    });
+    this.player = new Spotify.Player({
+      name: 'Buzz Night Host',
+      getOAuthToken: cb => this.ensureToken().then(t => cb(t)),
+      volume: 0.9
+    });
+    this.player.addListener('ready', ({device_id}) => {
+      this.deviceId = device_id;
+      $('nowPlaying').textContent = 'Ready — pick a track';
+    });
+    this.player.addListener('player_state_changed', st => {
+      if (!st) return;
+      this.isPaused = st.paused;
+      this.durationMs = st.duration;
+      $('playBtn').textContent = st.paused ? '▶ Play' : '⏸ Pause';
+      if (!this.seeking) $('seekBar').value = st.duration ? Math.round(st.position / st.duration * 1000) : 0;
+      const tr = st.track_window?.current_track;
+      if (tr) {
+        this.currentTrack = { name: tr.name, artist: tr.artists.map(a => a.name).join(', '), uri: tr.uri };
+        $('nowPlaying').textContent = tr.name + ' — ' + this.currentTrack.artist;
+      }
+    });
+    this.player.addListener('initialization_error', e => alert('Spotify player error: ' + e.message));
+    this.player.addListener('authentication_error', e => alert('Spotify auth error — reconnect Spotify. ' + e.message));
+    this.player.addListener('account_error', e => alert('Spotify says this account can’t stream here (Premium needed).'));
+    await this.player.connect();
+    this.pollTimer = setInterval(async () => {
+      const st = await this.player.getCurrentState();
+      if (st && !this.seeking) {
+        $('seekBar').value = st.duration ? Math.round(st.position / st.duration * 1000) : 0;
+      }
+    }, 1000);
+  },
+
+  async playUri(uri, positionMs = 0) {
+    if (!this.deviceId) { alert('Spotify player not ready yet — wait a second and try again.'); return; }
+    await this.api('/me/player/play?device_id=' + this.deviceId, {
+      method: 'PUT', body: JSON.stringify({ uris: [uri], position_ms: positionMs })
+    });
+  },
+
+  async togglePlay() { if (this.player) this.player.togglePlay(); },
+  async pause() { if (this.player && !this.isPaused) this.player.pause(); },
+  async seekMs(ms, alsoPlay) {
+    if (!this.player) return;
+    await this.player.seek(ms);
+    if (alsoPlay && this.isPaused) this.player.resume();
+  },
+  userSeek(v) {
+    this.seeking = true;
+    clearTimeout(this._seekT);
+    this._seekT = setTimeout(async () => {
+      if (this.durationMs) await this.player.seek(Math.round(v / 1000 * this.durationMs));
+      this.seeking = false;
+    }, 250);
+  },
+  async randomSeek() {
+    if (!this.durationMs) return;
+    const ms = Math.round(this.durationMs * (0.15 + Math.random() * 0.55));
+    this.seekMs(ms, true);
+  },
+
+  renderTracks(items) {
+    const list = $('trackList');
+    list.innerHTML = '';
+    items.forEach(t => {
+      const div = document.createElement('div');
+      div.className = 'track-item';
+      div.innerHTML = `<img src="${esc(t.album?.images?.[2]?.url || t.album?.images?.[0]?.url || '')}" alt="">
+        <div><div class="t-name">${esc(t.name)}</div><div class="t-artist">${esc(t.artists.map(a=>a.name).join(', '))}</div></div>`;
+      div.onclick = () => {
+        list.querySelectorAll('.track-item').forEach(x => x.classList.remove('current'));
+        div.classList.add('current');
+        this.playUri(t.uri);
+      };
+      list.appendChild(div);
+    });
+    if (!items.length) list.innerHTML = '<p class="muted">No tracks found.</p>';
+  },
+
+  async search(q) {
+    if (!q) return;
+    try {
+      const d = await this.api('/search?' + new URLSearchParams({ q, type: 'track', limit: 20 }));
+      $('playlistRow').classList.add('hidden');
+      this.renderTracks(d.tracks.items);
+    } catch(e) { alert(e.message); }
+  },
+
+  async loadPlaylists() {
+    try {
+      const d = await this.api('/me/playlists?limit=30');
+      const row = $('playlistRow');
+      row.innerHTML = '';
+      row.classList.remove('hidden');
+      d.items.filter(Boolean).forEach(pl => {
+        const b = document.createElement('button');
+        b.className = 'btn small ghost';
+        b.textContent = pl.name;
+        b.onclick = async () => {
+          const t = await this.api('/playlists/' + pl.id + '/tracks?limit=100');
+          this.renderTracks(t.items.map(i => i.track).filter(Boolean));
+        };
+        row.appendChild(b);
+      });
+    } catch(e) { alert(e.message); }
+  }
+};
+
+/* ======================================================================
+   SOUND — buzzer SFX + spoken names (host speaker, no assets needed)
+   ====================================================================== */
+const Sound = {
+  ctx: null,
+  get enabled() { const t = $('announceToggle'); return !t || t.checked; },
+  ensure() {
+    if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+  },
+  buzz() {
+    if (!this.enabled) return;
+    try {
+      this.ensure();
+      const t = this.ctx.currentTime;
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = 'sawtooth'; o.frequency.setValueAtTime(220, t);
+      o.frequency.linearRampToValueAtTime(170, t + 0.45);
+      g.gain.setValueAtTime(0.5, t);
+      g.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+      o.connect(g); g.connect(this.ctx.destination);
+      o.start(t); o.stop(t + 0.5);
+    } catch(e) {}
+  },
+  say(text) {
+    if (!this.enabled) return;
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.05; u.pitch = 1.1;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    } catch(e) {}
+  }
+};
+
+/* keep screens awake during the game (phones lock mid-round otherwise) */
+const Wake = {
+  lock: null,
+  async on() { try { this.lock = await navigator.wakeLock.request('screen'); } catch(e) {} }
+};
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && Wake.lock) Wake.on();
+});
+
+/* ======================================================================
+   HOST — room, realtime, game state
+   ====================================================================== */
+const Host = {
+  peer: null, roomCode: null,
+  players: {},          // peerId -> {conn, name, score, team, rtt, locked, buzzMs, reactions:[]}
+  phase: 'idle',        // idle | armed | capture | judging | steal
+  armTime: 0, buzzQueue: [], judgeIdx: -1, roundId: 0, firstBuzzAt: null,
+  CAPTURE_MS: 700,      // window after first buzz where others still rank by speed
+  GRACE_MS: 2500,       // after this, players who never buzzed are shut out
+  teamMode: false, stealTimer: null, stealLeft: 0,
+
+  create() {
+    this.roomCode = [...crypto.getRandomValues(new Uint8Array(4))].map(b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('');
+    this.peer = new Peer(PEER_PREFIX + this.roomCode);
+    this.peer.on('open', () => {
+      $('connDot').classList.add('on');
+      App.showView('hostGame');
+      $('roomCodeBig').textContent = this.roomCode;
+      const url = REDIRECT_URI + '?room=' + this.roomCode;
+      $('joinUrl').textContent = url;
+      $('waShare').href = 'https://wa.me/?text=' + encodeURIComponent('🎶 Buzz Night quiz is on! Grab your buzzer: ' + url + ' (room code ' + this.roomCode + ')');
+      Wake.on();
+      $('qrBox').innerHTML = '';
+      new QRCode($('qrBox'), { text: url, width: 170, height: 170 });
+      this.setPhase('idle');
+      if (Spot.token || store.get('spotify_refresh')) {
+        Spot.initPlayer().then(() => {
+          $('spotifyOffline').classList.add('hidden');
+          $('spotifyPanel').classList.remove('hidden');
+        }).catch(()=>{});
+      }
+      setInterval(() => this.pingAll(), 4000);
+    });
+    this.peer.on('connection', conn => this.onConnection(conn));
+    this.peer.on('error', e => {
+      if (e.type === 'unavailable-id') alert('Room code clash — try creating again.');
+      else console.warn('Peer error', e);
+    });
+    this.peer.on('disconnected', () => { $('connDot').classList.remove('on'); this.peer.reconnect(); });
+  },
+
+  onConnection(conn) {
+    conn.on('data', msg => this.onMessage(conn, msg));
+    conn.on('close', () => {
+      const p = this.players[conn.peer];
+      if (p) { p.online = false; p.conn = null; this.renderScores(); }
+    });
+  },
+
+  onMessage(conn, msg) {
+    const now = performance.now();
+    if (msg.type === 'join') {
+      // reattach by name if they reconnect
+      const existing = Object.entries(this.players).find(([id, p]) => p.name.toLowerCase() === String(msg.name).toLowerCase() && !p.online);
+      if (existing) { delete this.players[existing[0]]; var carry = existing[1]; }
+      this.players[conn.peer] = {
+        conn, name: String(msg.name).slice(0, 14), online: true,
+        score: carry ? carry.score : 0, team: carry ? carry.team : null,
+        rtt: 60, locked: false, reactions: carry ? carry.reactions : []
+      };
+      conn.send({ type: 'welcome', name: this.players[conn.peer].name, teamMode: this.teamMode, team: this.players[conn.peer].team, score: this.players[conn.peer].score });
+      conn.send({ type: 'phase', phase: this.phase === 'armed' ? 'armed' : 'wait', canBuzz: this.phase === 'armed' });
+      this.renderScores();
+      return;
+    }
+    const p = this.players[conn.peer];
+    if (!p) return;
+    if (msg.type === 'pong') {
+      const rtt = now - msg.t;
+      p.rtt = p.rtt * 0.7 + rtt * 0.3;
+      return;
+    }
+    if (msg.type === 'buzz') {
+      const inGrace = (this.phase === 'capture') ||
+        ((this.phase === 'judging' || this.phase === 'steal') && this.firstBuzzAt && (now - this.firstBuzzAt) < this.GRACE_MS);
+      if ((this.phase !== 'armed' && !inGrace) || p.locked || p.buzzMs != null) return;
+      const raw = now - this.armTime;
+      const adjusted = Math.max(1, raw - p.rtt / 2);
+      p.buzzMs = adjusted;
+      if (this.phase === 'armed') {
+        // first buzz of the round: pause music, open a short capture window
+        // so near-simultaneous buzzes are ranked fairly before anyone answers
+        this.phase = 'capture';
+        this.firstBuzzAt = now;
+        Spot.pause();
+        Sound.buzz();
+        const b = $('phaseBanner');
+        b.className = 'phase-banner buzzed';
+        b.textContent = '🔔 Buzzes coming in…';
+        const round = this.roundId;
+        setTimeout(() => { if (this.roundId === round && this.phase === 'capture') this.beginJudge(); }, this.CAPTURE_MS);
+        setTimeout(() => {
+          if (this.roundId !== round || this.phase === 'armed') return;
+          Object.entries(this.players).forEach(([id, q]) => {
+            if (q.buzzMs == null && !q.locked) this.sendTo(id, { type: 'phase', phase: 'wait', canBuzz: false });
+          });
+        }, this.GRACE_MS);
+      }
+      this.buzzQueue.push(conn.peer);
+      this.sortPending();
+      conn.send({ type: 'buzzAck', pos: this.buzzQueue.indexOf(conn.peer) + 1, ms: Math.round(adjusted) });
+      this.renderBuzzes();
+    }
+  },
+
+  // sort only the not-yet-judged tail of the queue by adjusted reaction time
+  sortPending() {
+    const from = Math.max(0, this.judgeIdx + (this.phase === 'capture' ? 0 : 1));
+    const head = this.buzzQueue.slice(0, from);
+    const tail = this.buzzQueue.slice(from).sort((a, b) => this.players[a].buzzMs - this.players[b].buzzMs);
+    this.buzzQueue = head.concat(tail);
+  },
+
+  beginJudge() {
+    if (!this.buzzQueue.length) { this.setPhase('armed'); return; }
+    this.sortPending();
+    this.startJudging(0);
+  },
+
+  pingAll() {
+    this.broadcast({ type: 'ping', t: performance.now() });
+  },
+  broadcast(msg) {
+    Object.values(this.players).forEach(p => { if (p.online && p.conn) try { p.conn.send(msg); } catch(e) {} });
+  },
+  sendTo(id, msg) {
+    const p = this.players[id];
+    if (p && p.online && p.conn) try { p.conn.send(msg); } catch(e) {}
+  },
+
+  setPhase(phase) {
+    this.phase = phase;
+    const b = $('phaseBanner');
+    b.className = 'phase-banner';
+    if (phase === 'idle') b.textContent = 'Play a song, then hit ARM BUZZERS';
+    if (phase === 'armed') { b.textContent = '🟢 BUZZERS LIVE'; b.classList.add('armed'); }
+    if (phase === 'judging') { b.classList.add('buzzed'); }
+    $('armBtn').disabled = phase !== 'idle';
+  },
+
+  arm() {
+    this.clearSteal();
+    this.buzzQueue = [];
+    this.judgeIdx = -1;
+    this.roundId++;
+    this.firstBuzzAt = null;
+    Object.values(this.players).forEach(p => { p.buzzMs = null; p.locked = false; });
+    this.armTime = performance.now();
+    this.setPhase('armed');
+    $('judgePanel').classList.add('hidden');
+    this.broadcast({ type: 'phase', phase: 'armed', canBuzz: true });
+    this.renderBuzzes();
+  },
+
+  startJudging(idx) {
+    this.judgeIdx = idx;
+    const id = this.buzzQueue[idx];
+    const p = this.players[id];
+    this.setPhase('judging');
+    $('phaseBanner').textContent = '🔔 ' + p.name + ' buzzed first — ' + Math.round(p.buzzMs) + ' ms';
+    $('judgePanel').classList.remove('hidden');
+    $('judgeWho').textContent = p.name + ' is answering…';
+    Sound.say(p.name + '!');
+    this.sendTo(id, { type: 'yourTurn' });
+    this.broadcastOthers(id, { type: 'someoneBuzzed', name: p.name });
+  },
+  broadcastOthers(exceptId, msg) {
+    Object.entries(this.players).forEach(([id, p]) => { if (id !== exceptId && p.online && p.conn) try { p.conn.send(msg); } catch(e) {} });
+  },
+
+  judge(correct, pts = 10) {
+    this.clearSteal();
+    const id = this.buzzQueue[this.judgeIdx];
+    const p = this.players[id];
+    if (!p) return;
+    if (correct) {
+      p.score += pts;
+      p.reactions.push(p.buzzMs);
+      this.sendTo(id, { type: 'result', ok: true, pts, score: p.score });
+      this.broadcastOthers(id, { type: 'info', text: p.name + ' got it! +' + pts });
+      this.endRound(false);
+      this.pushBoard();
+    } else {
+      p.locked = true;
+      this.sendTo(id, { type: 'result', ok: false, score: p.score });
+      this.nextInQueue();
+    }
+    this.renderScores();
+    this.renderBuzzes();
+  },
+
+  nextInQueue() {
+    // find next buzzed player who isn't locked
+    let idx = this.judgeIdx + 1;
+    while (idx < this.buzzQueue.length && this.players[this.buzzQueue[idx]].locked) idx++;
+    if (idx < this.buzzQueue.length) {
+      this.judgeIdx = idx;
+      const id = this.buzzQueue[idx];
+      const p = this.players[id];
+      $('judgeWho').textContent = '🫳 Steal: ' + p.name + ' (' + Math.round(p.buzzMs) + ' ms)';
+      $('phaseBanner').textContent = '🫳 Steal chance: ' + p.name;
+      this.phase = 'steal';
+      this.startSteal(id);
+    } else {
+      // nobody left in queue — re-arm for unlocked players
+      const anyLeft = Object.values(this.players).some(p => p.online && !p.locked);
+      if (anyLeft) {
+        this.armTime = performance.now();
+        this.buzzQueue = [];
+        this.judgeIdx = -1;
+        this.roundId++;
+        this.firstBuzzAt = null;
+        Object.values(this.players).forEach(p => { p.buzzMs = null; });
+        this.setPhase('armed');
+        $('judgePanel').classList.add('hidden');
+        $('phaseBanner').textContent = '🟢 BUZZERS LIVE (locked-out players can’t buzz)';
+        $('phaseBanner').classList.add('armed');
+        Object.entries(this.players).forEach(([id, p]) => {
+          this.sendTo(id, p.locked ? { type: 'phase', phase: 'locked', canBuzz: false } : { type: 'phase', phase: 'armed', canBuzz: true });
+        });
+        this.renderBuzzes();
+      } else {
+        $('phaseBanner').textContent = '😅 Everyone’s locked out — reveal it!';
+        $('judgePanel').classList.add('hidden');
+        this.phase = 'judging';
+      }
+    }
+  },
+
+  startSteal(id) {
+    Sound.say('Steal chance, ' + this.players[id].name + '!');
+    this.stealLeft = 5;
+    this.sendTo(id, { type: 'steal', seconds: 5 });
+    this.broadcastOthers(id, { type: 'info', text: 'Steal chance: ' + this.players[id].name });
+    this.stealTimer = setInterval(() => {
+      this.stealLeft--;
+      this.sendTo(id, { type: 'stealTick', seconds: this.stealLeft });
+      if (this.stealLeft <= 0) {
+        this.clearSteal();
+        this.sendTo(id, { type: 'info', text: 'Too slow!' });
+        this.nextInQueue();
+      }
+    }, 1000);
+  },
+  clearSteal() { if (this.stealTimer) { clearInterval(this.stealTimer); this.stealTimer = null; } },
+
+  reveal() {
+    this.clearSteal();
+    let text;
+    if (Spot.currentTrack) text = Spot.currentTrack.name + ' — ' + Spot.currentTrack.artist;
+    else text = prompt('Answer to show on phones:');
+    if (!text) return;
+    this.broadcast({ type: 'reveal', text });
+    this.endRound(false);
+  },
+
+  endRound(notify = true) {
+    this.clearSteal();
+    this.setPhase('idle');
+    $('judgePanel').classList.add('hidden');
+    this.broadcast({ type: 'phase', phase: 'wait', canBuzz: false });
+    this.renderBuzzes();
+  },
+
+  setTeamMode(on) {
+    this.teamMode = on;
+    $('teamCol').classList.toggle('hidden', !on);
+    if (on) {
+      // auto-assign alternating teams for anyone unassigned
+      let i = 0;
+      Object.values(this.players).forEach(p => { if (!p.team) p.team = (i++ % 2 === 0) ? 'A' : 'B'; });
+    }
+    Object.entries(this.players).forEach(([id, p]) => this.sendTo(id, { type: 'team', teamMode: on, team: p.team }));
+    this.renderScores();
+  },
+  cycleTeam(id) {
+    const p = this.players[id];
+    p.team = p.team === 'A' ? 'B' : 'A';
+    this.sendTo(id, { type: 'team', teamMode: this.teamMode, team: p.team });
+    this.renderScores();
+  },
+
+  resetScores() {
+    Object.values(this.players).forEach(p => { p.score = 0; p.reactions = []; });
+    this.renderScores();
+    this.pushBoard();
+  },
+
+  boardRows() {
+    if (this.teamMode) {
+      const teams = {};
+      Object.values(this.players).forEach(p => {
+        const t = p.team || '?';
+        teams[t] = teams[t] || { name: 'Team ' + t, score: 0 };
+        teams[t].score += p.score;
+      });
+      return Object.values(teams).sort((a, b) => b.score - a.score);
+    }
+    return Object.values(this.players).map(p => ({ name: p.name, score: p.score })).sort((a, b) => b.score - a.score);
+  },
+  pushBoard() {
+    this.broadcast({ type: 'board', rows: this.boardRows() });
+  },
+
+  renderBuzzes() {
+    const tbody = $('buzzTable').querySelector('tbody');
+    tbody.innerHTML = '';
+    this.buzzQueue.forEach((id, i) => {
+      const p = this.players[id];
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${i + 1}</td><td>${esc(p.name)} ${p.locked ? '<span class="tag grey">locked</span>' : ''}</td>
+        <td><b>${Math.round(p.buzzMs)} ms</b></td>
+        <td>${i === this.judgeIdx ? '<span class="tag pink">answering</span>' : ''}</td>`;
+      tbody.appendChild(tr);
+    });
+    $('buzzEmpty').classList.toggle('hidden', this.buzzQueue.length > 0);
+  },
+
+  renderScores() {
+    const tbody = $('scoreTable').querySelector('tbody');
+    tbody.innerHTML = '';
+    const entries = Object.entries(this.players).sort((a, b) => b[1].score - a[1].score);
+    entries.forEach(([id, p]) => {
+      const avg = p.reactions.length ? Math.round(p.reactions.reduce((s, x) => s + x, 0) / p.reactions.length) + ' ms' : '—';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${esc(p.name)} ${p.online ? '' : '<span class="tag grey">offline</span>'}</td>
+        <td class="${this.teamMode ? '' : 'hidden'}"><button class="btn small ghost" onclick="Host.cycleTeam('${id}')">${p.team || '—'}</button></td>
+        <td><b>${p.score}</b></td><td class="muted">${avg}</td>
+        <td><button class="btn small ghost" onclick="Host.adjust('${id}')">±</button></td>`;
+      tbody.appendChild(tr);
+    });
+  },
+  adjust(id) {
+    const p = this.players[id];
+    const v = parseInt(prompt('Adjust ' + p.name + '’s score by (e.g. 5 or -5):', '5'), 10);
+    if (!isNaN(v)) { p.score += v; this.renderScores(); this.pushBoard(); }
+  }
+};
+
+/* ======================================================================
+   PLAYER — buzzer
+   ====================================================================== */
+const Player = {
+  peer: null, conn: null, name: '', canBuzz: false,
+
+  join() {
+    const room = $('joinRoomInput').value.trim().toUpperCase();
+    this.name = $('joinNameInput').value.trim();
+    if (!room || !this.name) { $('joinError').textContent = 'Need a room code and a name.'; return; }
+    store.set('player_name', this.name);
+    $('joinError').textContent = 'Connecting…';
+    this.peer = new Peer();
+    this.peer.on('open', () => {
+      this.conn = this.peer.connect(PEER_PREFIX + room, { reliable: true });
+      this.conn.on('open', () => {
+        this.conn.send({ type: 'join', name: this.name });
+        $('connDot').classList.add('on');
+        App.showView('playerGame');
+        Wake.on();
+        $('pName').textContent = this.name;
+        this.setStatus('Waiting for the quizmaster…');
+      });
+      this.conn.on('data', msg => this.onMessage(msg));
+      this.conn.on('close', () => { $('connDot').classList.remove('on'); this.setStatus('Lost connection — reload to rejoin.', 'bad'); this.setBuzz(false); });
+    });
+    this.peer.on('error', e => {
+      $('joinError').textContent = e.type === 'peer-unavailable' ? 'Room not found — check the code.' : 'Connection error: ' + e.type;
+    });
+    $('buzzBtn').addEventListener('click', () => this.buzz());
+  },
+
+  onMessage(msg) {
+    switch (msg.type) {
+      case 'ping': this.conn.send({ type: 'pong', t: msg.t }); break;
+      case 'welcome':
+        $('pScore').textContent = msg.score + ' pts';
+        if (msg.teamMode && msg.team) $('pTeam').textContent = '· Team ' + msg.team;
+        break;
+      case 'phase':
+        this.hideExtras();
+        if (msg.phase === 'armed') { this.setBuzz(true); this.setStatus('🟢 BUZZ WHEN YOU KNOW IT!', 'good'); this.vibe([60]); }
+        else if (msg.phase === 'locked') { this.setBuzz(false); this.setStatus('🔒 Locked out this song', 'bad'); }
+        else { this.setBuzz(false); this.setStatus('Listen… buzzers not live yet'); }
+        break;
+      case 'buzzAck':
+        this.setBuzz(false);
+        this.setStatus(msg.pos === 1 ? '🔔 YOU’RE IN FIRST! (' + msg.ms + ' ms)' : '#' + msg.pos + ' in the queue (' + msg.ms + ' ms)', msg.pos === 1 ? 'good' : '');
+        this.vibe([120, 60, 120]);
+        break;
+      case 'yourTurn': this.setStatus('🎤 Give your answer out loud!', 'good'); break;
+      case 'someoneBuzzed': this.setStatus('🔔 ' + msg.name + ' buzzed first — buzz to join the queue!'); break;
+      case 'steal':
+      case 'stealTick':
+        this.setStatus('🫳 STEAL! Answer now!', 'good');
+        $('stealTimer').classList.remove('hidden');
+        $('stealTimer').textContent = msg.seconds;
+        if (msg.seconds <= 0) $('stealTimer').classList.add('hidden');
+        this.vibe([80]);
+        break;
+      case 'result':
+        this.hideExtras();
+        $('pScore').textContent = msg.score + ' pts';
+        this.setStatus(msg.ok ? '🎉 CORRECT! +' + msg.pts : '❌ Wrong — locked out this song', msg.ok ? 'good' : 'bad');
+        this.vibe(msg.ok ? [80, 40, 80, 40, 200] : [400]);
+        break;
+      case 'reveal':
+        this.hideExtras();
+        $('revealBox').textContent = '💡 ' + msg.text;
+        $('revealBox').classList.remove('hidden');
+        this.setStatus('');
+        break;
+      case 'board': {
+        const el = $('playerBoard');
+        el.innerHTML = '<h2>🏆 Leaderboard</h2>' + msg.rows.map((r, i) =>
+          `<div class="row" style="padding:4px 0"><span class="grow">${i + 1}. ${esc(r.name)}</span><b>${r.score}</b></div>`).join('');
+        el.classList.remove('hidden');
+        break;
+      }
+      case 'team':
+        $('pTeam').textContent = msg.teamMode && msg.team ? '· Team ' + msg.team : '';
+        break;
+      case 'info': this.setStatus(msg.text); break;
+    }
+  },
+
+  hideExtras() {
+    $('stealTimer').classList.add('hidden');
+    $('revealBox').classList.add('hidden');
+    $('playerBoard').classList.add('hidden');
+  },
+  setBuzz(on) {
+    this.canBuzz = on;
+    $('buzzBtn').disabled = !on;
+    $('buzzBtn').classList.toggle('armed', on);
+  },
+  buzz() {
+    if (!this.canBuzz || !this.conn) return;
+    this.canBuzz = false;
+    this.conn.send({ type: 'buzz' });
+    this.vibe([40]);
+  },
+  setStatus(text, cls = '') {
+    const el = $('playerStatus');
+    el.textContent = text;
+    el.className = cls;
+  },
+  vibe(pattern) { if (navigator.vibrate) try { navigator.vibrate(pattern); } catch(e) {} }
+};
+
+App.init();
+</script>
+</body>
+</html>
