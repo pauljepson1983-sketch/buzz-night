@@ -1171,6 +1171,7 @@ const Host = {
       $('waShare').href = 'https://wa.me/?text=' + encodeURIComponent('🎶 Buzz Night quiz is on! Grab your buzzer: ' + url + ' (room code ' + this.roomCode + ')');
       Sound.initPickers();
       this._resuming = false;
+      this._resumeTries = 0;
       this.renderScores();
       this.saveGame();
       Wake.on();
@@ -1188,13 +1189,23 @@ const Host = {
     this.peer.on('connection', conn => this.onConnection(conn));
     this.peer.on('error', e => {
       if (e.type === 'unavailable-id') {
-        // The broker can still be holding the old room code for a minute after
-        // a refresh. Keep the scores and take a fresh code rather than failing.
+        // The broker holds the old room code for a short while after a
+        // refresh. Keeping the code matters — existing QR codes and links stay
+        // valid — so retry it a few times before giving up and taking a new
+        // one, which would force everyone to rescan mid-game.
         if (this._resuming) {
-          this._resuming = false;
           const carried = Object.values(this.players).map(p => ({ name: p.name, score: p.score, team: p.team, reactions: p.reactions }));
+          const tries = (this._resumeTries = (this._resumeTries || 0) + 1);
+          const keepCode = tries <= 3;
           try { this.peer.destroy(); } catch (err) {}
-          this.create({ roomCode: this.newCode(), teamMode: this.teamMode, players: carried });
+          if (!keepCode) { this._resuming = false; this._resumeTries = 0; }
+          $('resumeNote') && ($('resumeNote').textContent = keepCode
+            ? 'Room ' + this.roomCode + ' is still releasing — retrying (' + tries + ' of 3)…'
+            : 'Old room code was still in use, so this game has a new code. Scores are safe; players need to rescan.');
+          setTimeout(() => this.create({
+            roomCode: keepCode ? this.roomCode : this.newCode(),
+            teamMode: this.teamMode, players: carried
+          }), keepCode ? 1600 : 0);
           return;
         }
         alert('Room code clash — try creating again.');
