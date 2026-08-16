@@ -2159,6 +2159,10 @@ const Quiz = {
     for (let page = 1; page <= 2 && people.size < count + 14; page++) {
       const disc = await this.tmdb('/discover/movie', {
         sort_by: 'popularity.desc', 'vote_count.gte': 2000,
+        // animation credits its voice cast, and nobody recognises the FACE of
+        // the person who voiced Nala — Moira Kelly and Tim Allen both got in
+        // this way on the first build
+        without_genres: '16',
         'primary_release_date.gte': gte, 'primary_release_date.lte': lte, page
       });
       for (const m of (disc.results || [])) {
