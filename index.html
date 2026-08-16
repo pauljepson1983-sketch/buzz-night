@@ -1850,10 +1850,15 @@ const Host = {
     const people = Object.values(this.players).filter(p => p.stats && (p.stats.answered || p.reactions.length));
     if (people.length < 2) return [];
 
+    // Each award carries a RANKED list, not just its top person. If the best
+    // candidate already has a title the award passes down to the next one
+    // instead of being dropped, which is what left the quietest player — the
+    // one who most needs naming — with nothing at all.
     const best = (label, emoji, pick, fmt) => {
       const ranked = people.map(p => ({ p, v: pick(p) })).filter(x => x.v != null && x.v > 0)
-        .sort((a, b) => b.v - a.v);
-      return ranked.length ? { label, emoji, name: ranked[0].p.name, detail: fmt(ranked[0].v), score: ranked[0].v } : null;
+        .sort((a, b) => b.v - a.v)
+        .map(x => ({ name: x.p.name, detail: fmt(x.v) }));
+      return ranked.length ? { label, emoji, ranked } : null;
     };
 
     // Deliberate priority order rather than a sort. The underlying numbers
@@ -1865,7 +1870,7 @@ const Host = {
 
     // fastest buzzer is low-is-better, so it doesn't fit the helper
     const timed = people.filter(p => p.reactions.length).map(p => ({ p, v: this.avgFor(p) })).sort((a, b) => a.v - b.v);
-    if (timed.length) cands.push({ label: 'Fastest finger', emoji: '🏎️', name: timed[0].p.name, detail: secs(timed[0].v) + ' average' });
+    if (timed.length) cands.push({ label: 'Fastest finger', emoji: '🏎️', ranked: timed.map(x => ({ name: x.p.name, detail: secs(x.v) + ' average' })) });
 
     cands.push(best('Sharpshooter', '🎯', p => p.stats.answered >= 3 ? Math.round(100 * p.stats.correct / p.stats.answered) : 0, v => v + '% correct'));
     cands.push(best('Quickest draw', '⚡', p => p.stats.firstIn, v => v + ' answered first'));
@@ -1877,7 +1882,9 @@ const Host = {
       if (!modes[m] || pts > modes[m].pts) modes[m] = { pts, name: p.name };
     }));
     Object.entries(modes).sort((a, b) => b[1].pts - a[1].pts).forEach(([m, x]) => {
-      cands.push({ label: (Quiz.TITLES[m] || m).replace(/^\S+\s/, '') + ' specialist', emoji: '🎖️', name: x.name, detail: x.pts + ' points there' });
+      // a specialist title only makes sense for its actual top scorer, so no
+      // fallback list here — it is dropped rather than handed to someone else
+      cands.push({ label: (Quiz.TITLES[m] || m).replace(/^\S+\s/, '') + ' specialist', emoji: '🎖️', ranked: [{ name: x.name, detail: x.pts + ' points there' }] });
     });
 
     // last resort so a keen but unlucky player still gets named
@@ -1885,11 +1892,12 @@ const Host = {
 
     const taken = new Set(), out = [];
     cands.filter(Boolean).forEach(a => {
-      if (taken.has(a.name)) return;
-      taken.add(a.name);
-      out.push(a);
+      const pick = a.ranked.find(r => !taken.has(r.name));
+      if (!pick) return;
+      taken.add(pick.name);
+      out.push({ label: a.label, emoji: a.emoji, name: pick.name, detail: pick.detail });
     });
-    return out.slice(0, 6);
+    return out.slice(0, 8);
   },
 
   // a player's own announcer settings, so the finale calls their name in the
