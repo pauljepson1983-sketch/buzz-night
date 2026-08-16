@@ -1856,28 +1856,35 @@ const Host = {
       return ranked.length ? { label, emoji, name: ranked[0].p.name, detail: fmt(ranked[0].v), score: ranked[0].v } : null;
     };
 
+    // Deliberate priority order rather than a sort. The underlying numbers
+    // are on incomparable scales — a percentage, a count of six, and two
+    // hundred raw points — so ranking them against each other just handed
+    // everything to whoever had the biggest points total and every award came
+    // out as "specialist". Distinctive titles get first claim on a person.
     const cands = [];
+
+    // fastest buzzer is low-is-better, so it doesn't fit the helper
+    const timed = people.filter(p => p.reactions.length).map(p => ({ p, v: this.avgFor(p) })).sort((a, b) => a.v - b.v);
+    if (timed.length) cands.push({ label: 'Fastest finger', emoji: '🏎️', name: timed[0].p.name, detail: secs(timed[0].v) + ' average' });
+
     cands.push(best('Sharpshooter', '🎯', p => p.stats.answered >= 3 ? Math.round(100 * p.stats.correct / p.stats.answered) : 0, v => v + '% correct'));
     cands.push(best('Quickest draw', '⚡', p => p.stats.firstIn, v => v + ' answered first'));
     cands.push(best('Biggest single hit', '💥', p => p.stats.bestSingle, v => v + ' points in one go'));
-    cands.push(best('Never gave up', '🎪', p => p.stats.answered, v => v + ' questions attempted'));
 
-    // fastest buzzer is a low-is-better stat, so it doesn't fit the helper
-    const timed = people.filter(p => p.reactions.length).map(p => ({ p, v: this.avgFor(p) })).sort((a, b) => a.v - b.v);
-    if (timed.length) cands.push({ label: 'Fastest finger', emoji: '🏎️', name: timed[0].p.name, detail: secs(timed[0].v) + ' average', score: 1e6 });
-
-    // specialist titles, one per category anyone actually scored in
+    // specialist titles fill in whoever is left, best category first
     const modes = {};
     people.forEach(p => Object.entries(p.stats.byMode || {}).forEach(([m, pts]) => {
       if (!modes[m] || pts > modes[m].pts) modes[m] = { pts, name: p.name };
     }));
-    Object.entries(modes).forEach(([m, x]) => {
-      cands.push({ label: (Quiz.TITLES[m] || m).replace(/^\S+\s/, '') + ' specialist', emoji: '🎖️', name: x.name, detail: x.pts + ' points there', score: x.pts });
+    Object.entries(modes).sort((a, b) => b[1].pts - a[1].pts).forEach(([m, x]) => {
+      cands.push({ label: (Quiz.TITLES[m] || m).replace(/^\S+\s/, '') + ' specialist', emoji: '🎖️', name: x.name, detail: x.pts + ' points there' });
     });
 
-    // spread them: strongest claim first, one award each until people run out
+    // last resort so a keen but unlucky player still gets named
+    cands.push(best('Never gave up', '🎪', p => p.stats.answered, v => v + ' questions attempted'));
+
     const taken = new Set(), out = [];
-    cands.filter(Boolean).sort((a, b) => b.score - a.score).forEach(a => {
+    cands.filter(Boolean).forEach(a => {
       if (taken.has(a.name)) return;
       taken.add(a.name);
       out.push(a);
