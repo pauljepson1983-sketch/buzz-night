@@ -1227,13 +1227,18 @@ const Host = {
     else text = prompt('Answer to show on phones:');
     if (!text) return;
     this.broadcast({ type: 'reveal', text });
-    this.endRound(false);
+    // Revealing must not end the round while someone is still being scored —
+    // endRound hides the judge panel, which took the +10 / Wrong buttons away
+    // before the host could award anything. Ending stays a deliberate act via
+    // "End round / reset buzzers".
+    const stillScoring = !$('judgePanel').classList.contains('hidden');
+    if (!stillScoring) this.endRound(false);
     // endRound resets the banner to the idle prompt, so paint the answer on the
     // host afterwards. Without this the host sees no change at all and the
     // button reads as broken even though the phones got it.
     const b = $('phaseBanner');
     b.className = 'phase-banner buzzed';
-    b.textContent = '💡 Answer: ' + text;
+    b.textContent = '💡 Answer: ' + text + (stillScoring ? ' — still scoring, award points below' : '');
   },
 
   endRound(notify = true) {
