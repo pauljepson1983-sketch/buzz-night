@@ -121,6 +121,9 @@
   #playerStatus.bad { color: var(--red); }
   #stealTimer { font-size: 3rem; font-weight: 900; color: var(--gold); }
   .reveal-box { background: var(--gold); color: #1a0f35; border-radius: 14px; padding: 16px; font-weight: 800; font-size: 1.2rem; }
+  /* ---- quick setup ---- */
+  .quick-box { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.09); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+
   /* ---- running order ---- */
   .night-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 10px; background: var(--panel2); margin-bottom: 6px; }
   .night-row.now { outline: 2px solid var(--green); }
@@ -323,6 +326,45 @@
       <div class="card" id="nightCard">
         <h2>🎬 Tonight's running order</h2>
         <p class="muted" style="font-size:.85rem">Build the night up front, press go, and it runs itself — so you can play instead of operating it. Picture and music rounds score themselves. Add a buzzer round wherever you want to take over and judge.</p>
+        <div class="quick-box">
+          <div class="row mb">
+            <label for="quickDecade"><b>1.</b> Era</label>
+            <select id="quickDecade" onchange="Night.quickChanged()">
+              <option value="">Any</option>
+              <option value="1960-1969">60s</option>
+              <option value="1970-1979">70s</option>
+              <option value="1980-1989">80s</option>
+              <option value="1990-1999">90s</option>
+              <option value="2000-2009" selected>00s</option>
+              <option value="2010-2019">10s</option>
+            </select>
+            <label for="quickStyle">Flavour</label>
+            <select id="quickStyle" onchange="Night.quickChanged()">
+              <option value="">Any</option>
+              <option value="christmas">Christmas</option>
+              <option value="pop">Pop</option>
+              <option value="rock">Rock</option>
+              <option value="dance">Dance</option>
+              <option value="soul">Soul</option>
+              <option value="indie">Indie</option>
+            </select>
+          </div>
+          <p class="muted" style="font-size:.8rem" id="quickNote"></p>
+          <div class="row mb">
+            <b style="font-size:.9rem">2. Build it</b>
+            <button class="btn green small" onclick="Night.preset(5)">🎉 Full night (5 rounds)</button>
+            <button class="btn ghost small" onclick="Night.preset(3)">⚡ Short night (3)</button>
+          </div>
+          <div class="row">
+            <span class="muted" style="font-size:.8rem">or add one at a time:</span>
+            <button class="btn ghost small" onclick="Night.quickAdd('faces')">⭐ Faces</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('years')">📅 Years</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('backdrops')">🎬 Stills</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('covers')">🖼️ Covers</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('themes')">🎵 Themes</button>
+            <button class="btn ghost small" onclick="Night.addBuzzer()">🔔 Buzzer</button>
+          </div>
+        </div>
         <div id="nightList"></div>
         <div class="row mb">
           <button class="btn ghost small" onclick="Night.addBuzzer()">➕ Add a buzzer round</button>
@@ -2633,6 +2675,10 @@ const Night = {
 
   load() {
     try { this.plan = JSON.parse(store.get('night_plan') || '[]') || []; } catch (e) { this.plan = []; }
+    // strip flavours off rounds that ignore them, so old saved plans stop
+    // claiming to be Christmassy when they never were
+    this.plan.forEach(r => { if (r.mode && !this.STYLE_USED_BY.includes(r.mode)) r.style = ''; });
+    this.quickChanged();
     this.render();
   },
   save() { store.set('night_plan', JSON.stringify(this.plan)); },
@@ -2644,6 +2690,61 @@ const Night = {
     if (r.extra) bits.push(r.extra);
     if (r.decade) bits.push(r.decade.slice(0, 4) + 's');
     return this.LABELS[r.mode] + (bits.length ? ' — ' + bits.join(', ') : '') + ' · ' + r.count + ' questions';
+  },
+
+  /* ---- quick setup ------------------------------------------------------
+     Building a night meant setting seven controls and scrolling, once per
+     round. Worse, the settings were shared across every round: Paul set
+     "christmas" once and it stuck to Famous faces and Film posters, which
+     IGNORE style entirely, so two of his three rounds were never going to be
+     Christmassy and nothing said so. Pick era and flavour once here, press a
+     button, and the plan builds itself with sensible per-round settings.
+  --------------------------------------------------------------------- */
+
+  // which modes actually read the style/flavour word
+  STYLE_USED_BY: ['covers', 'years'],
+
+  quickChanged() {
+    const style = $('quickStyle').value;
+    $('quickNote').textContent = style
+      ? 'Flavour "' + style + '" applies to Covers and Years. Faces, Stills, Themes and Posters ignore it — they follow the era only.'
+      : '';
+  },
+
+  defaultsFor(mode) {
+    const decade = $('quickDecade').value;
+    const style = $('quickStyle').value;
+    return {
+      mode, decade,
+      // only pass the flavour to rounds that actually use it
+      style: this.STYLE_USED_BY.includes(mode) ? style : '',
+      extra: '',
+      count: 8,
+      flash: mode === 'faces' ? 2000 : 3000,
+      secs: 10,
+      startAt: 'skip',
+      crop: 'crop',
+      roundLabel: ''
+    };
+  },
+
+  quickAdd(mode) {
+    this.plan.push(this.defaultsFor(mode));
+    this.save(); this.render();
+  },
+
+  preset(size) {
+    // a mix, so the night doesn't feel like the same round five times.
+    // Covers needs a decade or a flavour to search on, so it only goes in
+    // when there is one — otherwise the round would fail to build.
+    const decade = $('quickDecade').value, style = $('quickStyle').value;
+    const order = ['faces', 'years', 'backdrops'];
+    if (decade || style) order.push('covers');
+    order.push('themes');
+    const chosen = order.slice(0, size);
+    this.plan = chosen.map(m => this.defaultsFor(m));
+    this.save(); this.render();
+    $('nightStatus').textContent = chosen.length + ' rounds ready. Press "Start the night" when everyone has joined.';
   },
 
   addFromControls() {
