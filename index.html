@@ -427,7 +427,12 @@ const Spot = {
       ...opts, headers: {'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json', ...(opts.headers || {})}
     });
     if (r.status === 204) return null;
-    if (!r.ok) throw new Error('Spotify API ' + r.status);
+    if (!r.ok) {
+      // surface Spotify's own wording — a bare status code says nothing useful
+      let detail = '';
+      try { detail = (JSON.parse(await r.text())?.error?.message) || ''; } catch (e) {}
+      throw new Error('Spotify API ' + r.status + (detail ? ': ' + detail : ''));
+    }
     const txt = await r.text();
     return txt ? JSON.parse(txt) : null;
   },
@@ -534,7 +539,8 @@ const Spot = {
   async search(q) {
     if (!q) return;
     try {
-      const d = await this.api('/search?' + new URLSearchParams({ q, type: 'track', limit: 20 }));
+      // Spotify rejects limit > 10 on /search for apps in development mode
+      const d = await this.api('/search?' + new URLSearchParams({ q, type: 'track', limit: 10 }));
       $('playlistRow').classList.add('hidden');
       this.renderTracks(d.tracks.items);
     } catch(e) { alert(e.message); }
