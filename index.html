@@ -267,8 +267,16 @@
       </div>
 
       <div class="card" id="quizCard">
-        <h2>🖼️ Album cover round</h2>
-        <p class="muted" style="font-size:.85rem">Covers flash on every phone for a moment, then drop away leaving four choices. Scored automatically, so you can play too.</p>
+        <h2>🖼️ Picture &amp; speed rounds</h2>
+        <p class="muted" style="font-size:.85rem" id="quizBlurb">Covers flash on every phone for a moment, then drop away leaving four choices. Scored automatically, so you can play too.</p>
+        <div class="row mb sound-settings">
+          <label for="quizMode">Round</label>
+          <select id="quizMode" onchange="Quiz.modeChanged()">
+            <option value="covers">Album covers</option>
+            <option value="themes">Film themes (music)</option>
+            <option value="posters">Film poster details</option>
+          </select>
+        </div>
         <div class="row mb sound-settings">
           <label for="quizDecade">Decade</label>
           <select id="quizDecade">
@@ -335,7 +343,7 @@
           </select>
         </div>
         <div class="row">
-          <button class="btn green" id="quizStartBtn" onclick="Quiz.start()">▶ Start album cover round</button>
+          <button class="btn green" id="quizStartBtn" onclick="Quiz.start()">▶ Start round</button>
           <button class="btn ghost small" onclick="Quiz.stop()">Stop round</button>
         </div>
         <p class="muted redact-note mt" id="quizStatus">Artist and album names printed on the covers are blanked out automatically.</p>
@@ -1444,7 +1452,7 @@ const Host = {
    Multiple choice means the app scores it, so the host can play too.
    ====================================================================== */
 const Quiz = {
-  active: false, questions: [], idx: -1, answers: {}, tick: null, endsAt: 0, seconds: 10,
+  active: false, mode: 'covers', questions: [], idx: -1, answers: {}, tick: null, endsAt: 0, seconds: 10, flashMs: 3000,
 
   /* ---- cover redaction -------------------------------------------------
      Album art usually has the artist and title printed on it, which gives the
@@ -1532,6 +1540,104 @@ const Quiz = {
     return c.toDataURL('image/jpeg', 0.72);
   },
 
+  /* ---- film rounds ------------------------------------------------------
+     Spotify has no film data, but soundtrack albums carry the film's artwork
+     and name. The album name has to be filtered and stripped: a plain
+     soundtrack search returns plenty of noise (a Linkin Park album turned up
+     in testing), so only albums that actually announce themselves as a
+     soundtrack are kept, and the boilerplate is trimmed to leave the title.
+  --------------------------------------------------------------------- */
+  SOUNDTRACKY: /(original\s+(motion\s+picture|score|soundtrack)|motion\s+picture|soundtrack|music\s+from\s+(the\s+)?(motion\s+picture|film|movie))/i,
+
+  filmName(albumName) {
+    return albumName
+      .replace(/\s*[\(\[][^)\]]*[\]\)]\s*$/g, '')
+      .replace(/\s*[-–:]?\s*\b(the\s+)?(original\s+)?(motion\s+picture\s+)?(soundtrack|score)\b.*$/i, '')
+      .replace(/^\s*music\s+from\s+(the\s+)?(motion\s+picture|film|movie)\s*/i, '')
+      .replace(/\s*[-–:,]\s*$/, '')
+      .trim();
+  },
+
+  async buildFilms(decade, count, label, needUri) {
+    const queries = [
+      'original motion picture soundtrack',
+      'film soundtrack',
+      'movie score soundtrack',
+      'original score motion picture'
+    ].map(q => decade ? q + ' year:' + decade : q);
+
+    const found = new Map();
+    for (const q of queries) {
+      let res;
+      try { res = await Spot.searchRaw(q); } catch (e) { continue; }
+      res.tracks.forEach(t => {
+        const al = t.album;
+        if (!al || !al.name || !al.images?.length) return;
+        if (!this.SOUNDTRACKY.test(al.name)) return;
+        const film = this.filmName(al.name);
+        // very short or very long leftovers are usually mis-parsed compilations
+        if (film.length < 2 || film.length > 42) return;
+        const key = film.toLowerCase();
+        if (found.has(key)) return;
+        found.set(key, { label: film, url: al.images[0].url, uri: t.uri });
+      });
+      if (found.size >= count + 12) break;
+    }
+    const films = [...found.values()].filter(f => !needUri || f.uri);
+    if (films.length < 4) throw new Error('Only found ' + films.length + ' films for ' + (label || 'that') + ' — too narrow. Try Any decade.');
+    this.available = films.length;
+    return films;
+  },
+
+  // Pick a square detail from the artwork that has plenty going on but little
+  // text. Film posters put the title dead centre, so unlike album sleeves the
+  // edges are the safer place to look.
+  async cropDetail(url, out = 420) {
+    const img = await new Promise((res, rej) => {
+      const im = new Image(); im.crossOrigin = 'anonymous';
+      im.onload = () => res(im); im.onerror = () => rej(new Error('image load failed'));
+      im.src = url;
+    });
+    const S = 600;
+    const work = document.createElement('canvas');
+    work.width = work.height = S;
+    const wx = work.getContext('2d');
+    wx.drawImage(img, 0, 0, S, S);
+
+    const crop = Math.round(S * 0.38);
+    const spots = [];
+    for (let gy = 0; gy < 3; gy++) for (let gx = 0; gx < 3; gx++) {
+      spots.push([Math.round(gx * (S - crop) / 2), Math.round(gy * (S - crop) / 2)]);
+    }
+    let best = spots[4], bestScore = -Infinity;
+    try {
+      spots.forEach(([x, y]) => {
+        const d = wx.getImageData(x, y, crop, crop).data;
+        let detail = 0, textish = 0, prevRow = 0;
+        for (let ry = 0; ry < crop; ry += 3) {
+          let rowEnergy = 0, prev = -1;
+          for (let rx = 0; rx < crop; rx += 3) {
+            const i = (ry * crop + rx) * 4;
+            const lum = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+            if (prev >= 0) rowEnergy += Math.abs(lum - prev);
+            prev = lum;
+          }
+          detail += rowEnergy;
+          // text shows up as rows that spike hard against their neighbours
+          if (prevRow > 0 && rowEnergy > prevRow * 2.4) textish += rowEnergy;
+          prevRow = rowEnergy;
+        }
+        const score = detail - textish * 3;
+        if (score > bestScore) { bestScore = score; best = [x, y]; }
+      });
+    } catch (e) { /* no pixel access: fall back to the centre crop */ }
+
+    const c = document.createElement('canvas');
+    c.width = c.height = out;
+    c.getContext('2d').drawImage(work, best[0], best[1], crop, crop, 0, 0, out, out);
+    return c.toDataURL('image/jpeg', 0.74);
+  },
+
   /* ---- question building ---- */
   async build(topic, count, label) {
     const { tracks } = await Spot.searchRaw(topic);
@@ -1551,16 +1657,22 @@ const Quiz = {
     if (albums.length < 4) throw new Error('Only found ' + albums.length + ' albums for ' + (label || topic) + ' — too narrow to make a round. Widen the decade or style.');
     this.available = albums.length;
 
-    const pool = albums.slice();
-    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-    const picks = pool.slice(0, Math.min(count, pool.length));
+    return this.toQuestions(albums, count);
+  },
 
+  shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  },
+
+  // decoys come from the same result set, so a britpop round offers four
+  // britpop albums rather than one plausible answer and three obvious duds
+  toQuestions(items, count) {
+    const picks = this.shuffle(items.slice()).slice(0, Math.min(count, items.length));
     return picks.map(target => {
-      const decoys = albums.filter(a => a.label !== target.label);
-      for (let i = decoys.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [decoys[i], decoys[j]] = [decoys[j], decoys[i]]; }
-      const options = [target, ...decoys.slice(0, 3)].map(a => a.label);
-      for (let i = options.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [options[i], options[j]] = [options[j], options[i]]; }
-      return { url: target.url, answer: target.label, options, correct: options.indexOf(target.label) };
+      const decoys = this.shuffle(items.filter(a => a.label !== target.label)).slice(0, 3);
+      const options = this.shuffle([target, ...decoys].map(a => a.label));
+      return { url: target.url, uri: target.uri, answer: target.label, options, correct: options.indexOf(target.label) };
     });
   },
 
@@ -1571,11 +1683,12 @@ const Quiz = {
     // "britpop year:1990-1999" returns thirty distinct albums. The year filter
     // is worth keeping though — without it a decade search is full of
     // remasters carrying their re-release date.
+    this.mode = $('quizMode').value;
     const decade = $('quizDecade').value;
     const style = $('quizStyle').value;
     const extra = ($('quizTopic').value || '').trim();
     const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
-    if (!topic) { alert('Pick a decade or a style first (or type something in the Also box).'); return; }
+    if (this.mode === 'covers' && !topic) { alert('Pick a decade or a style first (or type something in the Also box).'); return; }
     const count = parseInt($('quizCount').value, 10);
     this.flashMs = parseInt($('quizFlash').value, 10);
     this.seconds = parseInt($('quizSecs').value, 10);
@@ -1583,16 +1696,33 @@ const Quiz = {
     btn.disabled = true;
     $('quizStatus').textContent = 'Finding albums and blanking out the text…';
     const decadeLabel = decade ? decade.slice(0, 4) + 's' : '';
-    const label = [style, extra, decadeLabel].filter(Boolean).join(', ') || 'that';
+    const label = this.mode === 'covers'
+      ? ([style, extra, decadeLabel].filter(Boolean).join(', ') || 'that')
+      : ('films' + (decadeLabel ? ', ' + decadeLabel : ''));
     try {
-      const qs = await this.build(topic, count, label);
-      // redact up front so there's no stall between questions
-      for (let i = 0; i < qs.length; i++) {
-        $('quizStatus').textContent = 'Preparing cover ' + (i + 1) + ' of ' + qs.length + '…';
-        try { qs[i].img = await this.redact(qs[i].url); } catch (e) { qs[i].img = null; }
+      let qs;
+      if (this.mode === 'covers') {
+        qs = await this.build(topic, count, label);
+      } else {
+        // film themes need something playable; poster details only need art
+        const films = await this.buildFilms(decade, count, label, this.mode === 'themes');
+        qs = this.toQuestions(films, count);
       }
-      this.questions = qs.filter(q => q.img);
-      if (!this.questions.length) throw new Error('Could not prepare any covers.');
+
+      if (this.mode === 'themes') {
+        this.questions = qs.filter(q => q.uri);
+        if (!this.questions.length) throw new Error('Could not find playable film themes.');
+      } else {
+        const noun = this.mode === 'posters' ? 'poster' : 'cover';
+        for (let i = 0; i < qs.length; i++) {
+          $('quizStatus').textContent = 'Preparing ' + noun + ' ' + (i + 1) + ' of ' + qs.length + '…';
+          try {
+            qs[i].img = this.mode === 'posters' ? await this.cropDetail(qs[i].url) : await this.redact(qs[i].url);
+          } catch (e) { qs[i].img = null; }
+        }
+        this.questions = qs.filter(q => q.img);
+        if (!this.questions.length) throw new Error('Could not prepare any ' + noun + 's.');
+      }
       this.active = true; this.idx = -1;
       Host.endRound(false);
       Host.broadcast({ type: 'quizStart', total: this.questions.length });
@@ -1613,15 +1743,33 @@ const Quiz = {
     if (this.idx >= this.questions.length) return this.finish();
     const q = this.questions[this.idx];
     this.answers = {};
-    this.endsAt = Date.now() + this.flashMs + this.seconds * 1000;
+    // themes have no picture to flash, so answering starts immediately
+    const flash = this.mode === 'themes' ? 0 : this.flashMs;
+    this.endsAt = Date.now() + flash + this.seconds * 1000;
+    if (this.mode === 'themes' && q.uri) Spot.playUri(q.uri).catch(() => {});
     Host.broadcast({
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
-      img: q.img, options: q.options, flashMs: this.flashMs, seconds: this.seconds
+      img: q.img || null, options: q.options, flashMs: flash, seconds: this.seconds,
+      listen: this.mode === 'themes'
     });
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
       esc(q.answer) + ' <span class="muted">(waiting for answers…)</span>';
     clearTimeout(this.tick);
-    this.tick = setTimeout(() => this.close(), this.flashMs + this.seconds * 1000 + 400);
+    this.tick = setTimeout(() => this.close(), flash + this.seconds * 1000 + 400);
+  },
+
+  modeChanged() {
+    const m = $('quizMode').value;
+    const blurbs = {
+      covers: 'Covers flash on every phone for a moment, then drop away leaving four choices. Scored automatically, so you can play too.',
+      themes: 'The film’s theme plays on your speaker and four films appear on the phones. Decade applies; style is ignored.',
+      posters: 'A zoomed-in corner of the poster appears, chosen to avoid the title. Decade applies; style is ignored.'
+    };
+    $('quizBlurb').textContent = blurbs[m] || blurbs.covers;
+    const filmMode = m !== 'covers';
+    $('quizStyle').disabled = filmMode;
+    $('quizTopic').disabled = filmMode;
+    $('quizFlash').disabled = m === 'themes';
   },
 
   answer(peerId, n, choice, ms) {
@@ -1641,6 +1789,8 @@ const Quiz = {
 
   close() {
     if (!this.active) return;
+    // stop the theme before the answer goes up, or it plays over the reveal
+    if (this.mode === 'themes') Spot.pause();
     const q = this.questions[this.idx];
     Object.entries(Host.players).forEach(([id, p]) => {
       const a = this.answers[id];
@@ -1654,6 +1804,7 @@ const Quiz = {
   finish() {
     this.active = false;
     clearTimeout(this.tick);
+    if (this.mode === 'themes') Spot.pause();
     Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
     Host.pushBoard();
     const top = Host.boardRows()[0];
@@ -1666,6 +1817,7 @@ const Quiz = {
     if (!this.active) { $('quizStatus').textContent = 'No round running.'; return; }
     this.active = false;
     clearTimeout(this.tick);
+    if (this.mode === 'themes') Spot.pause();
     Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
     $('quizStatus').textContent = 'Round stopped.';
     $('quizHostView').classList.add('hidden');
@@ -1808,8 +1960,13 @@ const Player = {
     $('quizCountdown').textContent = '';
     // flash the cover, then drop it away — the options only appear afterwards
     // so nobody can sit and compare the picture against the answers
-    $('quizArt').src = msg.img;
-    $('quizArtWrap').classList.add('showing');
+    if (msg.img) {
+      $('quizArt').src = msg.img;
+      $('quizArtWrap').classList.add('showing');
+    } else {
+      $('quizArtWrap').classList.remove('showing');
+      this.setStatus(msg.listen ? '🎧 Listen…' : '');
+    }
     this.vibe([40]);
     setTimeout(() => {
       $('quizArtWrap').classList.remove('showing');
