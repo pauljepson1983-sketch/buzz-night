@@ -121,6 +121,29 @@
   #playerStatus.bad { color: var(--red); }
   #stealTimer { font-size: 3rem; font-weight: 900; color: var(--gold); }
   .reveal-box { background: var(--gold); color: #1a0f35; border-radius: 14px; padding: 16px; font-weight: 800; font-size: 1.2rem; }
+  /* ---- speed / album-cover rounds ---- */
+  #quizArtWrap {
+    width: min(78vw, 340px); aspect-ratio: 1; margin: 10px auto; border-radius: 14px;
+    overflow: hidden; background: var(--panel2); display: none; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  #quizArtWrap.showing { display: block; }
+  #quizArt { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #quizCountdown { font-size: 2.6rem; font-weight: 900; color: var(--gold); min-height: 3rem; }
+  #quizCountdown.hurry { color: var(--red); }
+  #quizOptions { display: grid; gap: 10px; margin-top: 6px; }
+  .quiz-opt {
+    padding: 15px 14px; border-radius: 12px; border: 2px solid var(--panel2);
+    background: var(--panel2); color: var(--text); font-size: 1.05rem; font-weight: 700;
+    cursor: pointer; text-align: left; line-height: 1.3;
+  }
+  .quiz-opt:active { transform: scale(.98); }
+  .quiz-opt:disabled { cursor: default; }
+  .quiz-opt.picked { border-color: var(--gold); }
+  .quiz-opt.right { background: var(--green); color: #10202a; border-color: var(--green); }
+  .quiz-opt.wrong { background: var(--red); color: #fff; border-color: var(--red); }
+  #quizFeedback { font-size: 1.1rem; font-weight: 800; min-height: 1.6rem; margin-top: 8px; }
+  #quizProgress { font-size: .85rem; }
+  .redact-note { font-size: .8rem; }
   #connDot { position: fixed; top: 10px; right: 12px; width: 12px; height: 12px; border-radius: 50%; background: var(--red); }
   #connDot.on { background: var(--green); }
 </style>
@@ -242,6 +265,40 @@
           <button class="btn ghost small" onclick="App.endRound()">End round / reset buzzers</button>
         </div>
       </div>
+
+      <div class="card" id="quizCard">
+        <h2>🖼️ Album cover round</h2>
+        <p class="muted" style="font-size:.85rem">Covers flash on every phone for a moment, then drop away leaving four choices. Scored automatically, so you can play too.</p>
+        <div class="row mb sound-settings">
+          <label for="quizTopic">Topic</label>
+          <input type="text" id="quizTopic" class="grow" placeholder="e.g. 90s albums, britpop, movie soundtracks">
+        </div>
+        <div class="row mb sound-settings">
+          <label for="quizCount">Questions</label>
+          <select id="quizCount">
+            <option>5</option><option selected>10</option><option>15</option>
+          </select>
+          <label for="quizFlash">Flash</label>
+          <select id="quizFlash">
+            <option value="600">0.6s</option>
+            <option value="1000" selected>1s</option>
+            <option value="1500">1.5s</option>
+            <option value="2500">2.5s (easy)</option>
+          </select>
+          <label for="quizSecs">Answer in</label>
+          <select id="quizSecs">
+            <option value="8">8s</option>
+            <option value="10" selected>10s</option>
+            <option value="15">15s</option>
+          </select>
+        </div>
+        <div class="row">
+          <button class="btn green" id="quizStartBtn" onclick="Quiz.start()">▶ Start album cover round</button>
+          <button class="btn ghost small" onclick="Quiz.stop()">Stop round</button>
+        </div>
+        <p class="muted redact-note mt" id="quizStatus">Artist and album names printed on the covers are blanked out automatically.</p>
+        <div id="quizHostView" class="mt hidden"></div>
+      </div>
     </div>
 
     <div>
@@ -285,6 +342,13 @@
   <div id="playerStatus">Connecting…</div>
   <div id="stealTimer" class="hidden"></div>
   <div id="revealBox" class="reveal-box hidden"></div>
+  <div id="quizPanel" class="hidden">
+    <div id="quizProgress" class="muted"></div>
+    <div id="quizArtWrap"><img id="quizArt" alt="album cover"></div>
+    <div id="quizCountdown"></div>
+    <div id="quizOptions"></div>
+    <div id="quizFeedback"></div>
+  </div>
   <button id="buzzBtn" disabled>BUZZ</button>
   <div id="playerBoard" class="card hidden" style="text-align:left"></div>
 </div>
@@ -500,7 +564,7 @@ const Spot = {
       // starting the music IS the host's "go" — arm the buzzers off the back of
       // it instead of making them find a second button. Only from idle, so
       // resuming mid-round doesn't wipe a buzz queue that's being judged.
-      if (!st.paused && Host.peer && Host.phase === 'idle') Host.arm();
+      if (!st.paused && Host.peer && Host.phase === 'idle' && !Quiz.active) Host.arm();
     });
     this.player.addListener('initialization_error', e => alert('Spotify player error: ' + e.message));
     this.player.addListener('authentication_error', e => alert('Spotify auth error — reconnect Spotify. ' + e.message));
@@ -1047,6 +1111,12 @@ const Host = {
       p.rtt = p.rtt * 0.7 + rtt * 0.3;
       return;
     }
+    if (msg.type === 'quizA') {
+      Quiz.answer(conn.peer, msg.n, msg.choice);
+      return;
+    }
+    // quiz rounds score themselves; a stray buzz must not open the judge panel
+    if (msg.type === 'buzz' && Quiz.active) return;
     if (msg.type === 'buzz') {
       const inGrace = (this.phase === 'capture') ||
         ((this.phase === 'judging' || this.phase === 'steal') && this.firstBuzzAt && (now - this.firstBuzzAt) < this.GRACE_MS);
@@ -1328,6 +1398,216 @@ const Host = {
 };
 
 /* ======================================================================
+   QUIZ ROUNDS — album covers now, timed music questions later.
+   Multiple choice means the app scores it, so the host can play too.
+   ====================================================================== */
+const Quiz = {
+  active: false, questions: [], idx: -1, answers: {}, tick: null, endsAt: 0, seconds: 10,
+
+  /* ---- cover redaction -------------------------------------------------
+     Album art usually has the artist and title printed on it, which gives the
+     answer away. Spotify's CDN allows cross-origin canvas reads, so the HOST
+     redacts each cover and ships the redacted picture to the phones — every
+     phone sees the same thing, and nobody can peek at the original URL.
+
+     Finding text without a vision model is a heuristic: printed text produces
+     far more left-right brightness change than photography or artwork does, so
+     rows of high horizontal-gradient energy get blanked. Coverage is capped so
+     a busy sleeve can't end up blacked out entirely.
+  --------------------------------------------------------------------- */
+  async redact(url, size = 460) {
+    const img = await new Promise((res, rej) => {
+      const im = new Image();
+      im.crossOrigin = 'anonymous';
+      im.onload = () => res(im);
+      im.onerror = () => rej(new Error('image load failed'));
+      im.src = url;
+    });
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const cx = c.getContext('2d');
+    cx.drawImage(img, 0, 0, size, size);
+
+    let rows;
+    try {
+      const px = cx.getImageData(0, 0, size, size).data;
+      rows = new Float64Array(size);
+      for (let y = 0; y < size; y++) {
+        let energy = 0, prev = -1;
+        for (let x = 0; x < size; x += 2) {
+          const i = (y * size + x) * 4;
+          const lum = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
+          if (prev >= 0) energy += Math.abs(lum - prev);
+          prev = lum;
+        }
+        rows[y] = energy;
+      }
+    } catch (e) {
+      rows = null; // tainted canvas: fall through to the fixed-band fallback
+    }
+
+    let bands = [];
+    if (rows) {
+      const sorted = Array.from(rows).sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)] || 1;
+      const threshold = Math.max(median * 2.1, 900);
+      let start = -1;
+      for (let y = 0; y <= size; y++) {
+        const busy = y < size && rows[y] > threshold;
+        if (busy && start < 0) start = y;
+        if (!busy && start >= 0) {
+          const h = y - start;
+          // text-sized bands only: ignore single noisy lines and huge areas
+          if (h >= size * 0.025 && h <= size * 0.3) bands.push([start, h]);
+          start = -1;
+        }
+      }
+      bands.sort((a, b) => b[1] - a[1]);
+      bands = bands.slice(0, 3);
+      let total = bands.reduce((s, b) => s + b[1], 0);
+      while (total > size * 0.45 && bands.length) { total -= bands.pop()[1]; }
+    }
+    // nothing convincing found (or no pixel access): blank the usual edges,
+    // which is where sleeve text sits most often
+    if (!bands.length) bands = [[0, Math.round(size * 0.16)], [Math.round(size * 0.84), Math.round(size * 0.16)]];
+
+    cx.fillStyle = '#12082b';
+    bands.forEach(([y, h]) => {
+      cx.fillRect(0, y - 3, size, h + 6);
+      cx.fillStyle = 'rgba(255,79,163,.55)';
+      cx.fillRect(0, y - 3, size, 3);
+      cx.fillRect(0, y + h + 3, size, 3);
+      cx.fillStyle = '#12082b';
+    });
+    return c.toDataURL('image/jpeg', 0.72);
+  },
+
+  /* ---- question building ---- */
+  async build(topic, count) {
+    const { tracks } = await Spot.searchRaw(topic);
+    // one entry per album, and dedupe on name+artist so remasters and
+    // re-releases can't appear as two identical options
+    const seen = new Set(), albums = [];
+    tracks.forEach(t => {
+      const al = t.album, artist = (t.artists || []).map(a => a.name).join(', ');
+      if (!al || !al.name || !al.images?.length) return;
+      const key = (al.name + '|' + artist).toLowerCase().replace(/\s*[\(\[].*$/, '').trim();
+      if (seen.has(key)) return;
+      seen.add(key);
+      albums.push({ label: al.name + ' — ' + artist, url: al.images[0].url });
+    });
+    if (albums.length < 4) throw new Error('Not enough different albums for “' + topic + '”. Try a broader topic.');
+
+    const pool = albums.slice();
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    const picks = pool.slice(0, Math.min(count, pool.length));
+
+    return picks.map(target => {
+      const decoys = albums.filter(a => a.label !== target.label);
+      for (let i = decoys.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [decoys[i], decoys[j]] = [decoys[j], decoys[i]]; }
+      const options = [target, ...decoys.slice(0, 3)].map(a => a.label);
+      for (let i = options.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [options[i], options[j]] = [options[j], options[i]]; }
+      return { url: target.url, answer: target.label, options, correct: options.indexOf(target.label) };
+    });
+  },
+
+  async start() {
+    if (!Host.peer) { alert('Create the room first.'); return; }
+    const topic = ($('quizTopic').value || '').trim();
+    if (!topic) { alert('Type a topic first, e.g. “90s albums”.'); return; }
+    const count = parseInt($('quizCount').value, 10);
+    this.flashMs = parseInt($('quizFlash').value, 10);
+    this.seconds = parseInt($('quizSecs').value, 10);
+    const btn = $('quizStartBtn');
+    btn.disabled = true;
+    $('quizStatus').textContent = 'Finding albums and blanking out the text…';
+    try {
+      const qs = await this.build(topic, count);
+      // redact up front so there's no stall between questions
+      for (let i = 0; i < qs.length; i++) {
+        $('quizStatus').textContent = 'Preparing cover ' + (i + 1) + ' of ' + qs.length + '…';
+        try { qs[i].img = await this.redact(qs[i].url); } catch (e) { qs[i].img = null; }
+      }
+      this.questions = qs.filter(q => q.img);
+      if (!this.questions.length) throw new Error('Could not prepare any covers.');
+      this.active = true; this.idx = -1;
+      Host.endRound(false);
+      Host.broadcast({ type: 'quizStart', total: this.questions.length });
+      $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' covers.';
+      $('quizHostView').classList.remove('hidden');
+      this.next();
+    } catch (e) {
+      $('quizStatus').textContent = '⚠ ' + e.message;
+    }
+    btn.disabled = false;
+  },
+
+  next() {
+    if (!this.active) return;
+    this.idx++;
+    if (this.idx >= this.questions.length) return this.finish();
+    const q = this.questions[this.idx];
+    this.answers = {};
+    this.endsAt = Date.now() + this.flashMs + this.seconds * 1000;
+    Host.broadcast({
+      type: 'quizQ', n: this.idx + 1, total: this.questions.length,
+      img: q.img, options: q.options, flashMs: this.flashMs, seconds: this.seconds
+    });
+    $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
+      esc(q.answer) + ' <span class="muted">(waiting for answers…)</span>';
+    clearTimeout(this.tick);
+    this.tick = setTimeout(() => this.close(), this.flashMs + this.seconds * 1000 + 400);
+  },
+
+  answer(peerId, n, choice, ms) {
+    if (!this.active || n !== this.idx + 1 || this.answers[peerId]) return;
+    this.answers[peerId] = { choice, ms };
+    const q = this.questions[this.idx];
+    const p = Host.players[peerId];
+    if (p && choice === q.correct) {
+      const left = Math.max(0, this.endsAt - Date.now()) / 1000;
+      p.score += 10 + Math.round(10 * Math.min(1, left / this.seconds));
+    }
+    Host.renderScores();
+    // everyone in? don't make the room wait out the clock
+    const live = Object.values(Host.players).filter(x => x.online).length;
+    if (Object.keys(this.answers).length >= live) { clearTimeout(this.tick); setTimeout(() => this.close(), 350); }
+  },
+
+  close() {
+    if (!this.active) return;
+    const q = this.questions[this.idx];
+    Object.entries(Host.players).forEach(([id, p]) => {
+      const a = this.answers[id];
+      Host.sendTo(id, { type: 'quizResult', correct: q.correct, answer: q.answer, picked: a ? a.choice : -1, score: p.score });
+    });
+    Host.pushBoard();
+    $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' + esc(q.answer);
+    setTimeout(() => this.next(), 2600);
+  },
+
+  finish() {
+    this.active = false;
+    clearTimeout(this.tick);
+    Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
+    Host.pushBoard();
+    const top = Host.boardRows()[0];
+    $('quizStatus').textContent = 'Round finished.' + (top ? ' Winner: ' + top.name + ' on ' + top.score + '.' : '');
+    $('quizHostView').classList.add('hidden');
+    if (top) Sound.say(top.name + ' wins the album round!');
+  },
+
+  stop() {
+    if (!this.active) { $('quizStatus').textContent = 'No round running.'; return; }
+    this.active = false;
+    clearTimeout(this.tick);
+    Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
+    $('quizStatus').textContent = 'Round stopped.';
+    $('quizHostView').classList.add('hidden');
+  }
+};
+
+/* ======================================================================
    PLAYER — buzzer
    ====================================================================== */
 const Player = {
@@ -1410,7 +1690,95 @@ const Player = {
         $('pTeam').textContent = msg.teamMode && msg.team ? '· Team ' + msg.team : '';
         break;
       case 'info': this.setStatus(msg.text); break;
+
+      case 'quizStart':
+        this.hideExtras();
+        $('buzzBtn').classList.add('hidden');
+        $('quizPanel').classList.remove('hidden');
+        $('quizOptions').innerHTML = '';
+        $('quizFeedback').textContent = '';
+        $('quizCountdown').textContent = '';
+        this.setStatus('🖼️ Album cover round — ' + msg.total + ' covers. Watch closely!');
+        break;
+
+      case 'quizQ':
+        this.quizQuestion(msg);
+        break;
+
+      case 'quizResult': {
+        clearInterval(this._quizTimer);
+        $('quizCountdown').textContent = '';
+        const btns = [...$('quizOptions').querySelectorAll('button')];
+        btns.forEach((b, i) => {
+          b.disabled = true;
+          if (i === msg.correct) b.classList.add('right');
+          else if (i === msg.picked) b.classList.add('wrong');
+        });
+        const got = msg.picked === msg.correct;
+        $('quizFeedback').textContent = got ? '✅ Correct!' : (msg.picked < 0 ? '⏱ Too slow — ' + msg.answer : '❌ ' + msg.answer);
+        $('pScore').textContent = msg.score + ' pts';
+        this.vibe(got ? [80, 40, 80] : [300]);
+        break;
+      }
+
+      case 'quizEnd':
+        clearInterval(this._quizTimer);
+        $('quizPanel').classList.add('hidden');
+        $('buzzBtn').classList.remove('hidden');
+        this.setStatus('🏁 Round over!');
+        break;
     }
+  },
+
+  quizQuestion(msg) {
+    clearInterval(this._quizTimer);
+    this._quizN = msg.n;
+    this._quizAnswered = false;
+    this.setStatus('');
+    $('quizPanel').classList.remove('hidden');
+    $('buzzBtn').classList.add('hidden');
+    $('quizProgress').textContent = 'Cover ' + msg.n + ' of ' + msg.total;
+    $('quizFeedback').textContent = '';
+    $('quizOptions').innerHTML = '';
+    $('quizCountdown').textContent = '';
+    // flash the cover, then drop it away — the options only appear afterwards
+    // so nobody can sit and compare the picture against the answers
+    $('quizArt').src = msg.img;
+    $('quizArtWrap').classList.add('showing');
+    this.vibe([40]);
+    setTimeout(() => {
+      $('quizArtWrap').classList.remove('showing');
+      msg.options.forEach((opt, i) => {
+        const b = document.createElement('button');
+        b.className = 'quiz-opt';
+        b.textContent = opt;
+        b.onclick = () => this.quizAnswer(i, b);
+        $('quizOptions').appendChild(b);
+      });
+      let left = msg.seconds;
+      const cd = $('quizCountdown');
+      cd.textContent = left;
+      cd.classList.remove('hurry');
+      this._quizTimer = setInterval(() => {
+        left--;
+        cd.textContent = left > 0 ? left : '⏱';
+        if (left <= 3) cd.classList.add('hurry');
+        if (left <= 0) {
+          clearInterval(this._quizTimer);
+          [...$('quizOptions').querySelectorAll('button')].forEach(b => b.disabled = true);
+        }
+      }, 1000);
+    }, msg.flashMs);
+  },
+
+  quizAnswer(choice, btn) {
+    if (this._quizAnswered || !this.conn) return;
+    this._quizAnswered = true;
+    btn.classList.add('picked');
+    [...$('quizOptions').querySelectorAll('button')].forEach(b => b.disabled = true);
+    $('quizFeedback').textContent = 'Locked in…';
+    this.conn.send({ type: 'quizA', n: this._quizN, choice });
+    this.vibe([60]);
   },
 
   hideExtras() {
