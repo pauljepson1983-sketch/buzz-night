@@ -2590,10 +2590,29 @@ const Quiz = {
     // Whoever scored most in THIS round, not whoever leads overall — the old
     // version read the leaderboard and crowned the overall leader, so it
     // congratulated the wrong person whenever someone else won a round.
-    const scored = Object.entries(this.roundGains || {})
-      .map(([id, pts]) => ({ id, pts, name: (Host.players[id] || {}).name }))
-      .filter(x => x.name && x.pts > 0)
-      .sort((a, b) => b.pts - a.pts);
+    //
+    // In team mode it has to be the winning TEAM. Ranking individuals there
+    // told Amelia that "Ben took that one" while the board above it showed her
+    // own team winning the round — the celebration and the leaderboard were
+    // measuring different things.
+    let scored;
+    if (Host.teamMode) {
+      const byTeam = {};
+      Object.entries(this.roundGains || {}).forEach(([id, pts]) => {
+        const p = Host.players[id];
+        if (!p || pts <= 0) return;
+        const t = p.team || '?';
+        byTeam[t] = (byTeam[t] || 0) + pts;
+      });
+      scored = Object.entries(byTeam)
+        .map(([team, pts]) => ({ team, pts, name: 'Team ' + team }))
+        .sort((a, b) => b.pts - a.pts);
+    } else {
+      scored = Object.entries(this.roundGains || {})
+        .map(([id, pts]) => ({ id, pts, name: (Host.players[id] || {}).name }))
+        .filter(x => x.name && x.pts > 0)
+        .sort((a, b) => b.pts - a.pts);
+    }
     const win = scored[0] || null;
     const drawnWith = win ? scored.filter(x => x.pts === win.pts) : [];
     const roundName = this.ROUND_NAMES[this.mode] || 'round';
@@ -2602,26 +2621,38 @@ const Quiz = {
     // everyone hears the outcome, but each phone gets its own version of it
     Object.entries(Host.players).forEach(([id, p]) => {
       const mine = (this.roundGains || {})[id] || 0;
-      const iWon = !!win && drawnWith.some(x => x.id === id);
+      // in team mode you win because your TEAM won, not because you personally
+      // outscored the room
+      const iWon = !!win && (Host.teamMode
+        ? drawnWith.some(x => x.team === (p.team || '?'))
+        : drawnWith.some(x => x.id === id));
       Host.sendTo(id, {
         type: 'quizEnd', title, roundName,
         won: iWon, drawn: iWon && drawnWith.length > 1,
         winner: win ? (drawnWith.length > 1 ? drawnWith.map(x => x.name).join(' & ') : win.name) : null,
         winnerPts: win ? win.pts : 0,
-        yourPts: mine, yourScore: p.score, nobody: !win
+        teamMode: Host.teamMode,
+        yourPts: Host.teamMode && iWon ? win.pts : mine,
+        yourOwnPts: mine,
+        yourScore: p.score, nobody: !win
       });
     });
     Host.pushBoard();
 
-    // bank this round against everyone's all-time record
-    const gainsByName = {};
-    Object.entries(this.roundGains || {}).forEach(([id, pts]) => {
-      const p = Host.players[id];
-      if (p && pts > 0) gainsByName[p.name] = (gainsByName[p.name] || 0) + pts;
-    });
-    if (Object.keys(gainsByName).length) {
-      Hall.recordRound(this.mode, gainsByName, drawnWith.map(x => x.name));
-      Hall.render();
+    // Bank the round against everyone's all-time record — but not in team
+    // mode. Those records are an individual table, whole games there are
+    // already skipped, and counting rounds would have credited a "round win"
+    // to whoever personally scored most on the LOSING team.
+    if (!Host.teamMode) {
+      const gainsByName = {};
+      Object.entries(this.roundGains || {}).forEach(([id, pts]) => {
+        const p = Host.players[id];
+        if (p && pts > 0) gainsByName[p.name] = (gainsByName[p.name] || 0) + pts;
+      });
+      if (Object.keys(gainsByName).length) {
+        Hall.recordRound(this.mode, gainsByName, drawnWith.map(x => x.name));
+        Hall.render();
+      }
     }
 
     $('quizStatus').textContent = win
@@ -3203,10 +3234,16 @@ const Player = {
             '<div class="rc-how">Brutal round. Next one is yours.</div>';
         } else if (msg.won) {
           el.classList.add('celebrate');
+          const headline = msg.drawn
+            ? (msg.teamMode ? 'IT’S A DRAW!' : 'YOU DREW IT!')
+            : (msg.teamMode ? esc(msg.winner) + ' WINS THE ROUND!' : 'YOU WON THE ROUND!');
+          const detail = msg.teamMode
+            ? msg.yourPts + ' points for your team' + (msg.yourOwnPts ? ' — ' + msg.yourOwnPts + ' of them yours' : '')
+            : msg.yourPts + ' points this round' + (msg.drawn ? ', level with ' + esc(msg.winner) : '');
           body = '<div class="rc-kicker">' + esc(msg.title) + '</div>' +
             '<div class="rc-win">' + (msg.drawn ? '🤝' : '🏆') + '</div>' +
-            '<div class="rc-name">' + (msg.drawn ? 'YOU DREW IT!' : 'YOU WON THE ROUND!') + '</div>' +
-            '<div class="rc-how">' + msg.yourPts + ' points this round' + (msg.drawn ? ', level with ' + esc(msg.winner) : '') + '</div>';
+            '<div class="rc-name">' + headline + '</div>' +
+            '<div class="rc-how">' + detail + '</div>';
           this.vibe([80, 50, 80, 50, 80, 50, 350]);
         } else {
           // losing quietly is worse than losing loudly — say something
