@@ -364,6 +364,7 @@
             <b style="font-size:.9rem">2. Build it</b>
             <button class="btn green small" onclick="Night.preset(5)">🎉 Full night (5 rounds)</button>
             <button class="btn ghost small" onclick="Night.preset(3)">⚡ Short night (3)</button>
+            <button class="btn ghost small" onclick="Night.surprise()">🎲 Surprise me</button>
           </div>
           <div class="row">
             <span class="muted" style="font-size:.8rem">or add one at a time:</span>
@@ -405,7 +406,6 @@
             <option value="faces">Famous faces</option>
             <option value="years">Year of release (music)</option>
             <option value="themes">Film themes (music)</option>
-            <option value="posters">Film poster details</option>
           </select>
         </div>
         <div class="row mb sound-settings">
@@ -2120,52 +2120,6 @@ const Quiz = {
     return films;
   },
 
-  // Pick a square detail from the artwork that has plenty going on but little
-  // text. Film posters put the title dead centre, so unlike album sleeves the
-  // edges are the safer place to look.
-  async cropDetail(url, out = 420) {
-    const img = await new Promise((res, rej) => {
-      const im = new Image(); im.crossOrigin = 'anonymous';
-      im.onload = () => res(im); im.onerror = () => rej(new Error('image load failed'));
-      im.src = url;
-    });
-    const S = 600;
-    const work = document.createElement('canvas');
-    work.width = work.height = S;
-    const wx = work.getContext('2d');
-    wx.drawImage(img, 0, 0, S, S);
-
-    const crop = Math.round(S * 0.38);
-    const spots = [];
-    for (let gy = 0; gy < 4; gy++) for (let gx = 0; gx < 4; gx++) {
-      spots.push([Math.round(gx * (S - crop) / 3), Math.round(gy * (S - crop) / 3)]);
-    }
-    // Scoring on "detail" was tried first and failed badly — text IS the most
-    // detailed thing on a poster, so it picked the lettering every time and
-    // served up crops reading BRIDGET JONES and ELVIS. Tonal spread works far
-    // better: photographs use the whole range, whereas text is a flat
-    // background plus hard strokes and piles into a couple of brightness bins.
-    let best = spots[5], bestScore = -Infinity;
-    try {
-      spots.forEach(([x, y]) => {
-        const d = wx.getImageData(x, y, crop, crop).data;
-        const bins = new Array(32).fill(0);
-        let n = 0;
-        for (let i = 0; i < d.length; i += 16) {
-          const lum = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-          bins[Math.min(31, Math.floor(lum / 8))]++; n++;
-        }
-        let entropy = 0;
-        bins.forEach(b => { if (b) { const p = b / n; entropy -= p * Math.log2(p); } });
-        if (entropy > bestScore) { bestScore = entropy; best = [x, y]; }
-      });
-    } catch (e) { /* no pixel access: fall back to a fixed crop */ }
-
-    const c = document.createElement('canvas');
-    c.width = c.height = out;
-    c.getContext('2d').drawImage(work, best[0], best[1], crop, crop, 0, 0, out, out);
-    return c.toDataURL('image/jpeg', 0.74);
-  },
 
   /* ---- question building ---- */
   async build(topic, count, label) {
@@ -2443,12 +2397,11 @@ const Quiz = {
         qs.forEach(q => { q.img = q.url; });
         this.questions = qs;
       } else {
-        const noun = this.mode === 'posters' ? 'poster' : this.mode === 'faces' ? 'face' : 'cover';
+        const noun = this.mode === 'faces' ? 'face' : 'cover';
         for (let i = 0; i < qs.length; i++) {
           $('quizStatus').textContent = 'Preparing ' + noun + ' ' + (i + 1) + ' of ' + qs.length + '…';
           try {
-            qs[i].img = this.mode === 'posters' ? await this.cropDetail(qs[i].url)
-                      : this.mode === 'faces' ? await this.cropFace(qs[i].url)
+            qs[i].img = this.mode === 'faces' ? await this.cropFace(qs[i].url)
                       : await this.redact(qs[i].url);
           } catch (e) { qs[i].img = null; }
         }
@@ -2465,7 +2418,7 @@ const Quiz = {
         roundLabel: this.roundLabel || ''
       });
       const short = this.questions.length < count;
-      const noun = { covers: 'covers', backdrops: 'stills', themes: 'themes', posters: 'posters', faces: 'faces', years: 'songs' }[this.mode] || 'questions';
+      const noun = { covers: 'covers', backdrops: 'stills', themes: 'themes', faces: 'faces', years: 'songs' }[this.mode] || 'questions';
       $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' ' + noun + ' from ' + label +
         (short ? '. (Only ' + this.available + ' different albums matched, so that is all there was.)' : '.');
       $('quizHostView').classList.remove('hidden');
@@ -2522,7 +2475,6 @@ const Quiz = {
       covers: 'Covers flash on every phone for a moment, then drop away leaving four choices. Scored automatically, so you can play too.',
       backdrops: 'A still from the film flashes up, then four titles. Stills have no writing on them, so nothing gives the answer away. Decade applies; style is ignored. Film data and images from TMDB.',
       themes: 'The film’s theme plays on your speaker and four films appear on the phones. Decade applies; style is ignored.',
-      posters: 'A zoomed-in corner of the poster appears, chosen to avoid the title. Decade applies; style is ignored.',
       years: 'A song plays and four years appear. Decade applies; style narrows it. Remasters are filtered out so the dates are honest.',
       faces: 'A face flashes up and four names appear — drawn from the cast of well-known films, so they are people the room will know. Crop into it makes it much harder. Decade applies; style is ignored. Faces from TMDB.'
     };
@@ -2646,24 +2598,23 @@ const Quiz = {
   // actually being played, so players could not tell what round they were in.
   TITLES: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
-    posters: '🎞️ Film posters', years: '📅 Year of release', faces: '⭐ Famous faces'
+    years: '📅 Year of release', faces: '⭐ Famous faces'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
-    posters: 'Poster', years: 'Song', faces: 'Face'
+    years: 'Song', faces: 'Face'
   },
   HOWTO: {
     covers: 'A cover flashes up, then four albums. Pick the right one.',
     backdrops: 'A scene from the film flashes up, then four titles.',
     themes: 'Listen to the theme, then pick the film.',
-    posters: 'A zoomed-in piece of the poster, then four titles.',
     years: 'Listen, then pick the year it came out.',
     faces: 'A face flashes up, then four names. Quick!'
   },
 
   ROUND_NAMES: {
     covers: 'album cover round', backdrops: 'film stills round',
-    themes: 'film themes round', posters: 'film poster round',
+    themes: 'film themes round',
     years: 'year of release round',
     faces: 'famous faces round'
   },
@@ -2798,7 +2749,7 @@ const Night = {
   plan: [], idx: -1, running: false, waiting: false,
 
   LABELS: {
-    covers: '🖼️ Album covers', backdrops: '🎬 Film stills', posters: '🎞️ Film poster details',
+    covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
     themes: '🎵 Film themes', years: '📅 Year of release', faces: '⭐ Famous faces', buzzer: '🔔 Buzzer round (you judge)'
   },
 
@@ -2807,6 +2758,9 @@ const Night = {
     // strip flavours off rounds that ignore them, so old saved plans stop
     // claiming to be Christmassy when they never were
     this.plan.forEach(r => { if (r.mode && !this.STYLE_USED_BY.includes(r.mode)) r.style = ''; });
+    // the poster round was removed: its crops leaked the title on half the
+    // films tested. Film stills is the same idea with no text at all.
+    this.plan.forEach(r => { if (r.mode === 'posters') r.mode = 'backdrops'; });
     this.quickChanged();
     this.render();
   },
@@ -2860,6 +2814,30 @@ const Night = {
   quickAdd(mode) {
     this.plan.push(this.defaultsFor(mode));
     this.save(); this.render();
+  },
+
+  // A whole night decided for you — random era, random mix, shuffled order.
+  // Sets the pickers too, so what you see is what you got.
+  surprise() {
+    const eras = ['1970-1979', '1980-1989', '1990-1999', '2000-2009', '2010-2019'];
+    const era = eras[Math.floor(Math.random() * eras.length)];
+    $('quickDecade').value = era;
+    $('quickStyle').value = '';
+    this.quickChanged();
+
+    const pool = ['faces', 'years', 'backdrops', 'covers', 'themes'];
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    const size = 4 + Math.floor(Math.random() * 2); // 4 or 5
+    this.plan = pool.slice(0, size).map(m => {
+      const r = this.defaultsFor(m);
+      r.count = 6 + Math.floor(Math.random() * 5);          // 6-10
+      if (m === 'faces') r.crop = Math.random() < 0.7 ? 'crop' : 'whole';
+      if (m === 'years' || m === 'themes') r.startAt = Math.random() < 0.5 ? 'skip' : 'random';
+      return r;
+    });
+    this.save(); this.render();
+    const label = era.slice(0, 4) + 's';
+    $('nightStatus').textContent = '🎲 ' + this.plan.length + ' random rounds, ' + label + '. Press "Start the night" when everyone has joined.';
   },
 
   preset(size) {
