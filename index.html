@@ -1483,6 +1483,7 @@ const Host = {
         conn, name: wanted, online: true,
         score: carry ? carry.score : 0, team: carry ? carry.team : null,
         rtt: 60, locked: false, lastSeen: Date.now(), reactions: carry ? carry.reactions : [],
+        stats: carry && carry.stats ? carry.stats : this.blankStats(),
         buzzer: carry ? carry.buzzer : null, voice: carry ? carry.voice : null,
         style: carry ? carry.style : null
       };
@@ -1577,6 +1578,8 @@ const Host = {
      night drag. The host already pings every 4s, so treat a player as here
      only if they have said something recently AND the socket still looks open.
   --------------------------------------------------------------------- */
+  blankStats() { return { answered: 0, correct: 0, firstIn: 0, bestSingle: 0, byMode: {} }; },
+
   PRESENT_MS: 12000,
   isPresent(p) {
     if (!p || !p.online || !p.conn) return false;
@@ -1836,6 +1839,52 @@ const Host = {
     return timed[0];
   },
 
+  /* ---- awards -----------------------------------------------------------
+     One winner and everyone else a loser is a flat ending, especially with a
+     big group. These hand out a spread of titles from what actually happened,
+     and are assigned greedily so as many different people get one as possible
+     — someone who would top three categories only takes the first, and the
+     rest go to other people. Nobody is named for anything unflattering.
+  --------------------------------------------------------------------- */
+  awards() {
+    const people = Object.values(this.players).filter(p => p.stats && (p.stats.answered || p.reactions.length));
+    if (people.length < 2) return [];
+
+    const best = (label, emoji, pick, fmt) => {
+      const ranked = people.map(p => ({ p, v: pick(p) })).filter(x => x.v != null && x.v > 0)
+        .sort((a, b) => b.v - a.v);
+      return ranked.length ? { label, emoji, name: ranked[0].p.name, detail: fmt(ranked[0].v), score: ranked[0].v } : null;
+    };
+
+    const cands = [];
+    cands.push(best('Sharpshooter', '🎯', p => p.stats.answered >= 3 ? Math.round(100 * p.stats.correct / p.stats.answered) : 0, v => v + '% correct'));
+    cands.push(best('Quickest draw', '⚡', p => p.stats.firstIn, v => v + ' answered first'));
+    cands.push(best('Biggest single hit', '💥', p => p.stats.bestSingle, v => v + ' points in one go'));
+    cands.push(best('Never gave up', '🎪', p => p.stats.answered, v => v + ' questions attempted'));
+
+    // fastest buzzer is a low-is-better stat, so it doesn't fit the helper
+    const timed = people.filter(p => p.reactions.length).map(p => ({ p, v: this.avgFor(p) })).sort((a, b) => a.v - b.v);
+    if (timed.length) cands.push({ label: 'Fastest finger', emoji: '🏎️', name: timed[0].p.name, detail: secs(timed[0].v) + ' average', score: 1e6 });
+
+    // specialist titles, one per category anyone actually scored in
+    const modes = {};
+    people.forEach(p => Object.entries(p.stats.byMode || {}).forEach(([m, pts]) => {
+      if (!modes[m] || pts > modes[m].pts) modes[m] = { pts, name: p.name };
+    }));
+    Object.entries(modes).forEach(([m, x]) => {
+      cands.push({ label: (Quiz.TITLES[m] || m).replace(/^\S+\s/, '') + ' specialist', emoji: '🎖️', name: x.name, detail: x.pts + ' points there', score: x.pts });
+    });
+
+    // spread them: strongest claim first, one award each until people run out
+    const taken = new Set(), out = [];
+    cands.filter(Boolean).sort((a, b) => b.score - a.score).forEach(a => {
+      if (taken.has(a.name)) return;
+      taken.add(a.name);
+      out.push(a);
+    });
+    return out.slice(0, 6);
+  },
+
   // a player's own announcer settings, so the finale calls their name in the
   // voice they picked
   voiceFor(name) {
@@ -1947,8 +1996,13 @@ const Host = {
       this.broadcast({ type: 'finale', stage: 'fastest', row: fastest });
       Sound.say('Fastest finger of the night, ' + fastest.name + ', averaging ' + (fastest.avg/1000).toFixed(2) + ' seconds.');
     }]);
-    steps.push([4200, () => {
-      this.broadcast({ type: 'finale', stage: 'table', rows, fastest });
+    const gongs = this.awards();
+    if (gongs.length) steps.push([4200, () => {
+      this.broadcast({ type: 'finale', stage: 'awards', awards: gongs });
+      Sound.say('And the night’s awards go to: ' + gongs.map(a => a.name + ', ' + a.label).join('. '));
+    }]);
+    steps.push([gongs.length ? 6500 : 4200, () => {
+      this.broadcast({ type: 'finale', stage: 'table', rows, fastest, awards: gongs });
       this.finaleRunning = false;
     }]);
 
@@ -2524,6 +2578,7 @@ const Quiz = {
     this.answers[peerId] = { choice, ms };
     const q = this.questions[this.idx];
     const p = Host.players[peerId];
+    if (p) { p.stats = p.stats || Host.blankStats(); p.stats.answered++; }
     let gained = 0;
     if (p && choice === q.correct) {
       // 10 for being right, up to 20 more for speed, and 5 on top for getting
@@ -2533,6 +2588,10 @@ const Quiz = {
       if (!this.firstCorrect) { this.firstCorrect = peerId; gained += 5; }
       p.score += gained;
       this.gains[peerId] = gained;
+      p.stats.correct++;
+      p.stats.byMode[this.mode] = (p.stats.byMode[this.mode] || 0) + gained;
+      if (this.firstCorrect === peerId) p.stats.firstIn++;
+      if (gained > p.stats.bestSingle) p.stats.bestSingle = gained;
       // running total for THIS round, so the round winner is whoever did best
       // here rather than whoever happens to lead overall
       this.roundGains[peerId] = (this.roundGains[peerId] || 0) + gained;
@@ -3395,11 +3454,27 @@ const Player = {
       this.vibe([60, 40, 60]);
       return;
     }
+    if (msg.stage === 'awards') {
+      const mine = (this.name || '').toLowerCase();
+      el.innerHTML = '<div class="fin-title">🎖️ Awards of the night</div>' +
+        msg.awards.map(a =>
+          '<div class="fin-line' + (a.name.toLowerCase() === mine ? ' me' : '') + '">' +
+          a.emoji + ' <b>' + esc(a.name) + '</b> — ' + esc(a.label) +
+          '<div class="fin-avg">' + esc(a.detail) + '</div></div>').join('');
+      if (msg.awards.some(a => a.name.toLowerCase() === mine)) this.vibe([80, 50, 80, 50, 200]);
+      return;
+    }
     if (msg.stage === 'table') {
+      const mine = (this.name || '').toLowerCase();
       el.innerHTML = '<div class="fin-title">🏁 Final scores</div>' + msg.rows.map((r, i) =>
         '<div class="fin-line' + (isMe(r) ? ' me' : '') + '">' + (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.') +
         ' ' + esc(r.name) + ' <b>' + r.score + '</b>' + (r.avg != null ? ' <span class="fin-avg">' + secs(r.avg) + '</span>' : '') + '</div>').join('') +
-        (msg.fastest ? '<div class="fin-line">⚡ Fastest finger: ' + esc(msg.fastest.name) + ' (' + secs(msg.fastest.avg) + ')</div>' : '');
+        (msg.fastest ? '<div class="fin-line">⚡ Fastest finger: ' + esc(msg.fastest.name) + ' (' + secs(msg.fastest.avg) + ')</div>' : '') +
+        ((msg.awards || []).length
+          ? '<div class="fin-title" style="font-size:1rem;margin-top:10px">🎖️ Awards</div>' +
+            msg.awards.map(a => '<div class="fin-line' + (a.name.toLowerCase() === mine ? ' me' : '') + '">' +
+              a.emoji + ' ' + esc(a.name) + ' — ' + esc(a.label) + '</div>').join('')
+          : '');
     }
   },
 
