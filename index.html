@@ -373,9 +373,11 @@
               <option value="1960-1969">60s</option>
               <option value="1970-1979">70s</option>
               <option value="1980-1989">80s</option>
-              <option value="1990-1999">90s</option>
-              <option value="2000-2009" selected>00s</option>
+              <option value="1990-1999" selected>90s</option>
+              <option value="2000-2009">00s</option>
               <option value="2010-2019">10s</option>
+              <option value="2020-2029">20s</option>
+              <option value="mixed">🎲 Mixed decades</option>
             </select>
             <label for="quickStyle">Flavour</label>
             <select id="quickStyle" onchange="Night.quickChanged()">
@@ -3012,16 +3014,24 @@ const Night = {
 
   // which modes actually read the style/flavour word
   STYLE_USED_BY: ['covers', 'years'],
+  DECADES: ['1960-1969', '1970-1979', '1980-1989', '1990-1999', '2000-2009', '2010-2019', '2020-2029'],
+
+  randomDecade() { return this.DECADES[Math.floor(Math.random() * this.DECADES.length)]; },
 
   quickChanged() {
     const style = $('quickStyle').value;
-    $('quickNote').textContent = style
-      ? 'Flavour "' + style + '" applies to Covers and Years. Faces, Stills, Themes and Posters ignore it — they follow the era only.'
-      : '';
+    const mixed = $('quickDecade').value === 'mixed';
+    const bits = [];
+    if (mixed) bits.push('Mixed decades: every round gets its own era, so the night ranges across the years.');
+    if (style) bits.push('Flavour "' + style + '" applies to Covers and Years. Faces, Stills and Themes ignore it — they follow the era only.');
+    $('quickNote').textContent = bits.join(' ');
   },
 
   defaultsFor(mode) {
-    const decade = $('quickDecade').value;
+    let decade = $('quickDecade').value;
+    // "mixed" is a UI choice, never a real search value — resolve it to a
+    // concrete decade per round so each one lands somewhere different
+    if (decade === 'mixed') decade = this.randomDecade();
     const style = $('quickStyle').value;
     return {
       mode, decade,
@@ -3045,25 +3055,31 @@ const Night = {
   // A whole night decided for you — random era, random mix, shuffled order.
   // Sets the pickers too, so what you see is what you got.
   surprise() {
-    const eras = ['1970-1979', '1980-1989', '1990-1999', '2000-2009', '2010-2019'];
-    const era = eras[Math.floor(Math.random() * eras.length)];
-    $('quickDecade').value = era;
+    // Every round gets its OWN decade. Picking one era for the whole night
+    // meant a "random" night was still all 2000s, which is barely a surprise
+    // and wastes the fact that the rounds are independent.
+    $('quickDecade').value = 'mixed';
     $('quickStyle').value = '';
     this.quickChanged();
 
     const pool = ['faces', 'years', 'backdrops', 'covers', 'themes'];
     for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
     const size = 4 + Math.floor(Math.random() * 2); // 4 or 5
+    const used = [];
     this.plan = pool.slice(0, size).map(m => {
-      const r = this.defaultsFor(m);
+      const r = this.defaultsFor(m);   // resolves "mixed" to its own decade
+      // nudge away from repeating a decade already used this night
+      let guard = 0;
+      while (used.includes(r.decade) && guard++ < 8) r.decade = this.randomDecade();
+      used.push(r.decade);
       r.count = 6 + Math.floor(Math.random() * 5);          // 6-10
       if (m === 'faces') r.crop = Math.random() < 0.7 ? 'crop' : 'whole';
       if (m === 'years' || m === 'themes') r.startAt = Math.random() < 0.5 ? 'skip' : 'random';
       return r;
     });
     this.save(); this.render();
-    const label = era.slice(0, 4) + 's';
-    $('nightStatus').textContent = '🎲 ' + this.plan.length + ' random rounds, ' + label + '. Press "Start the night" when everyone has joined.';
+    const eras = [...new Set(used)].sort().map(d => d.slice(2, 4) + 's').join(', ');
+    $('nightStatus').textContent = '🎲 ' + this.plan.length + ' random rounds across the ' + eras + '. Press "Start the night" when everyone has joined.';
   },
 
   preset(size) {
