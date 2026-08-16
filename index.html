@@ -539,10 +539,18 @@ const Spot = {
   async search(q) {
     if (!q) return;
     try {
-      // Spotify rejects limit > 10 on /search for apps in development mode
-      const d = await this.api('/search?' + new URLSearchParams({ q, type: 'track', limit: 10 }));
+      // Spotify caps /search at 10 results per call for development-mode apps,
+      // so page through it — 10 is too few to pick a quiz track from. Pages
+      // overlap sometimes, hence the dedupe.
+      const pages = await Promise.all([0, 10, 20, 30].map(offset =>
+        this.api('/search?' + new URLSearchParams({ q, type: 'track', limit: 10, offset })).catch(() => null)
+      ));
+      const seen = new Set(), items = [];
+      pages.filter(Boolean).forEach(p => (p.tracks?.items || []).forEach(tr => {
+        if (tr && !seen.has(tr.id)) { seen.add(tr.id); items.push(tr); }
+      }));
       $('playlistRow').classList.add('hidden');
-      this.renderTracks(d.tracks.items);
+      this.renderTracks(items);
     } catch(e) { alert(e.message); }
   },
 
