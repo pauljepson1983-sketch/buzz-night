@@ -1446,30 +1446,38 @@ const Quiz = {
       rows = null; // tainted canvas: fall through to the fixed-band fallback
     }
 
-    let bands = [];
+    // Edges get blanked unconditionally. Detection alone was tested across a
+    // sample of real sleeves and missed roughly half of them (Ocean Colour
+    // Scene, Wolf Alice, the second line of a Beautiful South cover) because
+    // stylised logo type doesn't produce the sharp gradients printed text does.
+    // Sleeve text sits at the top or bottom nearly every time, so blanking
+    // those outright is far more reliable than trying to be clever, and a
+    // tighter window suits a one-second glimpse anyway.
+    const TOP = Math.round(size * 0.30), BOT = Math.round(size * 0.24);
+    const bands = [[0, TOP], [size - BOT, BOT]];
+
+    // detection now only has to catch text sitting in the middle of the art
     if (rows) {
-      const sorted = Array.from(rows).sort((a, b) => a - b);
+      const mid = Array.from(rows).slice(TOP, size - BOT);
+      const sorted = mid.slice().sort((a, b) => a - b);
       const median = sorted[Math.floor(sorted.length / 2)] || 1;
-      const threshold = Math.max(median * 2.1, 900);
+      const threshold = Math.max(median * 1.6, 400);
+      const found = [];
       let start = -1;
-      for (let y = 0; y <= size; y++) {
-        const busy = y < size && rows[y] > threshold;
+      for (let y = TOP; y <= size - BOT; y++) {
+        const busy = y < size - BOT && rows[y] > threshold;
         if (busy && start < 0) start = y;
         if (!busy && start >= 0) {
           const h = y - start;
-          // text-sized bands only: ignore single noisy lines and huge areas
-          if (h >= size * 0.025 && h <= size * 0.3) bands.push([start, h]);
+          if (h >= size * 0.02 && h <= size * 0.22) found.push([start, h]);
           start = -1;
         }
       }
-      bands.sort((a, b) => b[1] - a[1]);
-      bands = bands.slice(0, 3);
-      let total = bands.reduce((s, b) => s + b[1], 0);
-      while (total > size * 0.45 && bands.length) { total -= bands.pop()[1]; }
+      found.sort((a, b) => b[1] - a[1]);
+      // cap the extra coverage so a busy sleeve isn't blacked out completely
+      let budget = size * 0.2;
+      found.slice(0, 2).forEach(f => { if (f[1] <= budget) { bands.push(f); budget -= f[1]; } });
     }
-    // nothing convincing found (or no pixel access): blank the usual edges,
-    // which is where sleeve text sits most often
-    if (!bands.length) bands = [[0, Math.round(size * 0.16)], [Math.round(size * 0.84), Math.round(size * 0.16)]];
 
     cx.fillStyle = '#12082b';
     bands.forEach(([y, h]) => {
@@ -1494,7 +1502,9 @@ const Quiz = {
       const key = (al.name + '|' + artist).toLowerCase().replace(/\s*[\(\[].*$/, '').trim();
       if (seen.has(key)) return;
       seen.add(key);
-      albums.push({ label: al.name + ' — ' + artist, url: al.images[0].url });
+      // "(2019 Remaster)" and friends just clutter the four options
+      const clean = al.name.replace(/\s*[\(\[][^)\]]*(remaster|deluxe|edition|version|expanded|anniversary|reissue|mono|stereo)[^)\]]*[\)\]]\s*$/i, '').trim();
+      albums.push({ label: (clean || al.name) + ' — ' + artist, url: al.images[0].url });
     });
     if (albums.length < 4) throw new Error('Not enough different albums for “' + topic + '”. Try a broader topic.');
 
