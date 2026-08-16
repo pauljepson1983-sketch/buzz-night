@@ -270,8 +270,48 @@
         <h2>🖼️ Album cover round</h2>
         <p class="muted" style="font-size:.85rem">Covers flash on every phone for a moment, then drop away leaving four choices. Scored automatically, so you can play too.</p>
         <div class="row mb sound-settings">
-          <label for="quizTopic">Topic</label>
-          <input type="text" id="quizTopic" class="grow" placeholder="e.g. 90s albums, britpop, movie soundtracks">
+          <label for="quizDecade">Decade</label>
+          <select id="quizDecade">
+            <option value="">Any</option>
+            <option value="1960-1969">1960s</option>
+            <option value="1970-1979">1970s</option>
+            <option value="1980-1989">1980s</option>
+            <option value="1990-1999">1990s</option>
+            <option value="2000-2009">2000s</option>
+            <option value="2010-2019">2010s</option>
+            <option value="2020-2029">2020s</option>
+          </select>
+          <label for="quizStyle">Style</label>
+          <select id="quizStyle">
+            <option value="">Any</option>
+            <option>pop</option>
+            <option>rock</option>
+            <option>indie</option>
+            <option>britpop</option>
+            <option>dance</option>
+            <option>house</option>
+            <option>hip hop</option>
+            <option>rnb</option>
+            <option>soul</option>
+            <option>motown</option>
+            <option>disco</option>
+            <option>metal</option>
+            <option>punk</option>
+            <option>reggae</option>
+            <option>country</option>
+            <option>folk</option>
+            <option>jazz</option>
+            <option>blues</option>
+            <option>classical</option>
+            <option value="movie soundtrack">movie soundtracks</option>
+            <option value="tv theme">TV themes</option>
+            <option value="musical">musicals</option>
+            <option value="christmas">Christmas</option>
+          </select>
+        </div>
+        <div class="row mb sound-settings">
+          <label for="quizTopic">Also</label>
+          <input type="text" id="quizTopic" class="grow" placeholder="optional extra words — e.g. oasis, girl bands, one hit wonders">
         </div>
         <div class="row mb sound-settings">
           <label for="quizCount">Questions</label>
@@ -1493,7 +1533,7 @@ const Quiz = {
   },
 
   /* ---- question building ---- */
-  async build(topic, count) {
+  async build(topic, count, label) {
     const { tracks } = await Spot.searchRaw(topic);
     // one entry per album, and dedupe on name+artist so remasters and
     // re-releases can't appear as two identical options
@@ -1508,7 +1548,8 @@ const Quiz = {
       const clean = al.name.replace(/\s*[\(\[][^)\]]*(remaster|deluxe|edition|version|expanded|anniversary|reissue|mono|stereo)[^)\]]*[\)\]]\s*$/i, '').trim();
       albums.push({ label: (clean || al.name) + ' — ' + artist, url: al.images[0].url });
     });
-    if (albums.length < 4) throw new Error('Not enough different albums for “' + topic + '”. Try a broader topic.');
+    if (albums.length < 4) throw new Error('Only found ' + albums.length + ' albums for ' + (label || topic) + ' — too narrow to make a round. Widen the decade or style.');
+    this.available = albums.length;
 
     const pool = albums.slice();
     for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
@@ -1525,16 +1566,26 @@ const Quiz = {
 
   async start() {
     if (!Host.peer) { alert('Create the room first.'); return; }
-    const topic = ($('quizTopic').value || '').trim();
-    if (!topic) { alert('Type a topic first, e.g. “90s albums”.'); return; }
+    // Genre goes in as a plain word, not Spotify's genre: filter. Tested both:
+    // "genre:britpop year:1990-1999" returns about two tracks, whereas
+    // "britpop year:1990-1999" returns thirty distinct albums. The year filter
+    // is worth keeping though — without it a decade search is full of
+    // remasters carrying their re-release date.
+    const decade = $('quizDecade').value;
+    const style = $('quizStyle').value;
+    const extra = ($('quizTopic').value || '').trim();
+    const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
+    if (!topic) { alert('Pick a decade or a style first (or type something in the Also box).'); return; }
     const count = parseInt($('quizCount').value, 10);
     this.flashMs = parseInt($('quizFlash').value, 10);
     this.seconds = parseInt($('quizSecs').value, 10);
     const btn = $('quizStartBtn');
     btn.disabled = true;
     $('quizStatus').textContent = 'Finding albums and blanking out the text…';
+    const decadeLabel = decade ? decade.slice(0, 4) + 's' : '';
+    const label = [style, extra, decadeLabel].filter(Boolean).join(', ') || 'that';
     try {
-      const qs = await this.build(topic, count);
+      const qs = await this.build(topic, count, label);
       // redact up front so there's no stall between questions
       for (let i = 0; i < qs.length; i++) {
         $('quizStatus').textContent = 'Preparing cover ' + (i + 1) + ' of ' + qs.length + '…';
@@ -1545,7 +1596,9 @@ const Quiz = {
       this.active = true; this.idx = -1;
       Host.endRound(false);
       Host.broadcast({ type: 'quizStart', total: this.questions.length });
-      $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' covers.';
+      const short = this.questions.length < count;
+      $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' covers from ' + label +
+        (short ? '. (Only ' + this.available + ' different albums matched, so that is all there was.)' : '.');
       $('quizHostView').classList.remove('hidden');
       this.next();
     } catch (e) {
