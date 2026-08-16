@@ -57,6 +57,11 @@
   }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .grow { flex: 1; }
+  .sound-settings label { color: var(--muted); font-size: .85rem; min-width: 56px; }
+  .sound-settings select {
+    padding: 7px 10px; border-radius: 10px; border: 1px solid var(--panel2);
+    background: #1a0d38; color: var(--text); font-size: .85rem; max-width: 260px;
+  }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
   th { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; }
@@ -207,6 +212,19 @@
       <div class="card">
         <h2>🚨 Round control</h2>
         <label class="muted mb" style="display:block; font-size:.85rem"><input type="checkbox" id="announceToggle" checked> Buzzer sound + speak the buzzer's name</label>
+        <div class="row mb sound-settings">
+          <label for="buzzSound">Buzzer</label>
+          <select id="buzzSound" onchange="Sound.setBuzzChoice(this.value)"></select>
+          <button class="btn ghost small" onclick="Sound.buzz()">▶ Test</button>
+          <button class="btn ghost small" id="recBtn" onclick="Sound.toggleRecord()">🎙 Record your own</button>
+          <button class="btn ghost small" onclick="document.getElementById('soundFile').click()">📁 Upload</button>
+          <input type="file" id="soundFile" accept="audio/*" class="hidden" onchange="Sound.loadFile(this.files[0]); this.value=''">
+        </div>
+        <div class="row mb sound-settings">
+          <label for="voicePick">Accent</label>
+          <select id="voicePick" onchange="Sound.setVoice(this.value)"></select>
+          <button class="btn ghost small" onclick="Sound.say('Paul buzzed first')">▶ Test</button>
+        </div>
         <div class="row">
           <button class="btn big green" id="armBtn" onclick="App.armBuzzers()">ARM BUZZERS</button>
         </div>
@@ -615,47 +633,213 @@ const Spot = {
    ====================================================================== */
 const Sound = {
   ctx: null,
+  recorder: null, chunks: [],
+  PRESETS: [
+    ['classic',  'Classic buzz'],
+    ['airhorn',  'Air horn'],
+    ['ding',     'Game show ding'],
+    ['klaxon',   'Klaxon'],
+    ['doorbell', 'Doorbell'],
+    ['boing',    'Boing']
+  ],
+  // language code -> what it actually sounds like reading an English name
+  ACCENTS: {
+    'en-GB': 'British', 'en-US': 'American', 'en-AU': 'Australian', 'en-IE': 'Irish',
+    'en-IN': 'Indian', 'en-ZA': 'South African', 'en-CA': 'Canadian', 'en-NZ': 'Kiwi',
+    'fr-FR': 'French', 'fr-CA': 'Québécois', 'de-DE': 'German', 'es-ES': 'Spanish',
+    'es-US': 'Latin American', 'it-IT': 'Italian', 'pt-BR': 'Brazilian', 'pt-PT': 'Portuguese',
+    'nl-NL': 'Dutch', 'pl-PL': 'Polish', 'ru-RU': 'Russian', 'sv-SE': 'Swedish',
+    'da-DK': 'Danish', 'nb-NO': 'Norwegian', 'fi-FI': 'Finnish', 'tr-TR': 'Turkish',
+    'hi-IN': 'Indian', 'ja-JP': 'Japanese', 'ko-KR': 'Korean', 'id-ID': 'Indonesian',
+    'th-TH': 'Thai', 'vi-VN': 'Vietnamese', 'ar-SA': 'Arabic', 'he-IL': 'Hebrew',
+    'el-GR': 'Greek', 'cs-CZ': 'Czech', 'hu-HU': 'Hungarian', 'ro-RO': 'Romanian',
+    'uk-UA': 'Ukrainian', 'zh-CN': 'Mandarin', 'zh-HK': 'Cantonese', 'zh-TW': 'Taiwanese'
+  },
   get enabled() { const t = $('announceToggle'); return !t || t.checked; },
+  get choice() { return store.get('buzz_sound') || 'classic'; },
+  get customUrl() { return store.get('buzz_sound_custom'); },
+
   ensure() {
     if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     if (this.ctx.state === 'suspended') this.ctx.resume();
   },
+
+  // shared output stage: the compressor is what lets these be genuinely loud
+  // in a noisy room without crackling
+  bus() {
+    const t = this.ctx.currentTime;
+    const comp = this.ctx.createDynamicsCompressor();
+    comp.threshold.setValueAtTime(-18, t);
+    comp.ratio.setValueAtTime(12, t);
+    comp.attack.setValueAtTime(0.002, t);
+    comp.release.setValueAtTime(0.15, t);
+    const master = this.ctx.createGain();
+    master.gain.setValueAtTime(1.7, t);
+    comp.connect(master); master.connect(this.ctx.destination);
+    return comp;
+  },
+
+  // one oscillator sweep; f1 === f0 means a steady tone
+  tone(dest, type, f0, f1, peak, start, dur, decayTo = 0.01) {
+    const t0 = this.ctx.currentTime + start;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t0);
+    if (f1 !== f0) o.frequency.linearRampToValueAtTime(f1, t0 + dur);
+    g.gain.setValueAtTime(peak, t0);
+    g.gain.exponentialRampToValueAtTime(decayTo, t0 + dur);
+    o.connect(g); g.connect(dest);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  },
+
   buzz() {
     if (!this.enabled) return;
+    const choice = this.choice;
+    if (choice === 'custom' && this.customUrl) {
+      try { const a = new Audio(this.customUrl); a.volume = 1; a.play().catch(()=>{}); } catch(e) {}
+      return;
+    }
     try {
       this.ensure();
-      const t = this.ctx.currentTime;
-      // compressor lets us push the level hard without the crackle raw gain gives
-      const comp = this.ctx.createDynamicsCompressor();
-      comp.threshold.setValueAtTime(-18, t);
-      comp.ratio.setValueAtTime(12, t);
-      comp.attack.setValueAtTime(0.002, t);
-      comp.release.setValueAtTime(0.15, t);
-      const master = this.ctx.createGain();
-      master.gain.setValueAtTime(1.7, t);
-      comp.connect(master); master.connect(this.ctx.destination);
-      // main rasp plus an octave below — two layers carry across a noisy room
-      // far better than one loud one
-      [['sawtooth', 220, 170, 0.85], ['square', 110, 85, 0.55]].forEach(([type, f0, f1, peak]) => {
-        const o = this.ctx.createOscillator(), g = this.ctx.createGain();
-        o.type = type;
-        o.frequency.setValueAtTime(f0, t);
-        o.frequency.linearRampToValueAtTime(f1, t + 0.5);
-        g.gain.setValueAtTime(peak, t);
-        g.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
-        o.connect(g); g.connect(comp);
-        o.start(t); o.stop(t + 0.6);
-      });
+      const b = this.bus();
+      switch (choice) {
+        case 'airhorn':
+          // stacked detuned saws, held flat — the classic stadium blast
+          [247, 250, 371, 494].forEach((f, i) =>
+            this.tone(b, 'sawtooth', f, f * 0.97, i < 2 ? 0.7 : 0.35, 0, 0.9, 0.2));
+          break;
+        case 'ding':
+          this.tone(b, 'sine', 1245, 1245, 0.9, 0, 1.1);
+          this.tone(b, 'sine', 2490, 2490, 0.35, 0, 0.9);
+          this.tone(b, 'sine', 3730, 3730, 0.15, 0, 0.6);
+          break;
+        case 'klaxon':
+          for (let i = 0; i < 3; i++) {
+            this.tone(b, 'square', 440, 440, 0.6, i * 0.28, 0.13, 0.4);
+            this.tone(b, 'square', 330, 330, 0.6, i * 0.28 + 0.14, 0.13, 0.4);
+          }
+          break;
+        case 'doorbell':
+          this.tone(b, 'sine', 660, 660, 0.85, 0, 0.45);
+          this.tone(b, 'sine', 1320, 1320, 0.25, 0, 0.4);
+          this.tone(b, 'sine', 520, 520, 0.85, 0.42, 0.7);
+          this.tone(b, 'sine', 1040, 1040, 0.25, 0.42, 0.6);
+          break;
+        case 'boing':
+          this.tone(b, 'sine', 900, 130, 0.9, 0, 0.55);
+          this.tone(b, 'triangle', 450, 65, 0.5, 0, 0.55);
+          break;
+        default: // classic
+          this.tone(b, 'sawtooth', 220, 170, 0.85, 0, 0.6);
+          this.tone(b, 'square', 110, 85, 0.55, 0, 0.6);
+      }
     } catch(e) {}
   },
+
+  /* ---- custom buzzer: record from the mic, or upload a file ---- */
+  async toggleRecord() {
+    const btn = $('recBtn');
+    if (this.recorder && this.recorder.state === 'recording') { this.recorder.stop(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.chunks = [];
+      this.recorder = new MediaRecorder(stream);
+      this.recorder.ondataavailable = e => { if (e.data.size) this.chunks.push(e.data); };
+      this.recorder.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        btn.textContent = '🎙 Record your own';
+        const blob = new Blob(this.chunks, { type: this.recorder.mimeType });
+        this.saveCustom(blob);
+      };
+      this.recorder.start();
+      btn.textContent = '⏹ Stop (recording…)';
+      // hard cap so a forgotten recording can't fill up storage
+      setTimeout(() => { if (this.recorder && this.recorder.state === 'recording') this.recorder.stop(); }, 4000);
+    } catch(e) { alert('Could not use the microphone: ' + e.message); }
+  },
+
+  loadFile(file) {
+    if (!file) return;
+    if (file.size > 1200000) { alert('That file is too big — please pick one under about 1MB (a couple of seconds long).'); return; }
+    this.saveCustom(file);
+  },
+
+  saveCustom(blob) {
+    const fr = new FileReader();
+    fr.onload = () => {
+      try {
+        store.set('buzz_sound_custom', fr.result);
+        store.set('buzz_sound', 'custom');
+        this.renderPickers();
+        this.buzz();
+      } catch(e) { alert('Could not save that sound — it may be too long. Try a shorter one.'); }
+    };
+    fr.readAsDataURL(blob);
+  },
+
+  /* ---- spoken name ---- */
+  voices() { try { return speechSynthesis.getVoices() || []; } catch(e) { return []; } },
   say(text) {
     if (!this.enabled) return;
     try {
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 1.05; u.pitch = 1.1;
+      const wanted = store.get('buzz_voice');
+      if (wanted) {
+        const v = this.voices().find(x => x.voiceURI === wanted);
+        if (v) { u.voice = v; u.lang = v.lang; }
+      }
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
     } catch(e) {}
+  },
+
+  /* ---- settings UI ---- */
+  renderPickers() {
+    const bs = $('buzzSound');
+    if (bs) {
+      bs.innerHTML = '';
+      const opts = this.PRESETS.slice();
+      if (this.customUrl) opts.push(['custom', '⭐ Your own sound']);
+      opts.forEach(([val, label]) => {
+        const o = document.createElement('option');
+        o.value = val; o.textContent = label;
+        if (val === this.choice) o.selected = true;
+        bs.appendChild(o);
+      });
+    }
+    const vp = $('voicePick');
+    if (vp) {
+      const vs = this.voices();
+      const current = store.get('buzz_voice') || '';
+      vp.innerHTML = '';
+      const def = document.createElement('option');
+      def.value = ''; def.textContent = vs.length ? 'Default voice' : 'Loading voices…';
+      vp.appendChild(def);
+      // The name stays in English — pointing it at a foreign voice engine is
+      // what produces the accent, so these are labelled as accents, not
+      // languages. English ones first, the funny ones after.
+      const named = vs.map(v => ({ v, accent: this.ACCENTS[v.lang] || v.lang }));
+      const rank = a => (a.accent.startsWith('British') ? 0 : a.accent.startsWith('American') ? 1 : 2);
+      named.sort((a, b) => rank(a) - rank(b) || a.accent.localeCompare(b.accent));
+      named.forEach(({ v, accent }) => {
+        const o = document.createElement('option');
+        o.value = v.voiceURI;
+        // strip the vendor noise out of names like "Microsoft Hazel - English (United Kingdom)"
+        const short = v.name.replace(/^(Microsoft|Google)\s+/, '').replace(/\s*[-–(].*$/, '').trim();
+        o.textContent = accent + (short ? ' — ' + short : '');
+        if (v.voiceURI === current) o.selected = true;
+        vp.appendChild(o);
+      });
+    }
+  },
+  setBuzzChoice(v) { store.set('buzz_sound', v); this.buzz(); },
+  setVoice(v) { store.set('buzz_voice', v); this.say('Buzz Night'); },
+  initPickers() {
+    this.renderPickers();
+    // voices populate asynchronously in Chrome — redraw when they land
+    try { speechSynthesis.addEventListener('voiceschanged', () => this.renderPickers()); } catch(e) {}
+    speechSynthesis.getVoices();
   }
 };
 
@@ -725,6 +909,7 @@ const Host = {
       const url = REDIRECT_URI + '?room=' + this.roomCode;
       $('joinUrl').textContent = url;
       $('waShare').href = 'https://wa.me/?text=' + encodeURIComponent('🎶 Buzz Night quiz is on! Grab your buzzer: ' + url + ' (room code ' + this.roomCode + ')');
+      Sound.initPickers();
       Wake.on();
       $('qrBox').innerHTML = '';
       new QRCode($('qrBox'), { text: url, width: 170, height: 170 });
