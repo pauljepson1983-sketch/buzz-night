@@ -175,7 +175,11 @@
   <div class="card">
     <h2>2 · Start the room</h2>
     <p class="muted mb">Creates a room code + QR for players. You can start this before or after connecting Spotify.</p>
-    <button class="btn green" onclick="App.createRoom()">Create room</button>
+    <div class="row">
+      <button class="btn green" onclick="App.createRoom()">Create room</button>
+      <button class="btn alt hidden" id="resumeBtn" onclick="App.resumeRoom()">Carry on last game</button>
+    </div>
+    <p class="muted mt hidden" id="resumeNote" style="font-size:.85rem"></p>
   </div>
 </div>
 
@@ -448,6 +452,7 @@ const App = {
   startHostFlow() {
     $('clientIdInput').value = store.get('spotify_client_id') || '';
     Spot.updateStatus();
+    this.offerResume();
     this.showView('hostSetup');
   },
 
@@ -459,7 +464,28 @@ const App = {
 
   /* ================= host ================= */
   spotifyLogin() { Spot.login(); },
-  createRoom() { Host.create(); },
+  createRoom() {
+    const saved = Host.loadGame();
+    if (saved && !confirm('Start a NEW game? The saved game (' + saved.players.length + ' players) will be wiped.\n\nPress Cancel, then "Carry on last game", to keep the scores.')) return;
+    Host.clearGame();
+    Host.create();
+  },
+  resumeRoom() {
+    const saved = Host.loadGame();
+    if (!saved) { alert('No saved game found.'); return; }
+    Host.create(saved);
+  },
+  offerResume() {
+    const saved = Host.loadGame();
+    const btn = $('resumeBtn'), note = $('resumeNote');
+    if (!saved) { btn.classList.add('hidden'); note.classList.add('hidden'); return; }
+    const top = saved.players.slice().sort((a, b) => b.score - a.score)[0];
+    btn.textContent = '↩ Carry on last game (' + saved.players.length + ' players)';
+    btn.classList.remove('hidden');
+    note.textContent = 'Room ' + saved.roomCode + ' · ' + saved.players.map(p => p.name + ' ' + p.score).join(' · ') +
+      (top ? '' : '') + '. Players rejoin with the same name and get their score back.';
+    note.classList.remove('hidden');
+  },
   armBuzzers() { Host.arm(); },
   judge(ok, pts) { Host.judge(ok, pts); },
   judgeCustom() {
@@ -1113,8 +1139,28 @@ const Host = {
     } catch (e) { flash('Press & hold the link above'); }
   },
 
-  create() {
-    this.roomCode = [...crypto.getRandomValues(new Uint8Array(4))].map(b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('');
+  newCode() {
+    return [...crypto.getRandomValues(new Uint8Array(4))].map(b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('');
+  },
+
+  create(resume) {
+    // Restored players sit as offline shells holding their score; the join
+    // handler reattaches them by name the moment their phone comes back.
+    if (resume) {
+      this.roomCode = resume.roomCode || this.newCode();
+      this.teamMode = !!resume.teamMode;
+      this.players = {};
+      resume.players.forEach((p, i) => {
+        this.players['restored-' + i] = {
+          conn: null, name: p.name, online: false,
+          score: p.score || 0, team: p.team || null,
+          rtt: 60, locked: false, reactions: p.reactions || [], buzzMs: null
+        };
+      });
+      this._resuming = true;
+    } else {
+      this.roomCode = this.newCode();
+    }
     this.peer = new Peer(PEER_PREFIX + this.roomCode);
     this.peer.on('open', () => {
       $('connDot').classList.add('on');
@@ -1124,6 +1170,9 @@ const Host = {
       $('joinUrl').textContent = url;
       $('waShare').href = 'https://wa.me/?text=' + encodeURIComponent('🎶 Buzz Night quiz is on! Grab your buzzer: ' + url + ' (room code ' + this.roomCode + ')');
       Sound.initPickers();
+      this._resuming = false;
+      this.renderScores();
+      this.saveGame();
       Wake.on();
       $('qrBox').innerHTML = '';
       new QRCode($('qrBox'), { text: url, width: 170, height: 170 });
@@ -1138,11 +1187,57 @@ const Host = {
     });
     this.peer.on('connection', conn => this.onConnection(conn));
     this.peer.on('error', e => {
-      if (e.type === 'unavailable-id') alert('Room code clash — try creating again.');
-      else console.warn('Peer error', e);
+      if (e.type === 'unavailable-id') {
+        // The broker can still be holding the old room code for a minute after
+        // a refresh. Keep the scores and take a fresh code rather than failing.
+        if (this._resuming) {
+          this._resuming = false;
+          const carried = Object.values(this.players).map(p => ({ name: p.name, score: p.score, team: p.team, reactions: p.reactions }));
+          try { this.peer.destroy(); } catch (err) {}
+          this.create({ roomCode: this.newCode(), teamMode: this.teamMode, players: carried });
+          return;
+        }
+        alert('Room code clash — try creating again.');
+      } else console.warn('Peer error', e);
     });
     this.peer.on('disconnected', () => { $('connDot').classList.remove('on'); this.peer.reconnect(); });
   },
+
+  /* ---- surviving a refresh ---------------------------------------------
+     Scores lived only in memory, so refreshing the host page lost the whole
+     game with no way back. Snapshot names and scores after anything that
+     changes them; on load the host is offered the game back, and players
+     reattach by name when they rejoin.
+  --------------------------------------------------------------------- */
+  SAVE_KEY: 'buzz_game',
+  MAX_AGE_MS: 12 * 60 * 60 * 1000,
+
+  saveGame() {
+    if (!this.roomCode) return;
+    try {
+      store.set(this.SAVE_KEY, JSON.stringify({
+        roomCode: this.roomCode,
+        teamMode: this.teamMode,
+        at: Date.now(),
+        players: Object.values(this.players).map(p => ({
+          name: p.name, score: p.score, team: p.team, reactions: (p.reactions || []).slice(-20)
+        }))
+      }));
+    } catch (e) {}
+  },
+
+  loadGame() {
+    try {
+      const raw = store.get(this.SAVE_KEY);
+      if (!raw) return null;
+      const g = JSON.parse(raw);
+      if (!g || !g.players || !g.players.length) return null;
+      if (Date.now() - (g.at || 0) > this.MAX_AGE_MS) return null;
+      return g;
+    } catch (e) { return null; }
+  },
+
+  clearGame() { try { store.set(this.SAVE_KEY, ''); } catch (e) {} },
 
   onConnection(conn) {
     conn.on('data', msg => this.onMessage(conn, msg));
@@ -1155,17 +1250,28 @@ const Host = {
   onMessage(conn, msg) {
     const now = performance.now();
     if (msg.type === 'join') {
-      // reattach by name if they reconnect
-      const existing = Object.entries(this.players).find(([id, p]) => p.name.toLowerCase() === String(msg.name).toLowerCase() && !p.online);
-      if (existing) { delete this.players[existing[0]]; var carry = existing[1]; }
+      // Reattach by name so a refresh keeps your score. This used to require
+      // the old entry to be flagged offline, but a phone that refreshes often
+      // gets its new connection in before PeerJS reports the old one closed,
+      // so the player came back as a duplicate on zero points. Match on name
+      // alone and hang up the stale connection.
+      const wanted = String(msg.name).slice(0, 14);
+      let carry = null;
+      const existing = Object.entries(this.players).find(([id, p]) => p.name.toLowerCase() === wanted.toLowerCase());
+      if (existing && existing[0] !== conn.peer) {
+        carry = existing[1];
+        try { if (carry.conn && carry.conn !== conn) carry.conn.close(); } catch (e) {}
+        delete this.players[existing[0]];
+      }
       this.players[conn.peer] = {
-        conn, name: String(msg.name).slice(0, 14), online: true,
+        conn, name: wanted, online: true,
         score: carry ? carry.score : 0, team: carry ? carry.team : null,
         rtt: 60, locked: false, reactions: carry ? carry.reactions : []
       };
       conn.send({ type: 'welcome', name: this.players[conn.peer].name, teamMode: this.teamMode, team: this.players[conn.peer].team, score: this.players[conn.peer].score });
       conn.send({ type: 'phase', phase: this.phase === 'armed' ? 'armed' : 'wait', canBuzz: this.phase === 'armed' });
       this.renderScores();
+      this.saveGame();
       return;
     }
     const p = this.players[conn.peer];
@@ -1297,6 +1403,7 @@ const Host = {
     }
     this.renderScores();
     this.renderBuzzes();
+    this.saveGame();
   },
 
   nextInQueue() {
@@ -1411,6 +1518,7 @@ const Host = {
     Object.values(this.players).forEach(p => { p.score = 0; p.reactions = []; });
     this.renderScores();
     this.pushBoard();
+    this.saveGame();
   },
 
   boardRows() {
@@ -1864,6 +1972,7 @@ const Quiz = {
       this.gains[peerId] = gained;
     }
     Host.renderScores();
+    Host.saveGame();
     const live = Object.values(Host.players).filter(x => x.online).length;
     const inCount = Object.keys(this.answers).length;
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
