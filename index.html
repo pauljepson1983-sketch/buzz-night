@@ -2452,8 +2452,12 @@ const Player = {
       return;
     }
     if (msg.stage === 'fastest') {
-      el.innerHTML = '<div class="fin-fast' + (isMe(msg.row) ? ' me' : '') + '">⚡ Fastest finger<div class="fin-name">' +
-        esc(msg.row.name) + '</div><div class="fin-score">' + msg.row.avg + ' ms average</div></div>' + el.innerHTML;
+      // slot in under the winner — the trophy should stay the hero of the card
+      const node = document.createElement('div');
+      node.className = 'fin-fast' + (isMe(msg.row) ? ' me' : '');
+      node.innerHTML = '⚡ Fastest finger<div class="fin-name">' + esc(msg.row.name) +
+        '</div><div class="fin-score">' + msg.row.avg + ' ms average</div>';
+      el.insertBefore(node, el.children[1] || null);
       this.vibe([60, 40, 60]);
       return;
     }
