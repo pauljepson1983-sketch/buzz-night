@@ -457,6 +457,7 @@
             <option value="covers">Album covers</option>
             <option value="backdrops">Film stills</option>
             <option value="faces">Famous faces</option>
+            <option value="songs">Name the song (music)</option>
             <option value="years">Year of release (music)</option>
             <option value="themes">Film themes (music)</option>
           </select>
@@ -2472,6 +2473,54 @@ const Quiz = {
       .trim();
   },
 
+  /* Gathering well-known, playable, correctly-dated songs is the same job for
+     "name the song" and "name the year", so both share this. */
+  async collectSongs(decade, count, style, extra) {
+    const base = [style, extra].filter(Boolean).join(' ');
+    const queries = decade
+      ? [(base ? base + ' ' : '') + 'year:' + decade, 'pop year:' + decade, 'rock year:' + decade]
+      : [base || 'pop', 'rock', 'dance'];
+    const lo = decade ? +decade.slice(0, 4) : 1950;
+    const hi = decade ? +decade.slice(5) : new Date().getFullYear();
+
+    const found = new Map();
+    for (const q of queries) {
+      let res;
+      try { res = await Spot.searchRaw(q); } catch (e) { continue; }
+      res.tracks.forEach(t => {
+        const al = t.album;
+        if (!al || !al.release_date || !t.uri) return;
+        if (al.album_type && !['album', 'single'].includes(al.album_type)) return;
+        const yr = +String(al.release_date).slice(0, 4);
+        if (!yr || yr < lo || yr > hi) return;
+        const artist = (t.artists || []).map(a => a.name).join(', ');
+        const title = this.baseTitle(t.name);
+        if (!title) return;
+        const key = (title + '|' + artist).toLowerCase();
+        const prev = found.get(key);
+        if (prev && prev.pop >= (t.popularity || 0)) return;
+        found.set(key, {
+          title, artist, label: title + ' — ' + artist, year: yr, uri: t.uri,
+          dur: t.duration_ms || 0, url: al.images?.[0]?.url, pop: t.popularity || 0
+        });
+      });
+      if (found.size >= count + 30) break;
+    }
+    let songs = [...found.values()];
+    const known = songs.filter(s => s.pop >= 45);
+    songs = (known.length >= Math.max(4, count) ? known : songs)
+      .sort((a, b) => b.pop - a.pop).slice(0, Math.max(count * 3, 24));
+    if (songs.length < 4) throw new Error('Only found ' + songs.length + ' songs for that — try a wider decade or a different style.');
+    this.available = songs.length;
+    return songs;
+  },
+
+  // The classic music round: hear it, name it. Four song titles.
+  async buildSongs(decade, count, style, extra) {
+    const songs = await this.collectSongs(decade, count, style, extra);
+    return this.toQuestions(songs, count);
+  },
+
   async buildYears(decade, count, style, extra) {
     // Searching for words like "greatest hits" or "number one" matches songs
     // TITLED that — it returned two different mixes of Alexia's "Number One"
@@ -2603,7 +2652,9 @@ const Quiz = {
       : ('films' + (decadeLabel ? ', ' + decadeLabel : ''));
     try {
       let qs;
-      if (this.mode === 'faces') {
+      if (this.mode === 'songs') {
+        qs = await this.buildSongs(decade, count, style, extra);
+      } else if (this.mode === 'faces') {
         qs = this.toQuestions(await this.buildFaces(decade, count), count);
       } else if (this.mode === 'years') {
         qs = await this.buildYears(decade, count, style, extra);
@@ -2617,7 +2668,7 @@ const Quiz = {
         qs = this.toQuestions(films, count);
       }
 
-      if (this.mode === 'themes' || this.mode === 'years') {
+      if (['themes', 'years', 'songs'].includes(this.mode)) {
         this.questions = qs.filter(q => q.uri);
         if (!this.questions.length) throw new Error('Could not find playable tracks for that.');
       } else if (this.mode === 'backdrops') {
@@ -2677,7 +2728,7 @@ const Quiz = {
     this.answers = {};
     this.gains = {};
     this.firstCorrect = null;
-    const audioRound = this.mode === 'themes' || this.mode === 'years';
+    const audioRound = ['themes', 'years', 'songs'].includes(this.mode);
     // audio rounds have no picture to flash
     const flash = audioRound ? 0 : this.flashMs;
     // Music used to start the instant the question went out, with the clock
@@ -2712,14 +2763,15 @@ const Quiz = {
       covers: 'Covers flash on every phone for a moment, then drop away leaving four choices. Scored automatically, so you can play too.',
       backdrops: 'A still from the film flashes up, then four titles. Stills have no writing on them, so nothing gives the answer away. Decade applies; style is ignored. Film data and images from TMDB.',
       themes: 'The film’s theme plays on your speaker and four films appear on the phones. Decade applies; style is ignored.',
+      songs: 'A song plays and four song titles appear on the phones. The classic music round. Decade applies; style narrows it.',
       years: 'A song plays and four years appear. Decade applies; style narrows it. Remasters are filtered out so the dates are honest.',
       faces: 'A face flashes up and four names appear — drawn from the cast of well-known films, so they are people the room will know. Crop into it makes it much harder. Decade applies; style is ignored. Faces from TMDB.'
     };
     $('quizBlurb').textContent = blurbs[m] || blurbs.covers;
-    const filmMode = m !== 'covers' && m !== 'years';
+    const filmMode = !['covers', 'years', 'songs'].includes(m);
     $('quizStyle').disabled = filmMode;
     $('quizTopic').disabled = filmMode;
-    const audioRound = m === 'themes' || m === 'years';
+    const audioRound = ['themes', 'years', 'songs'].includes(m);
     $('quizFlash').disabled = audioRound;
     $('quizStart').disabled = !audioRound;
     $('quizCrop').disabled = m !== 'faces';
@@ -2779,7 +2831,7 @@ const Quiz = {
   skipQuestion() {
     if (!this.active) { $('quizStatus').textContent = 'No round running.'; return; }
     clearTimeout(this.tick); clearTimeout(this._closing);
-    if (this.mode === 'themes' || this.mode === 'years') Spot.pause();
+    if (['themes', 'years', 'songs'].includes(this.mode)) Spot.pause();
     Host.broadcast({ type: 'quizSkip' });
     $('quizHostView').innerHTML = '<span class="muted">Question skipped.</span>';
     setTimeout(() => this.next(), 700);
@@ -2788,7 +2840,7 @@ const Quiz = {
   close() {
     if (!this.active) return;
     // stop the theme before the answer goes up, or it plays over the reveal
-    if (this.mode === 'themes' || this.mode === 'years') Spot.pause();
+    if (['themes', 'years', 'songs'].includes(this.mode)) Spot.pause();
     const q = this.questions[this.idx];
     Object.entries(Host.players).forEach(([id, p]) => {
       const a = this.answers[id];
@@ -2808,7 +2860,7 @@ const Quiz = {
   finish() {
     this.active = false;
     clearTimeout(this.tick);
-    if (this.mode === 'themes' || this.mode === 'years') Spot.pause();
+    if (['themes', 'years', 'songs'].includes(this.mode)) Spot.pause();
 
     // Whoever scored most in THIS round, not whoever leads overall — the old
     // version read the leaderboard and crowned the overall leader, so it
@@ -2898,16 +2950,17 @@ const Quiz = {
   // actually being played, so players could not tell what round they were in.
   TITLES: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
-    years: '📅 Year of release', faces: '⭐ Famous faces'
+    songs: '🎧 Name the song', years: '📅 Year of release', faces: '⭐ Famous faces'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
-    years: 'Song', faces: 'Face'
+    songs: 'Song', years: 'Song', faces: 'Face'
   },
   HOWTO: {
     covers: 'A cover flashes up, then four albums. Pick the right one.',
     backdrops: 'A scene from the film flashes up, then four titles.',
     themes: 'Listen to the theme, then pick the film.',
+    songs: 'Listen, then pick which song it is.',
     years: 'Listen, then pick the year it came out.',
     faces: 'A face flashes up, then four names. Quick!'
   },
@@ -2915,6 +2968,7 @@ const Quiz = {
   ROUND_NAMES: {
     covers: 'album cover round', backdrops: 'film stills round',
     themes: 'film themes round',
+    songs: 'name the song round',
     years: 'year of release round',
     faces: 'famous faces round'
   },
@@ -2923,7 +2977,7 @@ const Quiz = {
     if (!this.active) { $('quizStatus').textContent = 'No round running.'; return; }
     this.active = false;
     clearTimeout(this.tick);
-    if (this.mode === 'themes' || this.mode === 'years') Spot.pause();
+    if (['themes', 'years', 'songs'].includes(this.mode)) Spot.pause();
     Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
     $('quizStatus').textContent = 'Round stopped.';
     $('quizHostView').classList.add('hidden');
@@ -3123,7 +3177,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', years: '📅 Year of release', faces: '⭐ Famous faces', buzzer: '🔔 Buzzer round (you judge)'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', years: '📅 Year of release', faces: '⭐ Famous faces', buzzer: '🔔 Buzzer round (you judge)'
   },
 
   load() {
@@ -3158,7 +3212,7 @@ const Night = {
   --------------------------------------------------------------------- */
 
   // which modes actually read the style/flavour word
-  STYLE_USED_BY: ['covers', 'years'],
+  STYLE_USED_BY: ['covers', 'years', 'songs'],
   DECADES: ['1960-1969', '1970-1979', '1980-1989', '1990-1999', '2000-2009', '2010-2019', '2020-2029'],
 
   randomDecade() { return this.DECADES[Math.floor(Math.random() * this.DECADES.length)]; },
@@ -3207,9 +3261,14 @@ const Night = {
     $('quickStyle').value = '';
     this.quickChanged();
 
-    const pool = ['faces', 'years', 'backdrops', 'covers', 'themes'];
-    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    // This is a MUSIC quiz first. A flat shuffle of all the round types was
+    // handing out nights that were mostly pictures, which is not the game.
+    // Guarantee the music rounds and let picture rounds fill the rest.
+    const music = Quiz.shuffle(['songs', 'years', 'themes']);
+    const pics = Quiz.shuffle(['faces', 'backdrops', 'covers']);
     const size = 4 + Math.floor(Math.random() * 2); // 4 or 5
+    const wantMusic = Math.max(2, size - 2);        // never fewer than two
+    const pool = Quiz.shuffle(music.slice(0, wantMusic).concat(pics.slice(0, size - wantMusic)));
     const used = [];
     this.plan = pool.slice(0, size).map(m => {
       const r = this.defaultsFor(m);   // resolves "mixed" to its own decade
@@ -3232,9 +3291,10 @@ const Night = {
     // Covers needs a decade or a flavour to search on, so it only goes in
     // when there is one — otherwise the round would fail to build.
     const decade = $('quickDecade').value, style = $('quickStyle').value;
-    const order = ['faces', 'years', 'backdrops'];
+    // music-led, same as Surprise me — it's a music quiz
+    const order = ['songs', 'years', 'faces', 'themes'];
     if (decade || style) order.push('covers');
-    order.push('themes');
+    order.push('backdrops');
     const chosen = order.slice(0, size);
     const used = [];
     this.plan = chosen.map(m => {
