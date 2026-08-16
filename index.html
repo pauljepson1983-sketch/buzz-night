@@ -167,7 +167,11 @@
           <div id="qrBox"></div>
           <div id="joinUrl" class="muted" style="word-break:break-all; font-size:.85rem"></div>
           <div class="row mt" style="justify-content:center">
-            <a id="waShare" class="btn small green" target="_blank" rel="noopener" style="text-decoration:none">📲 Share on WhatsApp</a>
+            <button id="inviteBtn" class="btn small green" onclick="Host.shareInvite()">📤 Send invite</button>
+            <button id="copyBtn" class="btn small alt" onclick="Host.copyInvite()">🔗 Copy link</button>
+          </div>
+          <div class="row mt" style="justify-content:center">
+            <a id="waShare" class="btn ghost small" target="_blank" rel="noopener" style="text-decoration:none">WhatsApp</a>
             <button class="btn ghost small" onclick="document.getElementById('joinCard').classList.add('hidden')">Hide QR</button>
           </div>
         </div>
@@ -625,6 +629,29 @@ const Host = {
   CAPTURE_MS: 700,      // window after first buzz where others still rank by speed
   GRACE_MS: 2500,       // after this, players who never buzzed are shut out
   teamMode: false, stealTimer: null, stealLeft: 0,
+
+  invite() {
+    const url = REDIRECT_URI + '?room=' + this.roomCode;
+    return { url, text: '🎶 Buzz Night quiz is on! Tap to grab your buzzer (room ' + this.roomCode + '):' };
+  },
+  async shareInvite() {
+    const { url, text } = this.invite();
+    // phones: hand off to the OS share sheet so the host can pick any app —
+    // messages, WhatsApp, Messenger, email. Desktop mostly has no share sheet,
+    // so fall through to the clipboard there.
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Buzz Night', text, url }); return; }
+      catch (e) { if (e.name === 'AbortError') return; }
+    }
+    this.copyInvite();
+  },
+  async copyInvite() {
+    const { url, text } = this.invite();
+    const b = $('copyBtn'), original = b.textContent;
+    const flash = msg => { b.textContent = msg; setTimeout(() => { b.textContent = original; }, 1800); };
+    try { await navigator.clipboard.writeText(text + ' ' + url); flash('✅ Copied'); }
+    catch (e) { flash('Press & hold the link above'); }
+  },
 
   create() {
     this.roomCode = [...crypto.getRandomValues(new Uint8Array(4))].map(b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('');
