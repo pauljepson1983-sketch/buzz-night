@@ -273,6 +273,7 @@
           <label for="quizMode">Round</label>
           <select id="quizMode" onchange="Quiz.modeChanged()">
             <option value="covers">Album covers</option>
+            <option value="backdrops">Film stills</option>
             <option value="themes">Film themes (music)</option>
             <option value="posters">Film poster details</option>
           </select>
@@ -1551,6 +1552,46 @@ const Quiz = {
   --------------------------------------------------------------------- */
   SOUNDTRACKY: /(original\s+(motion\s+picture|score|soundtrack)|motion\s+picture|soundtrack|music\s+from\s+(the\s+)?(motion\s+picture|film|movie))/i,
 
+  /* ---- film stills (TMDB) ----------------------------------------------
+     TMDB backdrops are promotional stills with no lettering on them at all,
+     which sidesteps the whole redaction problem: posters put the title dead
+     centre, stills carry none. The image URL is an opaque hash, so it can be
+     sent to the phones as-is without giving the answer away.
+
+     Read-only key, public by design in a static page. vote_count filters out
+     obscure titles so the round stays guessable.
+  --------------------------------------------------------------------- */
+  TMDB_KEY: 'a15859899fcdf54a95d8bd3222030c93',
+  TMDB_IMG: 'https://image.tmdb.org/t/p/w780',
+
+  async buildBackdrops(decade, count, label) {
+    const range = decade ? decade.split('-') : null;
+    const base = 'https://api.themoviedb.org/3/discover/movie?api_key=' + this.TMDB_KEY +
+      '&sort_by=popularity.desc&vote_count.gte=600&include_adult=false&language=en-GB' +
+      (range ? '&primary_release_date.gte=' + range[0] + '-01-01&primary_release_date.lte=' + range[1] + '-12-31' : '');
+
+    const seen = new Set(), films = [];
+    for (let page = 1; page <= 3; page++) {
+      let j;
+      try {
+        const r = await fetch(base + '&page=' + page);
+        if (!r.ok) throw new Error('TMDB said ' + r.status);
+        j = await r.json();
+      } catch (e) { break; }
+      (j.results || []).forEach(m => {
+        if (!m.backdrop_path || !m.title) return;
+        const key = m.title.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        films.push({ label: m.title, url: this.TMDB_IMG + m.backdrop_path });
+      });
+      if (films.length >= count + 20) break;
+    }
+    if (films.length < 4) throw new Error('Only found ' + films.length + ' films for ' + (label || 'that') + '. Try Any decade.');
+    this.available = films.length;
+    return films;
+  },
+
   filmName(albumName) {
     return albumName
       .replace(/\s*[\(\[][^)\]]*[\]\)]\s*$/g, '')
@@ -1711,6 +1752,8 @@ const Quiz = {
       let qs;
       if (this.mode === 'covers') {
         qs = await this.build(topic, count, label);
+      } else if (this.mode === 'backdrops') {
+        qs = this.toQuestions(await this.buildBackdrops(decade, count, label), count);
       } else {
         // film themes need something playable; poster details only need art
         const films = await this.buildFilms(decade, count, label, this.mode === 'themes');
@@ -1720,6 +1763,11 @@ const Quiz = {
       if (this.mode === 'themes') {
         this.questions = qs.filter(q => q.uri);
         if (!this.questions.length) throw new Error('Could not find playable film themes.');
+      } else if (this.mode === 'backdrops') {
+        // stills carry no lettering, so they go straight out as URLs — no
+        // redaction pass and nothing to re-encode
+        qs.forEach(q => { q.img = q.url; });
+        this.questions = qs;
       } else {
         const noun = this.mode === 'posters' ? 'poster' : 'cover';
         for (let i = 0; i < qs.length; i++) {
@@ -1772,6 +1820,7 @@ const Quiz = {
     const m = $('quizMode').value;
     const blurbs = {
       covers: 'Covers flash on every phone for a moment, then drop away leaving four choices. Scored automatically, so you can play too.',
+      backdrops: 'A still from the film flashes up, then four titles. Stills have no writing on them, so nothing gives the answer away. Decade applies; style is ignored. Film data and images from TMDB.',
       themes: 'The film’s theme plays on your speaker and four films appear on the phones. Decade applies; style is ignored.',
       posters: 'A zoomed-in corner of the poster appears, chosen to avoid the title. Decade applies; style is ignored.'
     };
