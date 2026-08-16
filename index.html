@@ -612,10 +612,23 @@ const Spot = {
         this.currentTrack = { name: tr.name, artist: tr.artists.map(a => a.name).join(', '), uri: tr.uri };
         $('nowPlaying').textContent = tr.name + ' — ' + this.currentTrack.artist;
       }
-      // starting the music IS the host's "go" — arm the buzzers off the back of
-      // it instead of making them find a second button. Only from idle, so
-      // resuming mid-round doesn't wipe a buzz queue that's being judged.
-      if (!st.paused && Host.peer && Host.phase === 'idle' && !Quiz.active) Host.arm();
+      // Starting the music IS the host's "go" — arm off the back of it rather
+      // than making them find a second button.
+      //
+      // A NEW TRACK always arms, whatever state the last round was left in.
+      // Arming only from idle stranded the game: reveal the answer while a
+      // steal was still open and the round stuck in 'steal' forever, so the
+      // next song never armed and whoever answered wrong stayed locked out.
+      // A new song is a new question, so it must always reset.
+      //
+      // Resuming the SAME track only arms from idle, so a pause mid-judging
+      // doesn't wipe a queue that's still being scored.
+      const nowUri = tr ? tr.uri : null;
+      const newTrack = nowUri && nowUri !== this._armedUri;
+      if (!st.paused && Host.peer && !Quiz.active && (newTrack || Host.phase === 'idle')) {
+        this._armedUri = nowUri;
+        Host.arm();
+      }
     });
     this.player.addListener('initialization_error', e => alert('Spotify player error: ' + e.message));
     this.player.addListener('authentication_error', e => alert('Spotify auth error — reconnect Spotify. ' + e.message));
@@ -1364,6 +1377,9 @@ const Host = {
 
   endRound(notify = true) {
     this.clearSteal();
+    // lockouts last for one song, and the song is over — clearing here means
+    // "End round / reset buzzers" is always a way back from a stuck round
+    Object.values(this.players).forEach(p => { p.locked = false; });
     this.setPhase('idle');
     $('judgePanel').classList.add('hidden');
     this.broadcast({ type: 'phase', phase: 'wait', canBuzz: false });
