@@ -649,8 +649,20 @@ const Host = {
     const { url, text } = this.invite();
     const b = $('copyBtn'), original = b.textContent;
     const flash = msg => { b.textContent = msg; setTimeout(() => { b.textContent = original; }, 1800); };
-    try { await navigator.clipboard.writeText(text + ' ' + url); flash('✅ Copied'); }
-    catch (e) { flash('Press & hold the link above'); }
+    const payload = text + ' ' + url;
+    try { await navigator.clipboard.writeText(payload); flash('✅ Copied'); return; }
+    catch (e) { /* blocked (older browser, or page not focused) — try the old way */ }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = payload;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.select(); ta.setSelectionRange(0, payload.length);
+      const ok = document.execCommand('copy');
+      ta.remove();
+      flash(ok ? '✅ Copied' : 'Press & hold the link above');
+    } catch (e) { flash('Press & hold the link above'); }
   },
 
   create() {
