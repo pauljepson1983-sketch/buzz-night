@@ -1156,7 +1156,6 @@ const Host = {
       this.sendTo(id, { type: 'result', ok: true, pts, score: p.score });
       this.broadcastOthers(id, { type: 'info', text: p.name + ' got it! +' + pts });
       this.endRound(false);
-      this.pushBoard();
     } else {
       p.locked = true;
       this.sendTo(id, { type: 'result', ok: false, score: p.score });
@@ -1229,6 +1228,12 @@ const Host = {
     if (!text) return;
     this.broadcast({ type: 'reveal', text });
     this.endRound(false);
+    // endRound resets the banner to the idle prompt, so paint the answer on the
+    // host afterwards. Without this the host sees no change at all and the
+    // button reads as broken even though the phones got it.
+    const b = $('phaseBanner');
+    b.className = 'phase-banner buzzed';
+    b.textContent = '💡 Answer: ' + text;
   },
 
   endRound(notify = true) {
@@ -1236,6 +1241,9 @@ const Host = {
     this.setPhase('idle');
     $('judgePanel').classList.add('hidden');
     this.broadcast({ type: 'phase', phase: 'wait', canBuzz: false });
+    // every route out of a round lands here, so this is the one place that
+    // guarantees players see the standings between songs
+    this.pushBoard();
     this.renderBuzzes();
   },
 
@@ -1355,7 +1363,7 @@ const Player = {
         break;
       case 'phase':
         this.hideExtras();
-        if (msg.phase === 'armed') { this.setBuzz(true); this.setStatus('🟢 BUZZ WHEN YOU KNOW IT!', 'good'); this.vibe([60]); }
+        if (msg.phase === 'armed') { this.hideExtras(); this.setBuzz(true); this.setStatus('🟢 BUZZ WHEN YOU KNOW IT!', 'good'); this.vibe([60]); }
         else if (msg.phase === 'locked') { this.setBuzz(false); this.setStatus('🔒 Locked out this song', 'bad'); }
         else { this.setBuzz(false); this.setStatus('Listen… buzzers not live yet'); }
         break;
