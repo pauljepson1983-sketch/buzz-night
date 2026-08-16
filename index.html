@@ -1478,6 +1478,11 @@ const Host = {
         carry = existing[1];
         try { if (carry.conn && carry.conn !== conn) carry.conn.close(); } catch (e) {}
         delete this.players[existing[0]];
+        // Anything keyed on the OLD peer id has to come with them. Without
+        // this a refresh mid-round let someone answer the same question twice
+        // — the duplicate guard looks up their id, and they had a new one —
+        // and orphaned their points so the round winner was miscounted.
+        this.rekey(existing[0], conn.peer);
       }
       this.players[conn.peer] = {
         conn, name: wanted, online: true,
@@ -1579,6 +1584,26 @@ const Host = {
      only if they have said something recently AND the socket still looks open.
   --------------------------------------------------------------------- */
   blankStats() { return { answered: 0, correct: 0, firstIn: 0, bestSingle: 0, byMode: {} }; },
+
+  // A rejoining player arrives on a brand new PeerJS id, so every bit of
+  // in-flight state still filed under their old one has to follow them.
+  rekey(oldId, newId) {
+    if (!oldId || oldId === newId) return;
+    const move = obj => {
+      if (!obj || !(oldId in obj)) return;
+      obj[newId] = (typeof obj[oldId] === 'number' && typeof obj[newId] === 'number')
+        ? obj[newId] + obj[oldId]   // both halves of a split round count
+        : obj[oldId];
+      delete obj[oldId];
+    };
+    move(Quiz.answers);
+    move(Quiz.gains);
+    move(Quiz.roundGains);
+    if (Quiz.firstCorrect === oldId) Quiz.firstCorrect = newId;
+    // the buzz queue holds peer ids, so a refresh mid-round would otherwise
+    // leave a ghost in the running order
+    this.buzzQueue = (this.buzzQueue || []).map(id => (id === oldId ? newId : id));
+  },
 
   PRESENT_MS: 12000,
   isPresent(p) {
@@ -1848,7 +1873,9 @@ const Host = {
   --------------------------------------------------------------------- */
   awards() {
     const people = Object.values(this.players).filter(p => p.stats && (p.stats.answered || p.reactions.length));
-    if (people.length < 2) return [];
+    // one player still gets a title — a solo dry run should show the whole
+    // ending, not silently skip it and look broken
+    if (!people.length) return [];
 
     // Each award carries a RANKED list, not just its top person. If the best
     // candidate already has a title the award passes down to the next one
