@@ -376,6 +376,10 @@
           <button class="btn ghost small" onclick="Hall.render()">Refresh</button>
           <button class="btn ghost small" onclick="Hall.reset()">Wipe records</button>
         </div>
+        <p class="muted mt" id="seenNote" style="font-size:.85rem"></p>
+        <div class="row">
+          <button class="btn ghost small" onclick="Seen.reset()">Allow repeats again</button>
+        </div>
         </div>
       </details>
 
@@ -1468,6 +1472,7 @@ const Host = {
       Sound.initPickers();
       Night.load();
       Hall.render();
+      Seen.render();
       if (this._afterOpen) { const fn = this._afterOpen; this._afterOpen = null; try { fn(); } catch (e) {} }
       this._resuming = false;
       this._resumeTries = 0;
@@ -2512,7 +2517,8 @@ const Quiz = {
     if (songs.length < 4) throw new Error('Only found ' + songs.length + ' datable songs — try a wider decade or a different style.');
     this.available = songs.length;
 
-    return this.shuffle(songs).slice(0, Math.min(count, songs.length)).map(s => {
+    // same held-back-if-recently-asked treatment as the picture rounds
+    return Seen.rank('years', songs).slice(0, Math.min(count, songs.length)).map(s => {
       // decoys sit near the real year so it's a judgement, not a giveaway
       const spread = new Set();
       let guard = 0;
@@ -2524,7 +2530,8 @@ const Quiz = {
       const options = this.shuffle([s.year, ...spread].map(String));
       return {
         uri: s.uri, dur: s.dur, url: s.url,
-        answer: String(s.year), title: s.title,
+        // the year is the answer, but the SONG is what must not repeat
+        answer: String(s.year), title: s.title, seenKey: s.title,
         options, correct: options.indexOf(String(s.year))
       };
     });
@@ -2533,11 +2540,14 @@ const Quiz = {
   // decoys come from the same result set, so a britpop round offers four
   // britpop albums rather than one plausible answer and three obvious duds
   toQuestions(items, count) {
-    const picks = this.shuffle(items.slice()).slice(0, Math.min(count, items.length));
+    // Seen.rank puts anything not asked recently first, so repeat nights work
+    // through fresh material before coming back to old favourites. Decoys are
+    // still drawn from the whole pool — only the ANSWER needs to be new.
+    const picks = Seen.rank(this.mode, items.slice()).slice(0, Math.min(count, items.length));
     return picks.map(target => {
       const decoys = this.shuffle(items.filter(a => a.label !== target.label)).slice(0, 3);
       const options = this.shuffle([target, ...decoys].map(a => a.label));
-      return { url: target.url, uri: target.uri, dur: target.dur || 0, answer: target.label, options, correct: options.indexOf(target.label) };
+      return { url: target.url, uri: target.uri, dur: target.dur || 0, answer: target.label, seenKey: target.label, options, correct: options.indexOf(target.label) };
     });
   },
 
@@ -2632,6 +2642,10 @@ const Quiz = {
         if (!this.questions.length) throw new Error('Could not prepare any ' + noun + 's.');
       }
       this.active = true; this.idx = -1; this.roundGains = {};
+      // banked here rather than per question, so a round abandoned halfway
+      // still counts as used and won't come straight back next time
+      Seen.mark(this.mode, this.questions);
+      Seen.render();
       Host.endRound(false);
       Host.broadcast({
         type: 'quizStart', total: this.questions.length,
@@ -2915,6 +2929,79 @@ const Quiz = {
     $('quizHostView').classList.add('hidden');
     // release anything waiting on this round, or the running order would hang
     if (this.onFinish) this.onFinish();
+  }
+};
+
+/* ======================================================================
+   SEEN — what this device has already asked, so nights don't repeat.
+
+   Hard exclusion would eventually starve a round: there are only so many
+   1960s films, and after a few nights a strict filter leaves nothing and the
+   round fails to build. So this PREFERS unseen material rather than demanding
+   it — fresh items first, then the longest-ago ones to top up. Anything older
+   than the forget window becomes fair game again, which also means someone
+   joining their first night still meets the well-known stuff eventually
+   instead of only ever getting the leftovers nobody has used.
+   ====================================================================== */
+const Seen = {
+  KEY: 'buzz_seen',
+  FORGET_DAYS: 90,
+  MAX_PER_MODE: 600,   // keeps localStorage sane over a lot of nights
+
+  load() {
+    try { this.data = JSON.parse(store.get(this.KEY) || '') || {}; } catch (e) { this.data = {}; }
+    if (!this.data || typeof this.data !== 'object') this.data = {};
+    return this.data;
+  },
+  save() { store.set(this.KEY, JSON.stringify(this.data || {})); },
+
+  keyOf(item) { return String(item.seenKey || item.label || item.title || '').toLowerCase().trim(); },
+
+  // unseen first (shuffled so it isn't the same order every night), then the
+  // least recently used, so a thin pool still fills a round
+  rank(mode, items) {
+    const seen = this.load()[mode] || {};
+    const cutoff = Date.now() - this.FORGET_DAYS * 864e5;
+    const fresh = [], stale = [];
+    items.forEach(it => {
+      const t = seen[this.keyOf(it)];
+      if (!t || t < cutoff) fresh.push(it);
+      else stale.push({ it, t });
+    });
+    Quiz.shuffle(fresh);
+    stale.sort((a, b) => a.t - b.t);           // oldest seen comes back first
+    return fresh.concat(stale.map(x => x.it));
+  },
+
+  mark(mode, items) {
+    this.load();
+    const bag = this.data[mode] = this.data[mode] || {};
+    const now = Date.now();
+    items.forEach(it => { const k = this.keyOf(it); if (k) bag[k] = now; });
+    // trim the oldest if it ever grows silly
+    const keys = Object.keys(bag);
+    if (keys.length > this.MAX_PER_MODE) {
+      keys.sort((a, b) => bag[a] - bag[b]).slice(0, keys.length - this.MAX_PER_MODE)
+        .forEach(k => delete bag[k]);
+    }
+    this.save();
+  },
+
+  count() {
+    this.load();
+    return Object.values(this.data).reduce((n, bag) => n + Object.keys(bag || {}).length, 0);
+  },
+  reset() {
+    if (!confirm('Forget everything asked so far? Questions will start repeating from the beginning.')) return;
+    this.data = {}; this.save(); this.render();
+  },
+  render() {
+    const el = $('seenNote');
+    if (!el) return;
+    const n = this.count();
+    el.textContent = n
+      ? n + ' questions asked before on this laptop — they are held back while there is fresh material, and come round again after ' + this.FORGET_DAYS + ' days.'
+      : 'Nothing asked yet. Once you play, questions already used get held back on future nights.';
   }
 };
 
