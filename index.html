@@ -182,6 +182,14 @@
   #roundCard .rc-kicker { font-size: .85rem; color: var(--muted); font-weight: 700; }
   #roundCard .rc-name { font-size: 1.5rem; font-weight: 900; color: var(--gold); margin: 4px 0; }
   #roundCard .rc-how { font-size: .9rem; }
+  #roundCard .rc-win { font-size: 3.4rem; line-height: 1.1; }
+  #roundCard.celebrate {
+    background: linear-gradient(160deg, #2a1550, #4a1d6b);
+    outline: 3px solid var(--gold);
+    animation: pop .5s ease-out, glow 1.1s infinite .5s;
+  }
+  #roundCard.celebrate .rc-name { font-size: 1.8rem; }
+  @keyframes pop { 0% { transform: scale(.8); opacity: 0 } 60% { transform: scale(1.06) } 100% { transform: scale(1); opacity: 1 } }
   .redact-note { font-size: .8rem; }
   #connDot { position: fixed; top: 10px; right: 12px; width: 12px; height: 12px; border-radius: 50%; background: var(--red); }
   #connDot.on { background: var(--green); }
@@ -320,8 +328,14 @@
           <button class="btn ghost small" onclick="Night.addBuzzer()">➕ Add a buzzer round</button>
           <button class="btn ghost small" onclick="Night.clear()">Clear</button>
         </div>
+        <label class="muted mb" style="display:block; font-size:.85rem">
+          <input type="checkbox" id="nightPause" checked> Wait for me before each round starts
+        </label>
         <div class="row">
           <button class="btn big green" id="nightGoBtn" onclick="Night.start()">▶ Start the night</button>
+          <button class="btn big green hidden" id="nightNextBtn" onclick="Night.go()">▶ Start this round</button>
+        </div>
+        <div class="row mt">
           <button class="btn ghost small" onclick="Night.skip()">Skip round</button>
           <button class="btn ghost small" onclick="Night.stop()">Stop</button>
         </div>
@@ -2385,7 +2399,7 @@ const Quiz = {
         this.questions = qs.filter(q => q.img);
         if (!this.questions.length) throw new Error('Could not prepare any ' + noun + 's.');
       }
-      this.active = true; this.idx = -1;
+      this.active = true; this.idx = -1; this.roundGains = {};
       Host.endRound(false);
       Host.broadcast({
         type: 'quizStart', total: this.questions.length,
@@ -2480,6 +2494,9 @@ const Quiz = {
       if (!this.firstCorrect) { this.firstCorrect = peerId; gained += 5; }
       p.score += gained;
       this.gains[peerId] = gained;
+      // running total for THIS round, so the round winner is whoever did best
+      // here rather than whoever happens to lead overall
+      this.roundGains[peerId] = (this.roundGains[peerId] || 0) + gained;
     }
     Host.renderScores();
     Host.saveGame();
@@ -2515,15 +2532,44 @@ const Quiz = {
     this.active = false;
     clearTimeout(this.tick);
     if (this.mode === 'themes' || this.mode === 'years') Spot.pause();
-    Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
+
+    // Whoever scored most in THIS round, not whoever leads overall — the old
+    // version read the leaderboard and crowned the overall leader, so it
+    // congratulated the wrong person whenever someone else won a round.
+    const scored = Object.entries(this.roundGains || {})
+      .map(([id, pts]) => ({ id, pts, name: (Host.players[id] || {}).name }))
+      .filter(x => x.name && x.pts > 0)
+      .sort((a, b) => b.pts - a.pts);
+    const win = scored[0] || null;
+    const drawnWith = win ? scored.filter(x => x.pts === win.pts) : [];
+    const roundName = this.ROUND_NAMES[this.mode] || 'round';
+    const title = this.TITLES[this.mode] || 'Quiz round';
+
+    // everyone hears the outcome, but each phone gets its own version of it
+    Object.entries(Host.players).forEach(([id, p]) => {
+      const mine = (this.roundGains || {})[id] || 0;
+      const iWon = !!win && drawnWith.some(x => x.id === id);
+      Host.sendTo(id, {
+        type: 'quizEnd', title, roundName,
+        won: iWon, drawn: iWon && drawnWith.length > 1,
+        winner: win ? (drawnWith.length > 1 ? drawnWith.map(x => x.name).join(' & ') : win.name) : null,
+        winnerPts: win ? win.pts : 0,
+        yourPts: mine, yourScore: p.score, nobody: !win
+      });
+    });
     Host.pushBoard();
-    const top = Host.boardRows()[0];
-    $('quizStatus').textContent = 'Round finished.' + (top ? ' Winner: ' + top.name + ' on ' + top.score + '.' : '');
+
+    $('quizStatus').textContent = win
+      ? 'Round finished. ' + (drawnWith.length > 1 ? 'Drawn: ' + drawnWith.map(x => x.name).join(' & ') : win.name + ' won it') + ' with ' + win.pts + ' this round.'
+      : 'Round finished — nobody scored.';
     $('quizHostView').classList.add('hidden');
-    if (top) {
-      const roundName = this.ROUND_NAMES[this.mode] || 'round';
-      const v = Host.voiceFor(top.name);
-      Sound.say(top.name + ' wins the ' + roundName + '!', v.voice, v.style);
+    if (win) {
+      Sound.buzz('fanfare');
+      const v = Host.voiceFor(win.name);
+      const words = drawnWith.length > 1
+        ? 'It is a draw on the ' + roundName + '!'
+        : win.name + ' wins the ' + roundName + '!';
+      setTimeout(() => Sound.say(words, v.voice, v.style), 800);
     }
     if (this.onFinish) this.onFinish();
   },
@@ -2658,6 +2704,21 @@ const Night = {
 
   wait(ms) { return new Promise(r => { this.timer = setTimeout(r, ms); }); },
 
+  // resolves when the host presses "Start this round" (or false if they stop)
+  holdForGo() {
+    $('nightNextBtn').classList.remove('hidden');
+    $('nightGoBtn').classList.add('hidden');
+    return new Promise(resolve => { this._go = resolve; });
+  },
+  go() {
+    $('nightNextBtn').classList.add('hidden');
+    if (this._go) { const r = this._go; this._go = null; r(true); }
+  },
+  releaseGo() {
+    $('nightNextBtn').classList.add('hidden');
+    if (this._go) { const r = this._go; this._go = null; r(false); }
+  },
+
   async runNext() {
     if (!this.running) return;
     this.idx++;
@@ -2677,6 +2738,16 @@ const Night = {
 
     r.roundLabel = 'Round ' + n + ' of ' + total;
     Host.broadcast({ type: 'roundCard', kicker: r.roundLabel, name: Quiz.TITLES[r.mode] || 'Quiz round', how: Quiz.HOWTO[r.mode] || '' });
+
+    // Hold here until the host says go, so a round never starts while people
+    // are still talking, topping up drinks or reading the last leaderboard.
+    if ($('nightPause').checked) {
+      $('nightStatus').textContent = 'Round ' + n + '/' + total + ' — ' + this.describe(r) + '. Press "Start this round" when the room is ready.';
+      Sound.say('Round ' + n + '. ' + (Quiz.ROUND_NAMES[r.mode] || 'round') + '. Ready when you are.');
+      const go = await this.holdForGo();
+      if (!go || !this.running) return;
+    }
+
     $('nightStatus').textContent = 'Round ' + n + '/' + total + ' — ' + this.describe(r) + ' (building…)';
     Sound.say('Round ' + n + '. ' + (Quiz.ROUND_NAMES[r.mode] || 'round') + '.');
     await this.wait(2200);
@@ -2700,6 +2771,8 @@ const Night = {
   skip() {
     if (!this.running) return;
     clearTimeout(this.timer);
+    // skipping while held at the gate should drop that round, not start it
+    if (this._go) { this.releaseGo(); this.runNext(); return; }
     if (Quiz.active) { Quiz.stop(); return; }
     if (this.waiting) { this.waiting = false; Host.endRound(false); }
     this.runNext();
@@ -2708,7 +2781,9 @@ const Night = {
   stop() {
     this.running = false; this.waiting = false;
     clearTimeout(this.timer);
+    this.releaseGo();
     if (Quiz.active) Quiz.stop();
+    $('nightGoBtn').classList.remove('hidden');
     $('nightGoBtn').disabled = false;
     $('nightStatus').textContent = 'Stopped. The running order is still saved.';
     this.render();
@@ -2716,6 +2791,8 @@ const Night = {
 
   done() {
     this.running = false;
+    $('nightNextBtn').classList.add('hidden');
+    $('nightGoBtn').classList.remove('hidden');
     $('nightGoBtn').disabled = false;
     $('nightStatus').textContent = 'That is the whole running order — rolling the final scores.';
     this.render();
@@ -2859,9 +2936,45 @@ const Player = {
         break;
       }
 
-      case 'quizEnd':
+      case 'quizEnd': {
         clearInterval(this._quizTimer);
         clearInterval(this._quizLead);
+        $('quizPanel').classList.add('hidden');
+        $('buzzBtn').classList.add('hidden');
+        const el = $('roundCard');
+        let body;
+        if (msg.nobody) {
+          body = '<div class="rc-kicker">' + esc(msg.title) + '</div>' +
+            '<div class="rc-name">Nobody got one!</div>' +
+            '<div class="rc-how">Brutal round. Next one is yours.</div>';
+        } else if (msg.won) {
+          el.classList.add('celebrate');
+          body = '<div class="rc-kicker">' + esc(msg.title) + '</div>' +
+            '<div class="rc-win">' + (msg.drawn ? '🤝' : '🏆') + '</div>' +
+            '<div class="rc-name">' + (msg.drawn ? 'YOU DREW IT!' : 'YOU WON THE ROUND!') + '</div>' +
+            '<div class="rc-how">' + msg.yourPts + ' points this round' + (msg.drawn ? ', level with ' + esc(msg.winner) : '') + '</div>';
+          this.vibe([80, 50, 80, 50, 80, 50, 350]);
+        } else {
+          // losing quietly is worse than losing loudly — say something
+          const lines = [
+            'Better luck next time!', 'So close — go again.', 'Next round is yours.',
+            'Shake it off, plenty to play for.', 'Not your round — the next one might be.'
+          ];
+          body = '<div class="rc-kicker">' + esc(msg.title) + '</div>' +
+            '<div class="rc-name">' + esc(msg.winner) + ' took that one</div>' +
+            '<div class="rc-how">' + lines[msg.yourScore % lines.length] +
+            ' You got ' + msg.yourPts + ' this round.</div>';
+          this.vibe([200]);
+        }
+        el.innerHTML = body;
+        el.classList.remove('hidden');
+        $('pScore').textContent = msg.yourScore + ' pts';
+        this.setStatus('');
+        setTimeout(() => el.classList.remove('celebrate'), 4000);
+        break;
+      }
+      case 'quizEndLegacy':
+        clearInterval(this._quizTimer);
         $('quizPanel').classList.add('hidden');
         $('buzzBtn').classList.remove('hidden');
         this.setStatus('🏁 Round over!');
