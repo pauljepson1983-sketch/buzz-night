@@ -1503,7 +1503,7 @@ const Quiz = {
     // Sleeve text sits at the top or bottom nearly every time, so blanking
     // those outright is far more reliable than trying to be clever, and a
     // tighter window suits a one-second glimpse anyway.
-    const TOP = Math.round(size * 0.30), BOT = Math.round(size * 0.24);
+    const TOP = Math.round(size * 0.34), BOT = Math.round(size * 0.28);
     const bands = [[0, TOP], [size - BOT, BOT]];
 
     // detection now only has to catch text sitting in the middle of the art
@@ -1511,7 +1511,9 @@ const Quiz = {
       const mid = Array.from(rows).slice(TOP, size - BOT);
       const sorted = mid.slice().sort((a, b) => a - b);
       const median = sorted[Math.floor(sorted.length / 2)] || 1;
-      const threshold = Math.max(median * 1.6, 400);
+      // lowered after live testing: titles printed across the middle of a
+      // sleeve were still getting through at the old threshold
+      const threshold = Math.max(median * 1.3, 240);
       const found = [];
       let start = -1;
       for (let y = TOP; y <= size - BOT; y++) {
@@ -1519,14 +1521,14 @@ const Quiz = {
         if (busy && start < 0) start = y;
         if (!busy && start >= 0) {
           const h = y - start;
-          if (h >= size * 0.02 && h <= size * 0.22) found.push([start, h]);
+          if (h >= size * 0.015 && h <= size * 0.24) found.push([start, h]);
           start = -1;
         }
       }
       found.sort((a, b) => b[1] - a[1]);
       // cap the extra coverage so a busy sleeve isn't blacked out completely
-      let budget = size * 0.2;
-      found.slice(0, 2).forEach(f => { if (f[1] <= budget) { bands.push(f); budget -= f[1]; } });
+      let budget = size * 0.26;
+      found.slice(0, 3).forEach(f => { if (f[1] <= budget) { bands.push(f); budget -= f[1]; } });
     }
 
     cx.fillStyle = '#12082b';
@@ -1566,7 +1568,7 @@ const Quiz = {
       'original score motion picture'
     ].map(q => decade ? q + ' year:' + decade : q);
 
-    const found = new Map();
+    const found = new Map(), seenArt = new Set();
     for (const q of queries) {
       let res;
       try { res = await Spot.searchRaw(q); } catch (e) { continue; }
@@ -1579,7 +1581,11 @@ const Quiz = {
         if (film.length < 2 || film.length > 42) return;
         const key = film.toLowerCase();
         if (found.has(key)) return;
-        found.set(key, { label: film, url: al.images[0].url, uri: t.uri });
+        // same poster under a different edition name would repeat in a round
+        const art = al.images[0].url;
+        if (seenArt.has(art)) return;
+        seenArt.add(art);
+        found.set(key, { label: film, url: art, uri: t.uri });
       });
       if (found.size >= count + 12) break;
     }
@@ -1606,31 +1612,29 @@ const Quiz = {
 
     const crop = Math.round(S * 0.38);
     const spots = [];
-    for (let gy = 0; gy < 3; gy++) for (let gx = 0; gx < 3; gx++) {
-      spots.push([Math.round(gx * (S - crop) / 2), Math.round(gy * (S - crop) / 2)]);
+    for (let gy = 0; gy < 4; gy++) for (let gx = 0; gx < 4; gx++) {
+      spots.push([Math.round(gx * (S - crop) / 3), Math.round(gy * (S - crop) / 3)]);
     }
-    let best = spots[4], bestScore = -Infinity;
+    // Scoring on "detail" was tried first and failed badly — text IS the most
+    // detailed thing on a poster, so it picked the lettering every time and
+    // served up crops reading BRIDGET JONES and ELVIS. Tonal spread works far
+    // better: photographs use the whole range, whereas text is a flat
+    // background plus hard strokes and piles into a couple of brightness bins.
+    let best = spots[5], bestScore = -Infinity;
     try {
       spots.forEach(([x, y]) => {
         const d = wx.getImageData(x, y, crop, crop).data;
-        let detail = 0, textish = 0, prevRow = 0;
-        for (let ry = 0; ry < crop; ry += 3) {
-          let rowEnergy = 0, prev = -1;
-          for (let rx = 0; rx < crop; rx += 3) {
-            const i = (ry * crop + rx) * 4;
-            const lum = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
-            if (prev >= 0) rowEnergy += Math.abs(lum - prev);
-            prev = lum;
-          }
-          detail += rowEnergy;
-          // text shows up as rows that spike hard against their neighbours
-          if (prevRow > 0 && rowEnergy > prevRow * 2.4) textish += rowEnergy;
-          prevRow = rowEnergy;
+        const bins = new Array(32).fill(0);
+        let n = 0;
+        for (let i = 0; i < d.length; i += 16) {
+          const lum = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+          bins[Math.min(31, Math.floor(lum / 8))]++; n++;
         }
-        const score = detail - textish * 3;
-        if (score > bestScore) { bestScore = score; best = [x, y]; }
+        let entropy = 0;
+        bins.forEach(b => { if (b) { const p = b / n; entropy -= p * Math.log2(p); } });
+        if (entropy > bestScore) { bestScore = entropy; best = [x, y]; }
       });
-    } catch (e) { /* no pixel access: fall back to the centre crop */ }
+    } catch (e) { /* no pixel access: fall back to a fixed crop */ }
 
     const c = document.createElement('canvas');
     c.width = c.height = out;
@@ -1643,13 +1647,17 @@ const Quiz = {
     const { tracks } = await Spot.searchRaw(topic);
     // one entry per album, and dedupe on name+artist so remasters and
     // re-releases can't appear as two identical options
-    const seen = new Set(), albums = [];
+    const seen = new Set(), seenArt = new Set(), albums = [];
     tracks.forEach(t => {
       const al = t.album, artist = (t.artists || []).map(a => a.name).join(', ');
       if (!al || !al.name || !al.images?.length) return;
       const key = (al.name + '|' + artist).toLowerCase().replace(/\s*[\(\[].*$/, '').trim();
       if (seen.has(key)) return;
-      seen.add(key);
+      // deluxe/standard/regional editions carry different names but the SAME
+      // artwork, which is what made covers repeat inside a round
+      const art = al.images[0].url;
+      if (seenArt.has(art)) return;
+      seen.add(key); seenArt.add(art);
       // "(2019 Remaster)" and friends just clutter the four options
       const clean = al.name.replace(/\s*[\(\[][^)\]]*(remaster|deluxe|edition|version|expanded|anniversary|reissue|mono|stereo)[^)\]]*[\)\]]\s*$/i, '').trim();
       albums.push({ label: (clean || al.name) + ' — ' + artist, url: al.images[0].url });
@@ -1743,6 +1751,8 @@ const Quiz = {
     if (this.idx >= this.questions.length) return this.finish();
     const q = this.questions[this.idx];
     this.answers = {};
+    this.gains = {};
+    this.firstCorrect = null;
     // themes have no picture to flash, so answering starts immediately
     const flash = this.mode === 'themes' ? 0 : this.flashMs;
     this.endsAt = Date.now() + flash + this.seconds * 1000;
@@ -1777,14 +1787,23 @@ const Quiz = {
     this.answers[peerId] = { choice, ms };
     const q = this.questions[this.idx];
     const p = Host.players[peerId];
+    let gained = 0;
     if (p && choice === q.correct) {
+      // 10 for being right, up to 20 more for speed, and 5 on top for getting
+      // there first — being fast should visibly beat being merely correct
       const left = Math.max(0, this.endsAt - Date.now()) / 1000;
-      p.score += 10 + Math.round(10 * Math.min(1, left / this.seconds));
+      gained = 10 + Math.round(20 * Math.min(1, left / this.seconds));
+      if (!this.firstCorrect) { this.firstCorrect = peerId; gained += 5; }
+      p.score += gained;
+      this.gains[peerId] = gained;
     }
     Host.renderScores();
-    // everyone in? don't make the room wait out the clock
     const live = Object.values(Host.players).filter(x => x.online).length;
-    if (Object.keys(this.answers).length >= live) { clearTimeout(this.tick); setTimeout(() => this.close(), 350); }
+    const inCount = Object.keys(this.answers).length;
+    $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
+      esc(q.answer) + ' <span class="muted">(' + inCount + ' of ' + live + ' answered)</span>';
+    // everyone in? don't make the room sit and watch the clock run down
+    if (inCount >= live && live > 0) { clearTimeout(this.tick); clearTimeout(this._closing); this._closing = setTimeout(() => this.close(), 250); }
   },
 
   close() {
@@ -1794,7 +1813,11 @@ const Quiz = {
     const q = this.questions[this.idx];
     Object.entries(Host.players).forEach(([id, p]) => {
       const a = this.answers[id];
-      Host.sendTo(id, { type: 'quizResult', correct: q.correct, answer: q.answer, picked: a ? a.choice : -1, score: p.score });
+      Host.sendTo(id, {
+        type: 'quizResult', correct: q.correct, answer: q.answer,
+        picked: a ? a.choice : -1, score: p.score,
+        gained: this.gains[id] || 0, fastest: this.firstCorrect === id
+      });
     });
     Host.pushBoard();
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' + esc(q.answer);
@@ -1932,7 +1955,9 @@ const Player = {
           else if (i === msg.picked) b.classList.add('wrong');
         });
         const got = msg.picked === msg.correct;
-        $('quizFeedback').textContent = got ? '✅ Correct!' : (msg.picked < 0 ? '⏱ Too slow — ' + msg.answer : '❌ ' + msg.answer);
+        $('quizFeedback').textContent = got
+          ? (msg.fastest ? '⚡ Fastest finger! +' + msg.gained : '✅ Correct! +' + msg.gained)
+          : (msg.picked < 0 ? '⏱ Too slow — ' + msg.answer : '❌ ' + msg.answer);
         $('pScore').textContent = msg.score + ' pts';
         this.vibe(got ? [80, 40, 80] : [300]);
         break;
