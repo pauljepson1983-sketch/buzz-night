@@ -2417,27 +2417,33 @@ const Quiz = {
     this.answers = {};
     this.gains = {};
     this.firstCorrect = null;
-    // themes have no picture to flash, so answering starts immediately
     const audioRound = this.mode === 'themes' || this.mode === 'years';
-    // audio rounds have no picture to flash, so answering starts immediately
+    // audio rounds have no picture to flash
     const flash = audioRound ? 0 : this.flashMs;
-    this.endsAt = Date.now() + flash + this.seconds * 1000;
+    // Music used to start the instant the question went out, with the clock
+    // already running — people were still looking down when the recognisable
+    // bit played. A three-count gives the room a moment to listen up, and the
+    // answer clock only starts once the track is actually playing.
+    const leadIn = audioRound ? 3000 : 0;
+    this.endsAt = Date.now() + flash + leadIn + this.seconds * 1000;
     // Film scores open with slow builds — starting at 0:00 meant a round of
     // atmospheric strings nobody could place inside the answer window. Skip
     // into the track so the main theme is playing when the clock starts.
-    if (audioRound && q.uri) Spot.playUri(q.uri, this.startOffset(q.dur)).catch(() => {});
+    if (audioRound && q.uri) {
+      setTimeout(() => Spot.playUri(q.uri, this.startOffset(q.dur)).catch(() => {}), leadIn);
+    }
     Host.broadcast({
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
       title: this.TITLES[this.mode] || 'Quiz round',
       noun: this.NOUNS[this.mode] || 'Question',
       roundLabel: this.roundLabel || '',
       img: q.img || null, options: q.options, flashMs: flash, seconds: this.seconds,
-      listen: audioRound
+      listen: audioRound, leadIn
     });
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
       esc(q.answer) + ' <span class="muted">(waiting for answers…)</span>';
     clearTimeout(this.tick);
-    this.tick = setTimeout(() => this.close(), flash + this.seconds * 1000 + 400);
+    this.tick = setTimeout(() => this.close(), flash + leadIn + this.seconds * 1000 + 400);
   },
 
   modeChanged() {
@@ -2836,6 +2842,7 @@ const Player = {
 
       case 'quizResult': {
         clearInterval(this._quizTimer);
+        clearInterval(this._quizLead);
         $('quizCountdown').textContent = '';
         const btns = [...$('quizOptions').querySelectorAll('button')];
         btns.forEach((b, i) => {
@@ -2854,6 +2861,7 @@ const Player = {
 
       case 'quizEnd':
         clearInterval(this._quizTimer);
+        clearInterval(this._quizLead);
         $('quizPanel').classList.add('hidden');
         $('buzzBtn').classList.remove('hidden');
         this.setStatus('🏁 Round over!');
@@ -2884,8 +2892,10 @@ const Player = {
       this.setStatus(msg.listen ? '🎧 Listen…' : '');
     }
     this.vibe([40]);
-    setTimeout(() => {
+
+    const showOptions = () => {
       $('quizArtWrap').classList.remove('showing');
+      if (msg.listen) this.setStatus('🎧 Listen…');
       msg.options.forEach((opt, i) => {
         const b = document.createElement('button');
         b.className = 'quiz-opt';
@@ -2906,7 +2916,26 @@ const Player = {
           [...$('quizOptions').querySelectorAll('button')].forEach(b => b.disabled = true);
         }
       }, 1000);
-    }, msg.flashMs);
+    };
+
+    clearInterval(this._quizLead);
+    if (msg.leadIn) {
+      // count the room in before the music starts, so nobody misses the
+      // opening while still looking at the last leaderboard
+      let c = Math.round(msg.leadIn / 1000);
+      const cd = $('quizCountdown');
+      cd.classList.remove('hurry');
+      this.setStatus('🎧 Get ready…');
+      cd.textContent = c;
+      this.vibe([40]);
+      this._quizLead = setInterval(() => {
+        c--;
+        if (c > 0) { cd.textContent = c; this.vibe([40]); }
+        else { clearInterval(this._quizLead); showOptions(); }
+      }, 1000);
+    } else {
+      setTimeout(showOptions, msg.flashMs);
+    }
   },
 
   quizAnswer(choice, btn) {
