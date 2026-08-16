@@ -477,6 +477,10 @@ const Spot = {
         this.currentTrack = { name: tr.name, artist: tr.artists.map(a => a.name).join(', '), uri: tr.uri };
         $('nowPlaying').textContent = tr.name + ' — ' + this.currentTrack.artist;
       }
+      // starting the music IS the host's "go" — arm the buzzers off the back of
+      // it instead of making them find a second button. Only from idle, so
+      // resuming mid-round doesn't wipe a buzz queue that's being judged.
+      if (!st.paused && Host.peer && Host.phase === 'idle') Host.arm();
     });
     this.player.addListener('initialization_error', e => alert('Spotify player error: ' + e.message));
     this.player.addListener('authentication_error', e => alert('Spotify auth error — reconnect Spotify. ' + e.message));
@@ -802,7 +806,7 @@ const Host = {
     this.phase = phase;
     const b = $('phaseBanner');
     b.className = 'phase-banner';
-    if (phase === 'idle') b.textContent = 'Play a song, then hit ARM BUZZERS';
+    if (phase === 'idle') b.textContent = 'Play a song — buzzers go live automatically';
     if (phase === 'armed') { b.textContent = '🟢 BUZZERS LIVE'; b.classList.add('armed'); }
     if (phase === 'judging') { b.classList.add('buzzed'); }
     $('armBtn').disabled = phase !== 'idle';
