@@ -330,6 +330,7 @@
           <select id="quizMode" onchange="Quiz.modeChanged()">
             <option value="covers">Album covers</option>
             <option value="backdrops">Film stills</option>
+            <option value="faces">Famous faces</option>
             <option value="years">Year of release (music)</option>
             <option value="themes">Film themes (music)</option>
             <option value="posters">Film poster details</option>
@@ -392,6 +393,11 @@
             <option value="2000">2s</option>
             <option value="3000" selected>3s</option>
             <option value="5000">5s (easy)</option>
+          </select>
+          <label for="quizCrop">Faces</label>
+          <select id="quizCrop">
+            <option value="whole">Whole photo</option>
+            <option value="crop" selected>Crop into it (harder)</option>
           </select>
           <label for="quizStart" id="quizStartLabel">Start</label>
           <select id="quizStart">
@@ -2132,6 +2138,62 @@ const Quiz = {
      albums and singles are trusted, and when a decade is set anything landing
      outside it is dropped rather than believed.
   --------------------------------------------------------------------- */
+  /* ---- famous faces ----------------------------------------------------
+     Sourced from the top-billed cast of well-known films, NOT from TMDB's
+     /person/popular. That endpoint ranks by trending page views, and a live
+     check returned Anastasia Shestakova, Yoon Yool, Min Do-yoon and Daniella
+     Wang — a round nobody could play. Cast of high-vote films gives Morgan
+     Freeman, Brad Pitt, Uma Thurman instead.
+  --------------------------------------------------------------------- */
+  async tmdb(path, params = {}) {
+    const q = new URLSearchParams({ api_key: this.TMDB_KEY, language: 'en-GB', ...params });
+    const r = await fetch('https://api.themoviedb.org/3' + path + '?' + q);
+    if (!r.ok) throw new Error('TMDB said ' + r.status);
+    return r.json();
+  },
+
+  async buildFaces(decade, count) {
+    const gte = decade ? decade.slice(0, 4) + '-01-01' : '1970-01-01';
+    const lte = decade ? decade.slice(5) + '-12-31' : new Date().getFullYear() + '-12-31';
+    const people = new Map();
+    for (let page = 1; page <= 2 && people.size < count + 14; page++) {
+      const disc = await this.tmdb('/discover/movie', {
+        sort_by: 'popularity.desc', 'vote_count.gte': 2000,
+        'primary_release_date.gte': gte, 'primary_release_date.lte': lte, page
+      });
+      for (const m of (disc.results || []).slice(0, 10)) {
+        let credits;
+        try { credits = await this.tmdb('/movie/' + m.id + '/credits', {}); } catch (e) { continue; }
+        (credits.cast || []).filter(p => p.profile_path).slice(0, 4).forEach(p => {
+          if (!people.has(p.id)) people.set(p.id, { label: p.name, url: this.TMDB_IMG + p.profile_path });
+        });
+        if (people.size >= count + 14) break;
+      }
+    }
+    const faces = [...people.values()];
+    if (faces.length < 4) throw new Error('Only found ' + faces.length + ' faces for that decade — try Any decade.');
+    this.available = faces.length;
+    return faces;
+  },
+
+  // Headshots are portrait with the face high and centred, so a square taken
+  // from the upper middle and blown up lands on the eyes and nose. Far harder
+  // than the whole photo, where a familiar hairline or outfit gives it away.
+  async cropFace(url, out = 420) {
+    const img = await new Promise((res, rej) => {
+      const im = new Image(); im.crossOrigin = 'anonymous';
+      im.onload = () => res(im); im.onerror = () => rej(new Error('face load failed'));
+      im.src = url;
+    });
+    const side = Math.round(Math.min(img.width * 0.52, img.height * 0.35));
+    const sx = Math.round((img.width - side) / 2);
+    const sy = Math.round(Math.max(0, img.height * 0.26 - side / 2));
+    const c = document.createElement('canvas');
+    c.width = c.height = out;
+    c.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, out, out);
+    return c.toDataURL('image/jpeg', 0.78);
+  },
+
   // "Public Enema Number One - 2015 Remaster" and "Number One - Club Short
   // Mix" both need reducing to their real title: the suffix gives the game
   // away on screen and lets one song appear as several questions.
@@ -2228,7 +2290,8 @@ const Quiz = {
       count: parseInt($('quizCount').value, 10),
       flash: parseInt($('quizFlash').value, 10),
       secs: parseInt($('quizSecs').value, 10),
-      startAt: ($('quizStart') || {}).value || 'skip'
+      startAt: ($('quizStart') || {}).value || 'skip',
+      crop: ($('quizCrop') || {}).value || 'crop'
     };
   },
 
@@ -2256,6 +2319,7 @@ const Quiz = {
     this.flashMs = c.flash;
     this.seconds = c.secs;
     this.startAt = c.startAt || 'skip';
+    this.crop = c.crop || 'crop';
     const btn = $('quizStartBtn');
     btn.disabled = true;
     $('quizStatus').textContent = 'Finding albums and blanking out the text…';
@@ -2265,7 +2329,9 @@ const Quiz = {
       : ('films' + (decadeLabel ? ', ' + decadeLabel : ''));
     try {
       let qs;
-      if (this.mode === 'years') {
+      if (this.mode === 'faces') {
+        qs = this.toQuestions(await this.buildFaces(decade, count), count);
+      } else if (this.mode === 'years') {
         qs = await this.buildYears(decade, count, style, extra);
       } else if (this.mode === 'covers') {
         qs = await this.build(topic, count, label);
@@ -2285,12 +2351,18 @@ const Quiz = {
         // redaction pass and nothing to re-encode
         qs.forEach(q => { q.img = q.url; });
         this.questions = qs;
+      } else if (this.mode === 'faces' && this.crop === 'whole') {
+        // whole headshots need no processing — the URL is an opaque hash
+        qs.forEach(q => { q.img = q.url; });
+        this.questions = qs;
       } else {
-        const noun = this.mode === 'posters' ? 'poster' : 'cover';
+        const noun = this.mode === 'posters' ? 'poster' : this.mode === 'faces' ? 'face' : 'cover';
         for (let i = 0; i < qs.length; i++) {
           $('quizStatus').textContent = 'Preparing ' + noun + ' ' + (i + 1) + ' of ' + qs.length + '…';
           try {
-            qs[i].img = this.mode === 'posters' ? await this.cropDetail(qs[i].url) : await this.redact(qs[i].url);
+            qs[i].img = this.mode === 'posters' ? await this.cropDetail(qs[i].url)
+                      : this.mode === 'faces' ? await this.cropFace(qs[i].url)
+                      : await this.redact(qs[i].url);
           } catch (e) { qs[i].img = null; }
         }
         this.questions = qs.filter(q => q.img);
@@ -2300,7 +2372,7 @@ const Quiz = {
       Host.endRound(false);
       Host.broadcast({ type: 'quizStart', total: this.questions.length });
       const short = this.questions.length < count;
-      const noun = { covers: 'covers', backdrops: 'stills', themes: 'themes', posters: 'posters' }[this.mode] || 'questions';
+      const noun = { covers: 'covers', backdrops: 'stills', themes: 'themes', posters: 'posters', faces: 'faces', years: 'songs' }[this.mode] || 'questions';
       $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' ' + noun + ' from ' + label +
         (short ? '. (Only ' + this.available + ' different albums matched, so that is all there was.)' : '.');
       $('quizHostView').classList.remove('hidden');
@@ -2348,13 +2420,18 @@ const Quiz = {
       covers: 'Covers flash on every phone for a moment, then drop away leaving four choices. Scored automatically, so you can play too.',
       backdrops: 'A still from the film flashes up, then four titles. Stills have no writing on them, so nothing gives the answer away. Decade applies; style is ignored. Film data and images from TMDB.',
       themes: 'The film’s theme plays on your speaker and four films appear on the phones. Decade applies; style is ignored.',
-      posters: 'A zoomed-in corner of the poster appears, chosen to avoid the title. Decade applies; style is ignored.'
+      posters: 'A zoomed-in corner of the poster appears, chosen to avoid the title. Decade applies; style is ignored.',
+      years: 'A song plays and four years appear. Decade applies; style narrows it. Remasters are filtered out so the dates are honest.',
+      faces: 'A face flashes up and four names appear — drawn from the cast of well-known films, so they are people the room will know. Crop into it makes it much harder. Decade applies; style is ignored. Faces from TMDB.'
     };
     $('quizBlurb').textContent = blurbs[m] || blurbs.covers;
-    const filmMode = m !== 'covers';
+    const filmMode = m !== 'covers' && m !== 'years';
     $('quizStyle').disabled = filmMode;
     $('quizTopic').disabled = filmMode;
-    $('quizFlash').disabled = m === 'themes';
+    const audioRound = m === 'themes' || m === 'years';
+    $('quizFlash').disabled = audioRound;
+    $('quizStart').disabled = !audioRound;
+    $('quizCrop').disabled = m !== 'faces';
   },
 
   answer(peerId, n, choice, ms) {
@@ -2422,7 +2499,8 @@ const Quiz = {
   ROUND_NAMES: {
     covers: 'album cover round', backdrops: 'film stills round',
     themes: 'film themes round', posters: 'film poster round',
-    years: 'year of release round'
+    years: 'year of release round',
+    faces: 'famous faces round'
   },
 
   stop() {
@@ -2452,7 +2530,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', posters: '🎞️ Film poster details',
-    themes: '🎵 Film themes', years: '📅 Year of release', buzzer: '🔔 Buzzer round (you judge)'
+    themes: '🎵 Film themes', years: '📅 Year of release', faces: '⭐ Famous faces', buzzer: '🔔 Buzzer round (you judge)'
   },
 
   load() {
