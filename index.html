@@ -121,6 +121,12 @@
   #playerStatus.bad { color: var(--red); }
   #stealTimer { font-size: 3rem; font-weight: 900; color: var(--gold); }
   .reveal-box { background: var(--gold); color: #1a0f35; border-radius: 14px; padding: 16px; font-weight: 800; font-size: 1.2rem; }
+  /* ---- running order ---- */
+  .night-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 10px; background: var(--panel2); margin-bottom: 6px; }
+  .night-row.now { outline: 2px solid var(--green); }
+  .night-n { min-width: 1.6rem; font-weight: 800; color: var(--gold); }
+  .night-desc { flex: 1; font-size: .9rem; }
+
   /* ---- leaderboard on the phones ---- */
   .lb-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 10px; }
   .lb-row.me { background: rgba(255,209,102,.16); outline: 2px solid var(--gold); }
@@ -300,6 +306,22 @@
         </div>
       </div>
 
+      <div class="card" id="nightCard">
+        <h2>🎬 Tonight's running order</h2>
+        <p class="muted" style="font-size:.85rem">Build the night up front, press go, and it runs itself — so you can play instead of operating it. Picture and music rounds score themselves. Add a buzzer round wherever you want to take over and judge.</p>
+        <div id="nightList"></div>
+        <div class="row mb">
+          <button class="btn ghost small" onclick="Night.addBuzzer()">➕ Add a buzzer round</button>
+          <button class="btn ghost small" onclick="Night.clear()">Clear</button>
+        </div>
+        <div class="row">
+          <button class="btn big green" id="nightGoBtn" onclick="Night.start()">▶ Start the night</button>
+          <button class="btn ghost small" onclick="Night.skip()">Skip round</button>
+          <button class="btn ghost small" onclick="Night.stop()">Stop</button>
+        </div>
+        <p class="muted redact-note mt" id="nightStatus">Nothing planned yet — set up a round below and add it.</p>
+      </div>
+
       <div class="card" id="quizCard">
         <h2>🖼️ Picture &amp; speed rounds</h2>
         <p class="muted" style="font-size:.85rem" id="quizBlurb">Covers flash on every phone for a moment, then drop away leaving four choices. Scored automatically, so you can play too.</p>
@@ -308,6 +330,7 @@
           <select id="quizMode" onchange="Quiz.modeChanged()">
             <option value="covers">Album covers</option>
             <option value="backdrops">Film stills</option>
+            <option value="years">Year of release (music)</option>
             <option value="themes">Film themes (music)</option>
             <option value="posters">Film poster details</option>
           </select>
@@ -386,6 +409,9 @@
         <div class="row">
           <button class="btn green" id="quizStartBtn" onclick="Quiz.start()">▶ Start round</button>
           <button class="btn ghost small" onclick="Quiz.stop()">Stop round</button>
+        </div>
+        <div class="row mt" style="border-top:1px solid rgba(255,255,255,.08); padding-top:10px">
+          <button class="btn ghost small" onclick="Night.addFromControls()">➕ Add these settings to tonight's running order</button>
         </div>
         <p class="muted redact-note mt" id="quizStatus">Artist and album names printed on the covers are blanked out automatically.</p>
         <div id="quizHostView" class="mt hidden"></div>
@@ -1265,6 +1291,7 @@ const Host = {
       $('joinUrl').textContent = url;
       $('waShare').href = 'https://wa.me/?text=' + encodeURIComponent('🎶 Buzz Night quiz is on! Grab your buzzer: ' + url + ' (room code ' + this.roomCode + ')');
       Sound.initPickers();
+      Night.load();
       this._resuming = false;
       this._resumeTries = 0;
       this.renderScores();
@@ -2087,7 +2114,7 @@ const Quiz = {
   // score doesn't land in a quiet middle section, and never past 55% of the
   // track so there's always some left to run.
   startOffset(dur) {
-    const how = ($('quizStart') || {}).value || 'skip';
+    const how = this.startAt || 'skip';
     if (how === 'start' || !dur) return 0;
     if (how === 'random') return Math.round(dur * (0.15 + Math.random() * 0.4));
     return Math.round(Math.min(Math.min(Math.max(dur * 0.2, 20000), 45000), dur * 0.55));
@@ -2096,6 +2123,62 @@ const Quiz = {
   shuffle(a) {
     for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
     return a;
+  },
+
+  /* ---- year of release --------------------------------------------------
+     Plays a track and offers four years. The trap is Spotify's release_date:
+     a remaster or a compilation carries its RE-release date, so a 1994 single
+     can come back stamped 2011 and the "right" answer would be wrong. Only
+     albums and singles are trusted, and when a decade is set anything landing
+     outside it is dropped rather than believed.
+  --------------------------------------------------------------------- */
+  async buildYears(decade, count, style, extra) {
+    const base = [style, extra].filter(Boolean).join(' ') || 'hits';
+    const queries = decade
+      ? [base + ' year:' + decade, 'greatest hits year:' + decade, 'number one year:' + decade]
+      : [base, 'greatest hits', 'classic hits'];
+    const lo = decade ? +decade.slice(0, 4) : 1950;
+    const hi = decade ? +decade.slice(5) : new Date().getFullYear();
+
+    const found = new Map();
+    for (const q of queries) {
+      let res;
+      try { res = await Spot.searchRaw(q); } catch (e) { continue; }
+      res.tracks.forEach(t => {
+        const al = t.album;
+        if (!al || !al.release_date) return;
+        // compilations are where the wrong dates live
+        if (al.album_type && !['album', 'single'].includes(al.album_type)) return;
+        const yr = +String(al.release_date).slice(0, 4);
+        if (!yr || yr < lo || yr > hi) return;
+        const artist = (t.artists || []).map(a => a.name).join(', ');
+        const title = t.name.replace(/\s*[\(\[][^)\]]*(remaster|remastered|mono|stereo|version|edit)[^)\]]*[\)\]]\s*$/i, '').trim();
+        const key = (title + '|' + artist).toLowerCase();
+        if (found.has(key)) return;
+        found.set(key, { title: title + ' — ' + artist, year: yr, uri: t.uri, dur: t.duration_ms || 0, url: al.images?.[0]?.url });
+      });
+      if (found.size >= count + 10) break;
+    }
+    const songs = [...found.values()].filter(s => s.uri);
+    if (songs.length < 4) throw new Error('Only found ' + songs.length + ' datable songs — try a wider decade or a different style.');
+    this.available = songs.length;
+
+    return this.shuffle(songs).slice(0, Math.min(count, songs.length)).map(s => {
+      // decoys sit near the real year so it's a judgement, not a giveaway
+      const spread = new Set();
+      let guard = 0;
+      while (spread.size < 3 && guard++ < 200) {
+        const off = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.floor(Math.random() * 6));
+        const y = s.year + off;
+        if (y !== s.year && y >= Math.max(1950, lo - 3) && y <= Math.min(hi + 3, new Date().getFullYear())) spread.add(y);
+      }
+      const options = this.shuffle([s.year, ...spread].map(String));
+      return {
+        uri: s.uri, dur: s.dur, url: s.url,
+        answer: String(s.year), title: s.title,
+        options, correct: options.indexOf(String(s.year))
+      };
+    });
   },
 
   // decoys come from the same result set, so a britpop round offers four
@@ -2109,22 +2192,45 @@ const Quiz = {
     });
   },
 
-  async start() {
-    if (!Host.peer) { alert('Create the room first.'); return; }
+  // read the manual controls into a plain config, so the running order can
+  // store the same shape and replay it without touching the DOM
+  readControls() {
+    return {
+      mode: $('quizMode').value,
+      decade: $('quizDecade').value,
+      style: $('quizStyle').value,
+      extra: ($('quizTopic').value || '').trim(),
+      count: parseInt($('quizCount').value, 10),
+      flash: parseInt($('quizFlash').value, 10),
+      secs: parseInt($('quizSecs').value, 10),
+      startAt: ($('quizStart') || {}).value || 'skip'
+    };
+  },
+
+  // resolves when the whole round has finished, so rounds can be chained
+  runRound(cfg) {
+    return new Promise(resolve => {
+      this.onFinish = () => { this.onFinish = null; resolve(true); };
+      this.start(cfg).then(ok => { if (!ok) { this.onFinish = null; resolve(false); } });
+    });
+  },
+
+  async start(cfg) {
+    if (!Host.peer) { alert('Create the room first.'); return false; }
     // Genre goes in as a plain word, not Spotify's genre: filter. Tested both:
     // "genre:britpop year:1990-1999" returns about two tracks, whereas
     // "britpop year:1990-1999" returns thirty distinct albums. The year filter
     // is worth keeping though — without it a decade search is full of
     // remasters carrying their re-release date.
-    this.mode = $('quizMode').value;
-    const decade = $('quizDecade').value;
-    const style = $('quizStyle').value;
-    const extra = ($('quizTopic').value || '').trim();
+    const c = cfg || this.readControls();
+    this.mode = c.mode;
+    const decade = c.decade, style = c.style, extra = c.extra;
     const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
-    if (this.mode === 'covers' && !topic) { alert('Pick a decade or a style first (or type something in the Also box).'); return; }
-    const count = parseInt($('quizCount').value, 10);
-    this.flashMs = parseInt($('quizFlash').value, 10);
-    this.seconds = parseInt($('quizSecs').value, 10);
+    if (this.mode === 'covers' && !topic) { alert('Pick a decade or a style first (or type something in the Also box).'); return false; }
+    const count = c.count;
+    this.flashMs = c.flash;
+    this.seconds = c.secs;
+    this.startAt = c.startAt || 'skip';
     const btn = $('quizStartBtn');
     btn.disabled = true;
     $('quizStatus').textContent = 'Finding albums and blanking out the text…';
@@ -2134,7 +2240,9 @@ const Quiz = {
       : ('films' + (decadeLabel ? ', ' + decadeLabel : ''));
     try {
       let qs;
-      if (this.mode === 'covers') {
+      if (this.mode === 'years') {
+        qs = await this.buildYears(decade, count, style, extra);
+      } else if (this.mode === 'covers') {
         qs = await this.build(topic, count, label);
       } else if (this.mode === 'backdrops') {
         qs = this.toQuestions(await this.buildBackdrops(decade, count, label), count);
@@ -2144,9 +2252,9 @@ const Quiz = {
         qs = this.toQuestions(films, count);
       }
 
-      if (this.mode === 'themes') {
+      if (this.mode === 'themes' || this.mode === 'years') {
         this.questions = qs.filter(q => q.uri);
-        if (!this.questions.length) throw new Error('Could not find playable film themes.');
+        if (!this.questions.length) throw new Error('Could not find playable tracks for that.');
       } else if (this.mode === 'backdrops') {
         // stills carry no lettering, so they go straight out as URLs — no
         // redaction pass and nothing to re-encode
@@ -2172,10 +2280,13 @@ const Quiz = {
         (short ? '. (Only ' + this.available + ' different albums matched, so that is all there was.)' : '.');
       $('quizHostView').classList.remove('hidden');
       this.next();
+      btn.disabled = false;
+      return true;
     } catch (e) {
       $('quizStatus').textContent = '⚠ ' + e.message;
+      btn.disabled = false;
+      return false;
     }
-    btn.disabled = false;
   },
 
   next() {
@@ -2187,16 +2298,18 @@ const Quiz = {
     this.gains = {};
     this.firstCorrect = null;
     // themes have no picture to flash, so answering starts immediately
-    const flash = this.mode === 'themes' ? 0 : this.flashMs;
+    const audioRound = this.mode === 'themes' || this.mode === 'years';
+    // audio rounds have no picture to flash, so answering starts immediately
+    const flash = audioRound ? 0 : this.flashMs;
     this.endsAt = Date.now() + flash + this.seconds * 1000;
     // Film scores open with slow builds — starting at 0:00 meant a round of
     // atmospheric strings nobody could place inside the answer window. Skip
     // into the track so the main theme is playing when the clock starts.
-    if (this.mode === 'themes' && q.uri) Spot.playUri(q.uri, this.startOffset(q.dur)).catch(() => {});
+    if (audioRound && q.uri) Spot.playUri(q.uri, this.startOffset(q.dur)).catch(() => {});
     Host.broadcast({
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
       img: q.img || null, options: q.options, flashMs: flash, seconds: this.seconds,
-      listen: this.mode === 'themes'
+      listen: audioRound
     });
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
       esc(q.answer) + ' <span class="muted">(waiting for answers…)</span>';
@@ -2247,46 +2360,209 @@ const Quiz = {
   close() {
     if (!this.active) return;
     // stop the theme before the answer goes up, or it plays over the reveal
-    if (this.mode === 'themes') Spot.pause();
+    if (this.mode === 'themes' || this.mode === 'years') Spot.pause();
     const q = this.questions[this.idx];
     Object.entries(Host.players).forEach(([id, p]) => {
       const a = this.answers[id];
       Host.sendTo(id, {
-        type: 'quizResult', correct: q.correct, answer: q.answer,
+        // a bare "1994" tells nobody what the song was
+        type: 'quizResult', correct: q.correct, answer: q.title ? (q.answer + ' — ' + q.title) : q.answer,
         picked: a ? a.choice : -1, score: p.score,
         gained: this.gains[id] || 0, fastest: this.firstCorrect === id
       });
     });
     Host.pushBoard();
-    $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' + esc(q.answer);
+    $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' +
+      esc(q.title ? q.answer + ' — ' + q.title : q.answer);
     setTimeout(() => this.next(), 2600);
   },
 
   finish() {
     this.active = false;
     clearTimeout(this.tick);
-    if (this.mode === 'themes') Spot.pause();
+    if (this.mode === 'themes' || this.mode === 'years') Spot.pause();
     Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
     Host.pushBoard();
     const top = Host.boardRows()[0];
     $('quizStatus').textContent = 'Round finished.' + (top ? ' Winner: ' + top.name + ' on ' + top.score + '.' : '');
     $('quizHostView').classList.add('hidden');
     if (top) {
-      const roundName = { covers: 'album cover round', backdrops: 'film stills round',
-                          themes: 'film themes round', posters: 'film poster round' }[this.mode] || 'round';
+      const roundName = this.ROUND_NAMES[this.mode] || 'round';
       const v = Host.voiceFor(top.name);
       Sound.say(top.name + ' wins the ' + roundName + '!', v.voice, v.style);
     }
+    if (this.onFinish) this.onFinish();
+  },
+
+  ROUND_NAMES: {
+    covers: 'album cover round', backdrops: 'film stills round',
+    themes: 'film themes round', posters: 'film poster round',
+    years: 'year of release round'
   },
 
   stop() {
     if (!this.active) { $('quizStatus').textContent = 'No round running.'; return; }
     this.active = false;
     clearTimeout(this.tick);
-    if (this.mode === 'themes') Spot.pause();
+    if (this.mode === 'themes' || this.mode === 'years') Spot.pause();
     Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
     $('quizStatus').textContent = 'Round stopped.';
     $('quizHostView').classList.add('hidden');
+    // release anything waiting on this round, or the running order would hang
+    if (this.onFinish) this.onFinish();
+  }
+};
+
+/* ======================================================================
+   THE NIGHT — a running order of rounds that plays itself.
+
+   The point is that the host stops being the operator. Auto-scored rounds
+   chain straight through with a leaderboard pause between them, so the host
+   can hold a phone and play. Buzzer rounds can't be automated — someone has
+   to decide whether a spoken answer was right — so those park and wait for
+   the host to finish before the queue moves on.
+   ====================================================================== */
+const Night = {
+  plan: [], idx: -1, running: false, waiting: false,
+
+  LABELS: {
+    covers: '🖼️ Album covers', backdrops: '🎬 Film stills', posters: '🎞️ Film poster details',
+    themes: '🎵 Film themes', years: '📅 Year of release', buzzer: '🔔 Buzzer round (you judge)'
+  },
+
+  load() {
+    try { this.plan = JSON.parse(store.get('night_plan') || '[]') || []; } catch (e) { this.plan = []; }
+    this.render();
+  },
+  save() { store.set('night_plan', JSON.stringify(this.plan)); },
+
+  describe(r) {
+    if (r.mode === 'buzzer') return this.LABELS.buzzer;
+    const bits = [];
+    if (r.style) bits.push(r.style);
+    if (r.extra) bits.push(r.extra);
+    if (r.decade) bits.push(r.decade.slice(0, 4) + 's');
+    return this.LABELS[r.mode] + (bits.length ? ' — ' + bits.join(', ') : '') + ' · ' + r.count + ' questions';
+  },
+
+  addFromControls() {
+    const c = Quiz.readControls();
+    if (c.mode === 'covers' && !c.decade && !c.style && !c.extra) {
+      alert('Pick a decade or a style first, then add it.');
+      return;
+    }
+    this.plan.push(c);
+    this.save(); this.render();
+  },
+  addBuzzer() { this.plan.push({ mode: 'buzzer' }); this.save(); this.render(); },
+  remove(i) { this.plan.splice(i, 1); this.save(); this.render(); },
+  move(i, d) {
+    const j = i + d;
+    if (j < 0 || j >= this.plan.length) return;
+    [this.plan[i], this.plan[j]] = [this.plan[j], this.plan[i]];
+    this.save(); this.render();
+  },
+  clear() {
+    if (this.plan.length && !confirm('Clear the whole running order?')) return;
+    this.plan = []; this.save(); this.render();
+  },
+
+  render() {
+    const el = $('nightList');
+    if (!this.plan.length) {
+      el.innerHTML = '<p class="muted" style="font-size:.85rem">No rounds yet.</p>';
+    } else {
+      el.innerHTML = this.plan.map((r, i) => {
+        const now = this.running && i === this.idx;
+        return '<div class="night-row' + (now ? ' now' : '') + '">' +
+          '<span class="night-n">' + (i + 1) + '</span>' +
+          '<span class="night-desc">' + esc(this.describe(r)) + '</span>' +
+          '<button class="btn small ghost" onclick="Night.move(' + i + ',-1)">↑</button>' +
+          '<button class="btn small ghost" onclick="Night.move(' + i + ',1)">↓</button>' +
+          '<button class="btn small ghost" onclick="Night.remove(' + i + ')">✕</button>' +
+          '</div>';
+      }).join('');
+    }
+    if (!this.running) {
+      $('nightStatus').textContent = this.plan.length
+        ? this.plan.length + ' round' + (this.plan.length > 1 ? 's' : '') + ' planned. Press start when everyone has joined.'
+        : 'Nothing planned yet — set up a round below and add it.';
+    }
+  },
+
+  async start() {
+    if (!Host.peer) { alert('Create the room first.'); return; }
+    if (!this.plan.length) { alert('Add some rounds first.'); return; }
+    if (this.running) return;
+    this.running = true; this.idx = -1;
+    $('nightGoBtn').disabled = true;
+    Sound.say('Welcome to Buzz Night. Here we go.');
+    await this.wait(2600);
+    await this.runNext();
+  },
+
+  wait(ms) { return new Promise(r => { this.timer = setTimeout(r, ms); }); },
+
+  async runNext() {
+    if (!this.running) return;
+    this.idx++;
+    if (this.idx >= this.plan.length) return this.done();
+    const r = this.plan[this.idx];
+    this.render();
+    const n = this.idx + 1, total = this.plan.length;
+
+    if (r.mode === 'buzzer') {
+      // can't be automated — a person has to judge spoken answers
+      this.waiting = true;
+      $('nightStatus').textContent = 'Round ' + n + '/' + total + ' — buzzer round. Play songs and judge as normal, then press Skip round to move on.';
+      Host.broadcast({ type: 'info', text: '🔔 Buzzer round — get ready!' });
+      Sound.say('Round ' + n + '. Buzzer round. Fingers ready.');
+      return; // Night.skip() resumes the queue
+    }
+
+    $('nightStatus').textContent = 'Round ' + n + '/' + total + ' — ' + this.describe(r) + ' (building…)';
+    Sound.say('Round ' + n + '. ' + (Quiz.ROUND_NAMES[r.mode] || 'round') + '.');
+    await this.wait(2200);
+    if (!this.running) return;
+
+    const ok = await Quiz.runRound(r);
+    if (!this.running) return;
+    if (!ok) {
+      $('nightStatus').textContent = 'Round ' + n + ' could not be built — skipping to the next.';
+      await this.wait(2500);
+      return this.runNext();
+    }
+    // breathing room on the leaderboard between rounds
+    Host.pushBoard();
+    $('nightStatus').textContent = 'Round ' + n + ' done — next one shortly…';
+    await this.wait(6000);
+    return this.runNext();
+  },
+
+  // used both for "I've finished judging this buzzer round" and "drop this one"
+  skip() {
+    if (!this.running) return;
+    clearTimeout(this.timer);
+    if (Quiz.active) { Quiz.stop(); return; }
+    if (this.waiting) { this.waiting = false; Host.endRound(false); }
+    this.runNext();
+  },
+
+  stop() {
+    this.running = false; this.waiting = false;
+    clearTimeout(this.timer);
+    if (Quiz.active) Quiz.stop();
+    $('nightGoBtn').disabled = false;
+    $('nightStatus').textContent = 'Stopped. The running order is still saved.';
+    this.render();
+  },
+
+  done() {
+    this.running = false;
+    $('nightGoBtn').disabled = false;
+    $('nightStatus').textContent = 'That is the whole running order — rolling the final scores.';
+    this.render();
+    Host.finale();
   }
 };
 
