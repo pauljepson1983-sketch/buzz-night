@@ -223,7 +223,7 @@
         <div class="row mb sound-settings">
           <label for="voicePick">Accent</label>
           <select id="voicePick" onchange="Sound.setVoice(this.value)"></select>
-          <button class="btn ghost small" onclick="Sound.say('Paul buzzed first')">▶ Test</button>
+          <button class="btn ghost small" onclick="Sound.testVoice()">▶ Test</button>
         </div>
         <div class="row">
           <button class="btn big green" id="armBtn" onclick="App.armBuzzers()">ARM BUZZERS</button>
@@ -650,12 +650,19 @@ const Sound = {
   ctx: null,
   recorder: null, chunks: [],
   PRESETS: [
-    ['classic',  'Classic buzz'],
-    ['airhorn',  'Air horn'],
-    ['ding',     'Game show ding'],
-    ['klaxon',   'Klaxon'],
-    ['doorbell', 'Doorbell'],
-    ['boing',    'Boing']
+    ['classic',     'Classic buzz'],
+    ['airhorn',     'Air horn'],
+    ['ding',        'Game show ding'],
+    ['klaxon',      'Klaxon'],
+    ['doorbell',    'Doorbell'],
+    ['boing',       'Boing'],
+    ['boxingbell',  'Boxing bell'],
+    ['fanfare',     'Trumpet fanfare'],
+    ['redalert',    'Red alert'],
+    ['laser',       'Laser zap'],
+    ['slidewhistle','Slide whistle'],
+    ['cowbell',     'Cowbell'],
+    ['wrong',       'Wrong-answer rasp']
   ],
   // language code -> what it actually sounds like reading an English name
   ACCENTS: {
@@ -707,6 +714,27 @@ const Sound = {
     o.start(t0); o.stop(t0 + dur + 0.02);
   },
 
+  // short burst of filtered noise — the metallic/airy part of a real sound
+  noise(dest, peak, start, dur, filterHz) {
+    const t0 = this.ctx.currentTime + start;
+    const len = Math.max(1, Math.ceil(this.ctx.sampleRate * dur));
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    const src = this.ctx.createBufferSource(); src.buffer = buf;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(peak, t0);
+    g.gain.exponentialRampToValueAtTime(0.01, t0 + dur);
+    let node = src;
+    if (filterHz) {
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = filterHz; f.Q.value = 1.2;
+      src.connect(f); node = f;
+    }
+    node.connect(g); g.connect(dest);
+    src.start(t0); src.stop(t0 + dur);
+  },
+
   buzz() {
     if (!this.enabled) return;
     const choice = this.choice;
@@ -743,6 +771,43 @@ const Sound = {
         case 'boing':
           this.tone(b, 'sine', 900, 130, 0.9, 0, 0.55);
           this.tone(b, 'triangle', 450, 65, 0.5, 0, 0.55);
+          break;
+        case 'boxingbell':
+          // inharmonic partials are what make a struck bell sound metallic
+          for (let hit = 0; hit < 3; hit++) {
+            const s = hit * 0.22;
+            [[784, 0.8], [1174, 0.4], [1568, 0.25], [2350, 0.12]].forEach(([f, amp]) =>
+              this.tone(b, 'sine', f, f, amp, s, hit === 2 ? 1.6 : 0.3));
+            this.noise(b, 0.25, s, 0.04, 4000);
+          }
+          break;
+        case 'fanfare':
+          [[523, 0], [659, 0.13], [784, 0.26], [1047, 0.4]].forEach(([f, s], i) => {
+            this.tone(b, 'square', f, f, 0.5, s, i === 3 ? 0.7 : 0.16, 0.25);
+            this.tone(b, 'triangle', f * 2, f * 2, 0.2, s, i === 3 ? 0.7 : 0.16, 0.25);
+          });
+          break;
+        case 'redalert':
+          for (let i = 0; i < 2; i++) this.tone(b, 'sawtooth', 300, 900, 0.7, i * 0.55, 0.5, 0.3);
+          break;
+        case 'laser':
+          this.tone(b, 'square', 2400, 180, 0.7, 0, 0.28);
+          this.tone(b, 'sawtooth', 1200, 90, 0.4, 0.02, 0.26);
+          break;
+        case 'slidewhistle':
+          this.tone(b, 'sine', 420, 2100, 0.7, 0, 0.35, 0.4);
+          this.tone(b, 'sine', 2100, 500, 0.7, 0.36, 0.3);
+          this.noise(b, 0.06, 0, 0.66, 3000);
+          break;
+        case 'cowbell':
+          // the 808 cowbell trick: two detuned squares through a bandpass
+          this.tone(b, 'square', 540, 540, 0.6, 0, 0.35, 0.05);
+          this.tone(b, 'square', 800, 800, 0.6, 0, 0.35, 0.05);
+          break;
+        case 'wrong':
+          this.tone(b, 'sawtooth', 160, 150, 0.9, 0, 0.28, 0.4);
+          this.tone(b, 'sawtooth', 120, 110, 0.9, 0.32, 0.5);
+          this.tone(b, 'square', 80, 74, 0.6, 0.32, 0.5);
           break;
         default: // classic
           this.tone(b, 'sawtooth', 220, 170, 0.85, 0, 0.6);
@@ -849,7 +914,13 @@ const Sound = {
     }
   },
   setBuzzChoice(v) { store.set('buzz_sound', v); this.buzz(); },
-  setVoice(v) { store.set('buzz_voice', v); this.say('Buzz Night'); },
+  setVoice(v) { store.set('buzz_voice', v); this.testVoice(); },
+  // preview with a real player's name if anyone has joined, so the host hears
+  // the actual announcement rather than a placeholder
+  testVoice() {
+    const joined = Object.values(Host.players || {}).filter(p => p.online).map(p => p.name);
+    this.say((joined[0] || 'Paul') + ' buzzed first!');
+  },
   initPickers() {
     this.renderPickers();
     // voices populate asynchronously in Chrome — redraw when they land
@@ -1066,7 +1137,7 @@ const Host = {
     $('phaseBanner').textContent = '🔔 ' + p.name + ' buzzed first — ' + Math.round(p.buzzMs) + ' ms';
     $('judgePanel').classList.remove('hidden');
     $('judgeWho').textContent = p.name + ' is answering…';
-    Sound.say(p.name + '!');
+    Sound.say(p.name + ' buzzed first!');
     this.sendTo(id, { type: 'yourTurn' });
     this.broadcastOthers(id, { type: 'someoneBuzzed', name: p.name });
   },
