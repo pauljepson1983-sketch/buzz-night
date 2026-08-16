@@ -121,6 +121,18 @@
   #playerStatus.bad { color: var(--red); }
   #stealTimer { font-size: 3rem; font-weight: 900; color: var(--gold); }
   .reveal-box { background: var(--gold); color: #1a0f35; border-radius: 14px; padding: 16px; font-weight: 800; font-size: 1.2rem; }
+  /* ---- leaderboard on the phones ---- */
+  .lb-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 10px; }
+  .lb-row.me { background: rgba(255,209,102,.16); outline: 2px solid var(--gold); }
+  .lb-pos { min-width: 2.1rem; font-weight: 800; }
+  .lb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-score { font-weight: 900; font-size: 1.1rem; }
+  .mv { min-width: 2.2rem; font-size: .8rem; font-weight: 800; }
+  .mv.up { color: var(--green); }
+  .mv.down { color: var(--red); }
+  .mv.same { color: var(--muted); }
+  .lb-note { font-size: .85rem; font-weight: 700; color: var(--gold); padding: 2px 8px 8px 8px; }
+
   /* ---- speed / album-cover rounds ---- */
   #quizArtWrap {
     width: min(78vw, 340px); aspect-ratio: 1; margin: 10px auto; border-radius: 14px;
@@ -1619,8 +1631,28 @@ const Host = {
     }
     return Object.values(this.players).map(p => ({ name: p.name, score: p.score })).sort((a, b) => b.score - a.score);
   },
+  // A bare list of names and scores reads as information, not a contest. Send
+  // position, how far each player moved since the last push, and who they're
+  // chasing, so the phone can show a race instead of a table.
   pushBoard() {
-    this.broadcast({ type: 'board', rows: this.boardRows() });
+    const rows = this.boardRows();
+    const prev = this.prevBoard;
+    const out = rows.map((r, i) => {
+      const pos = i + 1;
+      const was = prev ? prev[r.name.toLowerCase()] : null;
+      return {
+        name: r.name,
+        score: r.score,
+        pos,
+        move: (was == null) ? 0 : (was - pos),
+        gap: i === 0 ? 0 : rows[i - 1].score - r.score,
+        chasing: i === 0 ? null : rows[i - 1].name,
+        lead: i === 0 && rows[1] ? r.score - rows[1].score : 0
+      };
+    });
+    this.prevBoard = {};
+    out.forEach(r => { this.prevBoard[r.name.toLowerCase()] = r.pos; });
+    this.broadcast({ type: 'board', rows: out, teamMode: this.teamMode });
   },
 
   renderBuzzes() {
@@ -2181,14 +2213,10 @@ const Player = {
         $('revealBox').classList.remove('hidden');
         this.setStatus('');
         break;
-      case 'board': {
-        const el = $('playerBoard');
-        el.innerHTML = '<h2>🏆 Leaderboard</h2>' + msg.rows.map((r, i) =>
-          `<div class="row" style="padding:4px 0"><span class="grow">${i + 1}. ${esc(r.name)}</span><b>${r.score}</b></div>`).join('');
-        el.classList.remove('hidden');
-        break;
-      }
+      case 'board': this.renderBoard(msg); break;
       case 'team':
+        this.team = msg.team || null;
+        this.teamMode = !!msg.teamMode;
         $('pTeam').textContent = msg.teamMode && msg.team ? '· Team ' + msg.team : '';
         break;
       case 'info': this.setStatus(msg.text); break;
@@ -2289,6 +2317,34 @@ const Player = {
     $('quizFeedback').textContent = 'Locked in…';
     this.conn.send({ type: 'quizA', n: this._quizN, choice });
     this.vibe([60]);
+  },
+
+  renderBoard(msg) {
+    const el = $('playerBoard');
+    // in team mode the rows are teams, so match on this player's team
+    const mine = (msg.teamMode && this.team) ? ('team ' + this.team).toLowerCase() : (this.name || '').toLowerCase();
+    const medal = p => p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : p + '.';
+    const rows = msg.rows.map(r => {
+      const isMe = r.name.toLowerCase() === mine;
+      const arrow = r.move > 0
+        ? '<span class="mv up">▲' + r.move + '</span>'
+        : r.move < 0 ? '<span class="mv down">▼' + (-r.move) + '</span>'
+        : '<span class="mv same">–</span>';
+      let note = '';
+      if (isMe) {
+        if (r.pos === 1) note = r.lead > 0 ? 'Leading by ' + r.lead : 'Top — but it’s level';
+        else if (r.gap === 0) note = 'Level with ' + r.chasing;
+        else note = r.gap + ' behind ' + r.chasing;
+      }
+      return '<div class="lb-row' + (isMe ? ' me' : '') + '">' +
+        '<span class="lb-pos">' + medal(r.pos) + '</span>' +
+        arrow +
+        '<span class="lb-name">' + esc(r.name) + (isMe ? ' <b>(you)</b>' : '') + '</span>' +
+        '<span class="lb-score">' + r.score + '</span>' +
+        '</div>' + (note ? '<div class="lb-note">' + esc(note) + '</div>' : '');
+    }).join('');
+    el.innerHTML = '<h2 style="font-size:1rem">🏆 Leaderboard</h2>' + rows;
+    el.classList.remove('hidden');
   },
 
   // The host owns the speakers, so the lists of sounds and voices come from
