@@ -175,7 +175,13 @@
   .quiz-opt.right { background: var(--green); color: #10202a; border-color: var(--green); }
   .quiz-opt.wrong { background: var(--red); color: #fff; border-color: var(--red); }
   #quizFeedback { font-size: 1.1rem; font-weight: 800; min-height: 1.6rem; margin-top: 8px; }
+  #quizRound { font-size: 1.15rem; font-weight: 900; color: var(--gold); margin-bottom: 2px; }
   #quizProgress { font-size: .85rem; }
+  /* between rounds, so nobody is left wondering what is coming */
+  #roundCard { background: var(--panel2); border-radius: 14px; padding: 18px 14px; margin: 10px 0; }
+  #roundCard .rc-kicker { font-size: .85rem; color: var(--muted); font-weight: 700; }
+  #roundCard .rc-name { font-size: 1.5rem; font-weight: 900; color: var(--gold); margin: 4px 0; }
+  #roundCard .rc-how { font-size: .9rem; }
   .redact-note { font-size: .8rem; }
   #connDot { position: fixed; top: 10px; right: 12px; width: 12px; height: 12px; border-radius: 50%; background: var(--red); }
   #connDot.on { background: var(--green); }
@@ -465,7 +471,9 @@
   <div id="playerStatus">Connecting…</div>
   <div id="stealTimer" class="hidden"></div>
   <div id="revealBox" class="reveal-box hidden"></div>
+  <div id="roundCard" class="hidden"></div>
   <div id="quizPanel" class="hidden">
+    <div id="quizRound"></div>
     <div id="quizProgress" class="muted"></div>
     <div id="quizArtWrap"><img id="quizArt" alt="album cover"></div>
     <div id="quizCountdown"></div>
@@ -2298,7 +2306,8 @@ const Quiz = {
       flash: parseInt($('quizFlash').value, 10),
       secs: parseInt($('quizSecs').value, 10),
       startAt: ($('quizStart') || {}).value || 'skip',
-      crop: ($('quizCrop') || {}).value || 'crop'
+      crop: ($('quizCrop') || {}).value || 'crop',
+      roundLabel: ''
     };
   },
 
@@ -2327,6 +2336,7 @@ const Quiz = {
     this.seconds = c.secs;
     this.startAt = c.startAt || 'skip';
     this.crop = c.crop || 'crop';
+    this.roundLabel = c.roundLabel || '';
     const btn = $('quizStartBtn');
     btn.disabled = true;
     $('quizStatus').textContent = 'Finding albums and blanking out the text…';
@@ -2377,7 +2387,13 @@ const Quiz = {
       }
       this.active = true; this.idx = -1;
       Host.endRound(false);
-      Host.broadcast({ type: 'quizStart', total: this.questions.length });
+      Host.broadcast({
+        type: 'quizStart', total: this.questions.length,
+        title: this.TITLES[this.mode] || 'Quiz round',
+        howto: this.HOWTO[this.mode] || '',
+        noun: this.NOUNS[this.mode] || 'Question',
+        roundLabel: this.roundLabel || ''
+      });
       const short = this.questions.length < count;
       const noun = { covers: 'covers', backdrops: 'stills', themes: 'themes', posters: 'posters', faces: 'faces', years: 'songs' }[this.mode] || 'questions';
       $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' ' + noun + ' from ' + label +
@@ -2412,6 +2428,9 @@ const Quiz = {
     if (audioRound && q.uri) Spot.playUri(q.uri, this.startOffset(q.dur)).catch(() => {});
     Host.broadcast({
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
+      title: this.TITLES[this.mode] || 'Quiz round',
+      noun: this.NOUNS[this.mode] || 'Question',
+      roundLabel: this.roundLabel || '',
       img: q.img || null, options: q.options, flashMs: flash, seconds: this.seconds,
       listen: audioRound
     });
@@ -2501,6 +2520,26 @@ const Quiz = {
       Sound.say(top.name + ' wins the ' + roundName + '!', v.voice, v.style);
     }
     if (this.onFinish) this.onFinish();
+  },
+
+  // Short names and per-question nouns for the phones. These used to be
+  // hardcoded to "Album cover round" and "Cover 3 of 10" whatever was
+  // actually being played, so players could not tell what round they were in.
+  TITLES: {
+    covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
+    posters: '🎞️ Film posters', years: '📅 Year of release', faces: '⭐ Famous faces'
+  },
+  NOUNS: {
+    covers: 'Cover', backdrops: 'Still', themes: 'Theme',
+    posters: 'Poster', years: 'Song', faces: 'Face'
+  },
+  HOWTO: {
+    covers: 'A cover flashes up, then four albums. Pick the right one.',
+    backdrops: 'A scene from the film flashes up, then four titles.',
+    themes: 'Listen to the theme, then pick the film.',
+    posters: 'A zoomed-in piece of the poster, then four titles.',
+    years: 'Listen, then pick the year it came out.',
+    faces: 'A face flashes up, then four names. Quick!'
   },
 
   ROUND_NAMES: {
@@ -2625,11 +2664,13 @@ const Night = {
       // can't be automated — a person has to judge spoken answers
       this.waiting = true;
       $('nightStatus').textContent = 'Round ' + n + '/' + total + ' — buzzer round. Play songs and judge as normal, then press Skip round to move on.';
-      Host.broadcast({ type: 'info', text: '🔔 Buzzer round — get ready!' });
+      Host.broadcast({ type: 'roundCard', kicker: 'Round ' + n + ' of ' + total, name: '🔔 Buzzer round', how: 'Listen, then hit BUZZ the moment you know it. Say your answer out loud.' });
       Sound.say('Round ' + n + '. Buzzer round. Fingers ready.');
       return; // Night.skip() resumes the queue
     }
 
+    r.roundLabel = 'Round ' + n + ' of ' + total;
+    Host.broadcast({ type: 'roundCard', kicker: r.roundLabel, name: Quiz.TITLES[r.mode] || 'Quiz round', how: Quiz.HOWTO[r.mode] || '' });
     $('nightStatus').textContent = 'Round ' + n + '/' + total + ' — ' + this.describe(r) + ' (building…)';
     Sound.say('Round ' + n + '. ' + (Quiz.ROUND_NAMES[r.mode] || 'round') + '.');
     await this.wait(2200);
@@ -2764,6 +2805,18 @@ const Player = {
         break;
       case 'info': this.setStatus(msg.text); break;
 
+      case 'roundCard': {
+        // what's coming, so nobody is left guessing between rounds
+        this.hideExtras();
+        const el = $('roundCard');
+        el.innerHTML = '<div class="rc-kicker">' + esc(msg.kicker || 'Next up') + '</div>' +
+          '<div class="rc-name">' + esc(msg.name || '') + '</div>' +
+          '<div class="rc-how">' + esc(msg.how || '') + '</div>';
+        el.classList.remove('hidden');
+        this.setStatus('');
+        break;
+      }
+
 
       case 'quizStart':
         this.hideExtras();
@@ -2772,7 +2825,9 @@ const Player = {
         $('quizOptions').innerHTML = '';
         $('quizFeedback').textContent = '';
         $('quizCountdown').textContent = '';
-        this.setStatus('🖼️ Album cover round — ' + msg.total + ' covers. Watch closely!');
+        $('quizRound').textContent = (msg.roundLabel ? msg.roundLabel + ' · ' : '') + (msg.title || 'Quiz round');
+        $('quizProgress').textContent = msg.howto || '';
+        this.setStatus('');
         break;
 
       case 'quizQ':
@@ -2807,13 +2862,15 @@ const Player = {
   },
 
   quizQuestion(msg) {
+    $('roundCard').classList.add('hidden');
     clearInterval(this._quizTimer);
     this._quizN = msg.n;
     this._quizAnswered = false;
     this.setStatus('');
     $('quizPanel').classList.remove('hidden');
     $('buzzBtn').classList.add('hidden');
-    $('quizProgress').textContent = 'Cover ' + msg.n + ' of ' + msg.total;
+    $('quizRound').textContent = (msg.roundLabel ? msg.roundLabel + ' · ' : '') + (msg.title || 'Quiz round');
+    $('quizProgress').textContent = (msg.noun || 'Question') + ' ' + msg.n + ' of ' + msg.total;
     $('quizFeedback').textContent = '';
     $('quizOptions').innerHTML = '';
     $('quizCountdown').textContent = '';
@@ -2980,6 +3037,7 @@ const Player = {
   },
 
   hideExtras() {
+    $('roundCard').classList.add('hidden');
     $('finaleBox').classList.add('hidden');
     $('stealTimer').classList.add('hidden');
     $('revealBox').classList.add('hidden');
