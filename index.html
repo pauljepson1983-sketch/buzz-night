@@ -534,7 +534,11 @@ const Spot = {
     await this.api('/me/player/play?device_id=' + this.deviceId, {
       method: 'PUT', body: JSON.stringify({ context_uri: uri })
     });
-    $('trackList').innerHTML = '<p class="muted">▶ Playing <b>' + esc(name) + '</b> — use ⏭ Next song for each round. The answer shows below.</p>';
+    // Can't show the playlist's real contents (see playContext note above), so
+    // offer the next best clickable thing: songs matching what it's called.
+    // Labelled plainly so it isn't mistaken for the actual track list.
+    $('trackList').innerHTML = '<p class="muted">▶ Playing <b>' + esc(name) + '</b>. Use ⏭ Next song for each round, or pick from below.</p>';
+    this.searchInto(name, '<p class="muted" style="padding:6px 2px">Songs matching “' + esc(name) + '” (Spotify won\'t let this app read a playlist\'s own track list):</p>');
   },
 
   renderPlaylists(items, label) {
@@ -576,9 +580,9 @@ const Spot = {
     this.seekMs(ms, true);
   },
 
-  renderTracks(items) {
+  renderTracks(items, headerHtml = '') {
     const list = $('trackList');
-    list.innerHTML = '';
+    list.innerHTML = headerHtml;
     items.forEach(t => {
       const div = document.createElement('div');
       div.className = 'track-item';
@@ -591,32 +595,43 @@ const Spot = {
       };
       list.appendChild(div);
     });
-    if (!items.length) list.innerHTML = '<p class="muted">No tracks found.</p>';
+    if (!items.length) list.innerHTML = headerHtml + '<p class="muted">No tracks found.</p>';
+  },
+
+  // Spotify caps /search at 10 results per call for development-mode apps, so
+  // page through it — 10 is too few to pick a quiz track from. Pages overlap
+  // sometimes, hence the dedupe.
+  async searchRaw(q) {
+    const pages = await Promise.all([0, 10, 20, 30].map(offset =>
+      this.api('/search?' + new URLSearchParams({ q, type: 'track,playlist', limit: 10, offset })).catch(() => null)
+    ));
+    const seen = new Set(), tracks = [], plSeen = new Set(), playlists = [];
+    pages.filter(Boolean).forEach(p => {
+      (p.tracks?.items || []).forEach(tr => {
+        if (tr && !seen.has(tr.id)) { seen.add(tr.id); tracks.push(tr); }
+      });
+      // Spotify pads playlist results with nulls, hence the truthiness check
+      (p.playlists?.items || []).forEach(pl => {
+        if (pl && pl.uri && !plSeen.has(pl.id)) { plSeen.add(pl.id); playlists.push(pl); }
+      });
+    });
+    return { tracks, playlists };
   },
 
   async search(q) {
     if (!q) return;
     try {
-      // Spotify caps /search at 10 results per call for development-mode apps,
-      // so page through it — 10 is too few to pick a quiz track from. Pages
-      // overlap sometimes, hence the dedupe.
-      const pages = await Promise.all([0, 10, 20, 30].map(offset =>
-        this.api('/search?' + new URLSearchParams({ q, type: 'track,playlist', limit: 10, offset })).catch(() => null)
-      ));
-      const seen = new Set(), items = [];
-      const plSeen = new Set(), playlists = [];
-      pages.filter(Boolean).forEach(p => {
-        (p.tracks?.items || []).forEach(tr => {
-          if (tr && !seen.has(tr.id)) { seen.add(tr.id); items.push(tr); }
-        });
-        // Spotify pads playlist results with nulls, hence the truthiness check
-        (p.playlists?.items || []).forEach(pl => {
-          if (pl && pl.uri && !plSeen.has(pl.id)) { plSeen.add(pl.id); playlists.push(pl); }
-        });
-      });
+      const { tracks, playlists } = await this.searchRaw(q);
       this.renderPlaylists(playlists.slice(0, 12), 'Playlists:');
-      this.renderTracks(items);
+      this.renderTracks(tracks);
     } catch(e) { alert(e.message); }
+  },
+
+  async searchInto(q, headerHtml) {
+    try {
+      const { tracks } = await this.searchRaw(q);
+      this.renderTracks(tracks, headerHtml);
+    } catch(e) {}
   },
 
   async loadPlaylists() {
