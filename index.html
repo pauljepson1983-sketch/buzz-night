@@ -1343,7 +1343,8 @@ const Host = {
         type: 'welcome', name: me.name, teamMode: this.teamMode, team: me.team, score: me.score,
         // only the host has speakers, so players choose from the host's lists
         buzzers: Sound.PRESETS, voices: Sound.voiceList(),
-        styles: Object.entries(Sound.STYLES).map(([k, v]) => [k, v[0]]),
+        // blank already means normal on the phone, so don't offer it twice
+        styles: Object.entries(Sound.STYLES).filter(([k]) => k !== 'normal').map(([k, v]) => [k, v[0]]),
         buzzer: me.buzzer, voice: me.voice, style: me.style
       });
       conn.send({ type: 'phase', phase: this.phase === 'armed' ? 'armed' : 'wait', canBuzz: this.phase === 'armed' });
