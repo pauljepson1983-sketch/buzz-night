@@ -1482,7 +1482,7 @@ const Host = {
       this.players[conn.peer] = {
         conn, name: wanted, online: true,
         score: carry ? carry.score : 0, team: carry ? carry.team : null,
-        rtt: 60, locked: false, reactions: carry ? carry.reactions : [],
+        rtt: 60, locked: false, lastSeen: Date.now(), reactions: carry ? carry.reactions : [],
         buzzer: carry ? carry.buzzer : null, voice: carry ? carry.voice : null,
         style: carry ? carry.style : null
       };
@@ -1502,6 +1502,7 @@ const Host = {
     }
     const p = this.players[conn.peer];
     if (!p) return;
+    p.lastSeen = Date.now();   // anything at all from them counts as alive
     if (msg.type === 'pong') {
       const rtt = now - msg.t;
       p.rtt = p.rtt * 0.7 + rtt * 0.3;
@@ -1568,8 +1569,33 @@ const Host = {
     this.startJudging(0);
   },
 
+  /* ---- presence ---------------------------------------------------------
+     `online` only goes false when PeerJS fires 'close', and a phone that
+     sleeps, backgrounds or loses signal often never fires it. That phone then
+     counted as present forever, so every quiz question sat waiting out the
+     full clock for an answer that was never coming — a silent way to make a
+     night drag. The host already pings every 4s, so treat a player as here
+     only if they have said something recently AND the socket still looks open.
+  --------------------------------------------------------------------- */
+  PRESENT_MS: 12000,
+  isPresent(p) {
+    if (!p || !p.online || !p.conn) return false;
+    if (p.conn.open === false) return false;
+    return (Date.now() - (p.lastSeen || 0)) < this.PRESENT_MS;
+  },
+  presentCount() { return Object.values(this.players).filter(p => this.isPresent(p)).length; },
+
   pingAll() {
     this.broadcast({ type: 'ping', t: performance.now() });
+    // presence decays on a clock, so the table has to be redrawn even when
+    // nothing arrives — that is exactly the case we are trying to show
+    const stamp = Object.values(this.players).map(p => this.isPresent(p) ? '1' : '0').join('');
+    if (stamp !== this._presenceStamp) {
+      this._presenceStamp = stamp;
+      this.renderScores();
+      // a quiz question may now be waiting only on players who have gone away
+      if (Quiz.active) Quiz.checkAllIn();
+    }
   },
   broadcast(msg) {
     Object.values(this.players).forEach(p => { if (p.online && p.conn) try { p.conn.send(msg); } catch(e) {} });
@@ -1672,7 +1698,8 @@ const Host = {
       this.startSteal(id);
     } else {
       // nobody left in queue — re-arm for unlocked players
-      const anyLeft = Object.values(this.players).some(p => p.online && !p.locked);
+      // only re-arm if someone who is actually still here can still buzz
+      const anyLeft = Object.values(this.players).some(p => this.isPresent(p) && !p.locked);
       if (anyLeft) {
         this.armTime = performance.now();
         this.buzzQueue = [];
@@ -1862,7 +1889,11 @@ const Host = {
     entries.forEach(([id, p]) => {
       const avg = p.reactions.length ? secs(p.reactions.reduce((s, x) => s + x, 0) / p.reactions.length) : '—';
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${esc(p.name)} ${p.online ? '' : '<span class="tag grey">offline</span>'}</td>
+      // "away" means still connected but gone quiet — a sleeping or
+      // backgrounded phone, which looks identical to "here" without this
+      const state = !p.online ? '<span class="tag grey">offline</span>'
+                  : !this.isPresent(p) ? '<span class="tag grey">away</span>' : '';
+      tr.innerHTML = `<td>${esc(p.name)} ${state}</td>
         <td class="${this.teamMode ? '' : 'hidden'}"><button class="btn small ghost" onclick="Host.cycleTeam('${id}')">${p.team || '—'}</button></td>
         <td><b>${p.score}</b></td><td class="muted">${avg}</td>
         <td><button class="btn small ghost" onclick="Host.adjust('${id}')">±</button></td>`;
@@ -2508,12 +2539,27 @@ const Quiz = {
     }
     Host.renderScores();
     Host.saveGame();
-    const live = Object.values(Host.players).filter(x => x.online).length;
+    this.checkAllIn();
+  },
+
+  // Counts only players who are actually still there. A phone that has gone
+  // quiet is excluded, so one dropped guest can no longer hold every question
+  // open until the clock expires.
+  checkAllIn() {
+    if (!this.active || this.idx < 0) return;
+    const q = this.questions[this.idx];
+    if (!q) return;
+    const here = Host.presentCount();
     const inCount = Object.keys(this.answers).length;
+    const away = Object.values(Host.players).filter(p => p.online && !Host.isPresent(p)).length;
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
-      esc(q.answer) + ' <span class="muted">(' + inCount + ' of ' + live + ' answered)</span>';
-    // everyone in? don't make the room sit and watch the clock run down
-    if (inCount >= live && live > 0) { clearTimeout(this.tick); clearTimeout(this._closing); this._closing = setTimeout(() => this.close(), 250); }
+      esc(q.title ? q.answer + ' — ' + q.title : q.answer) +
+      ' <span class="muted">(' + inCount + ' of ' + here + ' answered' +
+      (away ? ', ' + away + ' away' : '') + ')</span>';
+    if (inCount >= here && here > 0) {
+      clearTimeout(this.tick); clearTimeout(this._closing);
+      this._closing = setTimeout(() => this.close(), 250);
+    }
   },
 
   close() {
