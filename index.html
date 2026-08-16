@@ -3091,7 +3091,18 @@ const Night = {
     if (decade || style) order.push('covers');
     order.push('themes');
     const chosen = order.slice(0, size);
-    this.plan = chosen.map(m => this.defaultsFor(m));
+    const used = [];
+    this.plan = chosen.map(m => {
+      const r = this.defaultsFor(m);
+      // same anti-repeat as Surprise me, so "mixed decades" really does range
+      // rather than landing on the eighties three times
+      if (decade === 'mixed') {
+        let guard = 0;
+        while (used.includes(r.decade) && guard++ < 8) r.decade = this.randomDecade();
+        used.push(r.decade);
+      }
+      return r;
+    });
     this.save(); this.render();
     $('nightStatus').textContent = chosen.length + ' rounds ready. Press "Start the night" when everyone has joined.';
   },
