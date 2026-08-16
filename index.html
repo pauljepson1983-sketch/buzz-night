@@ -250,6 +250,8 @@
         <div class="row mb sound-settings">
           <label for="voicePick">Accent</label>
           <select id="voicePick" onchange="Sound.setVoice(this.value)"></select>
+          <label for="stylePick">Character</label>
+          <select id="stylePick" onchange="Sound.setStyle(this.value)"></select>
           <button class="btn ghost small" onclick="Sound.testVoice()">▶ Test</button>
         </div>
         <div class="row">
@@ -405,6 +407,23 @@
     <div id="quizFeedback"></div>
   </div>
   <button id="buzzBtn" disabled>BUZZ</button>
+  <div class="card hidden" id="myKitCard" style="text-align:left">
+    <h2 style="font-size:1rem">🔊 Your buzzer</h2>
+    <p class="muted" style="font-size:.8rem">Plays on the host's speaker when you buzz in.</p>
+    <div class="row mb sound-settings">
+      <label for="myBuzzer">Sound</label>
+      <select id="myBuzzer" onchange="Player.savePrefs()"></select>
+    </div>
+    <div class="row mb sound-settings">
+      <label for="myVoice">Accent</label>
+      <select id="myVoice" onchange="Player.savePrefs()"></select>
+    </div>
+    <div class="row mb sound-settings">
+      <label for="myStyle">Character</label>
+      <select id="myStyle" onchange="Player.savePrefs()"></select>
+    </div>
+    <button class="btn ghost small" onclick="Player.savePrefs(true)">▶ Hear it on the speaker</button>
+  </div>
   <div id="playerBoard" class="card hidden" style="text-align:left"></div>
 </div>
 
@@ -889,9 +908,11 @@ const Sound = {
     src.start(t0); src.stop(t0 + dur);
   },
 
-  buzz() {
+  // `pick` lets a player's own choice override the host default, so everyone
+  // gets their own signature buzz out of the host speaker
+  buzz(pick) {
     if (!this.enabled) return;
-    const choice = this.choice;
+    const choice = pick || this.choice;
     if (choice === 'custom' && this.customUrl) {
       try { const a = new Audio(this.customUrl); a.volume = 1; a.play().catch(()=>{}); } catch(e) {}
       return;
@@ -1013,12 +1034,42 @@ const Sound = {
 
   /* ---- spoken name ---- */
   voices() { try { return speechSynthesis.getVoices() || []; } catch(e) { return []; } },
-  say(text) {
+
+  // The name stays in English — pointing it at a foreign voice engine is what
+  // produces the accent, so these are labelled as accents, not languages.
+  // English first, the funny ones after. Shared with the phones: only the host
+  // speaks, so players must choose from the HOST's installed voices.
+  voiceList() {
+    const named = this.voices().map(v => ({ v, accent: this.ACCENTS[v.lang] || v.lang }));
+    const rank = a => (a.accent.startsWith('British') ? 0 : a.accent.startsWith('American') ? 1 : 2);
+    named.sort((a, b) => rank(a) - rank(b) || a.accent.localeCompare(b.accent));
+    return named.map(({ v, accent }) => {
+      // strip vendor noise from "Microsoft Hazel - English (United Kingdom)"
+      const short = v.name.replace(/^(Microsoft|Google)\s+/, '').replace(/\s*[-–(].*$/, '').trim();
+      return { uri: v.voiceURI, label: accent + (short ? ' — ' + short : '') };
+    });
+  },
+  // Character styles are pitch and rate applied on top of whichever voice is
+  // chosen. Real character impressions aren't available from browser speech,
+  // but these give each player something distinctive.
+  STYLES: {
+    normal:    ['Normal',        1.05, 1.10],
+    chipmunk:  ['Chipmunk',      1.35, 1.95],
+    giant:     ['Giant',         0.72, 0.30],
+    robot:     ['Robot',         0.95, 0.05],
+    ghost:     ['Spooky',        0.65, 1.55],
+    announcer: ['Ring announcer',1.30, 0.80],
+    posh:      ['Very posh',     0.90, 1.30],
+    sleepy:    ['Half asleep',   0.60, 0.85]
+  },
+
+  say(text, voicePick, stylePick) {
     if (!this.enabled) return;
     try {
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.05; u.pitch = 1.1;
-      const wanted = store.get('buzz_voice');
+      const st = this.STYLES[stylePick || store.get('buzz_style') || 'normal'] || this.STYLES.normal;
+      u.rate = st[1]; u.pitch = st[2];
+      const wanted = voicePick || store.get('buzz_voice');
       if (wanted) {
         const v = this.voices().find(x => x.voiceURI === wanted);
         if (v) { u.voice = v; u.lang = v.lang; }
@@ -1042,6 +1093,17 @@ const Sound = {
         bs.appendChild(o);
       });
     }
+    const sp = $('stylePick');
+    if (sp) {
+      const cur = store.get('buzz_style') || 'normal';
+      sp.innerHTML = '';
+      Object.entries(this.STYLES).forEach(([k, v]) => {
+        const o = document.createElement('option');
+        o.value = k; o.textContent = v[0];
+        if (k === cur) o.selected = true;
+        sp.appendChild(o);
+      });
+    }
     const vp = $('voicePick');
     if (vp) {
       const vs = this.voices();
@@ -1050,25 +1112,18 @@ const Sound = {
       const def = document.createElement('option');
       def.value = ''; def.textContent = vs.length ? 'Default voice' : 'Loading voices…';
       vp.appendChild(def);
-      // The name stays in English — pointing it at a foreign voice engine is
-      // what produces the accent, so these are labelled as accents, not
-      // languages. English ones first, the funny ones after.
-      const named = vs.map(v => ({ v, accent: this.ACCENTS[v.lang] || v.lang }));
-      const rank = a => (a.accent.startsWith('British') ? 0 : a.accent.startsWith('American') ? 1 : 2);
-      named.sort((a, b) => rank(a) - rank(b) || a.accent.localeCompare(b.accent));
-      named.forEach(({ v, accent }) => {
+      this.voiceList().forEach(({ uri, label }) => {
         const o = document.createElement('option');
-        o.value = v.voiceURI;
-        // strip the vendor noise out of names like "Microsoft Hazel - English (United Kingdom)"
-        const short = v.name.replace(/^(Microsoft|Google)\s+/, '').replace(/\s*[-–(].*$/, '').trim();
-        o.textContent = accent + (short ? ' — ' + short : '');
-        if (v.voiceURI === current) o.selected = true;
+        o.value = uri;
+        o.textContent = label;
+        if (uri === current) o.selected = true;
         vp.appendChild(o);
       });
     }
   },
   setBuzzChoice(v) { store.set('buzz_sound', v); this.buzz(); },
   setVoice(v) { store.set('buzz_voice', v); this.testVoice(); },
+  setStyle(v) { store.set('buzz_style', v); this.testVoice(); },
   // preview with a real player's name if anyone has joined, so the host hears
   // the actual announcement rather than a placeholder
   testVoice() {
@@ -1279,9 +1334,18 @@ const Host = {
       this.players[conn.peer] = {
         conn, name: wanted, online: true,
         score: carry ? carry.score : 0, team: carry ? carry.team : null,
-        rtt: 60, locked: false, reactions: carry ? carry.reactions : []
+        rtt: 60, locked: false, reactions: carry ? carry.reactions : [],
+        buzzer: carry ? carry.buzzer : null, voice: carry ? carry.voice : null,
+        style: carry ? carry.style : null
       };
-      conn.send({ type: 'welcome', name: this.players[conn.peer].name, teamMode: this.teamMode, team: this.players[conn.peer].team, score: this.players[conn.peer].score });
+      const me = this.players[conn.peer];
+      conn.send({
+        type: 'welcome', name: me.name, teamMode: this.teamMode, team: me.team, score: me.score,
+        // only the host has speakers, so players choose from the host's lists
+        buzzers: Sound.PRESETS, voices: Sound.voiceList(),
+        styles: Object.entries(Sound.STYLES).map(([k, v]) => [k, v[0]]),
+        buzzer: me.buzzer, voice: me.voice, style: me.style
+      });
       conn.send({ type: 'phase', phase: this.phase === 'armed' ? 'armed' : 'wait', canBuzz: this.phase === 'armed' });
       this.renderScores();
       this.saveGame();
@@ -1292,6 +1356,14 @@ const Host = {
     if (msg.type === 'pong') {
       const rtt = now - msg.t;
       p.rtt = p.rtt * 0.7 + rtt * 0.3;
+      return;
+    }
+    if (msg.type === 'prefs') {
+      if (msg.buzzer !== undefined) p.buzzer = msg.buzzer || null;
+      if (msg.voice !== undefined) p.voice = msg.voice || null;
+      if (msg.style !== undefined) p.style = msg.style || null;
+      if (msg.test) { Sound.buzz(p.buzzer); setTimeout(() => Sound.say(p.name + ' buzzed first!', p.voice, p.style), 700); }
+      this.saveGame();
       return;
     }
     if (msg.type === 'quizA') {
@@ -1313,7 +1385,7 @@ const Host = {
         this.phase = 'capture';
         this.firstBuzzAt = now;
         Spot.pause();
-        Sound.buzz();
+        Sound.buzz(p.buzzer);
         const b = $('phaseBanner');
         b.className = 'phase-banner buzzed';
         b.textContent = '🔔 Buzzes coming in…';
@@ -1390,7 +1462,7 @@ const Host = {
     $('phaseBanner').textContent = '🔔 ' + p.name + ' buzzed first — ' + Math.round(p.buzzMs) + ' ms';
     $('judgePanel').classList.remove('hidden');
     $('judgeWho').textContent = p.name + ' is answering…';
-    Sound.say(p.name + ' buzzed first!');
+    Sound.say(p.name + ' buzzed first!', p.voice, p.style);
     this.sendTo(id, { type: 'yourTurn' });
     this.broadcastOthers(id, { type: 'someoneBuzzed', name: p.name });
   },
@@ -2073,6 +2145,7 @@ const Player = {
       case 'welcome':
         $('pScore').textContent = msg.score + ' pts';
         if (msg.teamMode && msg.team) $('pTeam').textContent = '· Team ' + msg.team;
+        this.renderKit(msg);
         break;
       case 'phase':
         this.hideExtras();
@@ -2118,6 +2191,7 @@ const Player = {
         $('pTeam').textContent = msg.teamMode && msg.team ? '· Team ' + msg.team : '';
         break;
       case 'info': this.setStatus(msg.text); break;
+
 
       case 'quizStart':
         this.hideExtras();
@@ -2214,6 +2288,41 @@ const Player = {
     $('quizFeedback').textContent = 'Locked in…';
     this.conn.send({ type: 'quizA', n: this._quizN, choice });
     this.vibe([60]);
+  },
+
+  // The host owns the speakers, so the lists of sounds and voices come from
+  // the host rather than from whatever this phone happens to have installed.
+  renderKit(msg) {
+    const fill = (el, pairs, current, blankLabel) => {
+      el.innerHTML = '';
+      if (blankLabel) {
+        const o = document.createElement('option');
+        o.value = ''; o.textContent = blankLabel;
+        el.appendChild(o);
+      }
+      (pairs || []).forEach(([val, label]) => {
+        const o = document.createElement('option');
+        o.value = val; o.textContent = label;
+        if (val === current) o.selected = true;
+        el.appendChild(o);
+      });
+    };
+    fill($('myBuzzer'), msg.buzzers, msg.buzzer, 'Same as host');
+    fill($('myVoice'), (msg.voices || []).map(v => [v.uri, v.label]), msg.voice, 'Same as host');
+    fill($('myStyle'), msg.styles, msg.style, 'Normal');
+    $('myKitCard').classList.remove('hidden');
+  },
+
+  savePrefs(test) {
+    if (!this.conn) return;
+    this.conn.send({
+      type: 'prefs',
+      buzzer: $('myBuzzer').value || null,
+      voice: $('myVoice').value || null,
+      style: $('myStyle').value || null,
+      test: !!test
+    });
+    if (test) this.setStatus('🔊 Playing on the host speaker…');
   },
 
   hideExtras() {
