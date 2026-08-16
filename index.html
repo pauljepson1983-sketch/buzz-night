@@ -194,6 +194,7 @@
           <div class="mt">
             <div class="row">
               <button class="btn small green" id="playBtn" onclick="App.togglePlay()">▶ Play</button>
+              <button class="btn small" onclick="App.nextTrack()">⏭ Next song</button>
               <button class="btn small" onclick="App.restartTrack()">⟲ Restart</button>
               <button class="btn small alt" onclick="App.randomSeek()">🎲 Random spot</button>
               <span id="nowPlaying" class="muted grow" style="font-size:.85rem"></span>
@@ -340,6 +341,7 @@ const App = {
   searchTracks() { Spot.search($('searchInput').value); },
   loadPlaylists() { Spot.loadPlaylists(); },
   togglePlay() { Spot.togglePlay(); },
+  nextTrack() { Spot.nextTrack(); },
   restartTrack() { Spot.seekMs(0, true); },
   randomSeek() { Spot.randomSeek(); },
   userSeek(v) { Spot.userSeek(v); },
@@ -502,6 +504,40 @@ const Spot = {
   },
 
   async togglePlay() { if (this.player) this.player.togglePlay(); },
+  async nextTrack() { if (this.player) this.player.nextTrack(); },
+
+  // Development-mode apps can't read playlist contents (403 on
+  // /playlists/{id}/tracks, and the playlist object comes back with the track
+  // list stripped) — but they CAN hand Spotify a playlist to play. So playlists
+  // are a play-this-whole-thing button, not a track list, and the host moves
+  // through it with "Next song".
+  async playContext(uri, name) {
+    if (!this.deviceId) { alert('Spotify player not ready yet — wait a second and try again.'); return; }
+    await this.api('/me/player/play?device_id=' + this.deviceId, {
+      method: 'PUT', body: JSON.stringify({ context_uri: uri })
+    });
+    $('trackList').innerHTML = '<p class="muted">▶ Playing <b>' + esc(name) + '</b> — use ⏭ Next song for each round. The answer shows below.</p>';
+  },
+
+  renderPlaylists(items, label) {
+    const row = $('playlistRow');
+    row.innerHTML = '';
+    if (!items.length) { row.classList.add('hidden'); return; }
+    row.classList.remove('hidden');
+    const tag = document.createElement('span');
+    tag.className = 'muted';
+    tag.style.cssText = 'font-size:.8rem; align-self:center; margin-right:4px';
+    tag.textContent = label;
+    row.appendChild(tag);
+    items.forEach(pl => {
+      const b = document.createElement('button');
+      b.className = 'btn small ghost';
+      b.textContent = '▶ ' + pl.name;
+      b.title = pl.owner?.display_name ? 'by ' + pl.owner.display_name : '';
+      b.onclick = () => this.playContext(pl.uri, pl.name);
+      row.appendChild(b);
+    });
+  },
   async pause() { if (this.player && !this.isPaused) this.player.pause(); },
   async seekMs(ms, alsoPlay) {
     if (!this.player) return;
@@ -547,33 +583,29 @@ const Spot = {
       // so page through it — 10 is too few to pick a quiz track from. Pages
       // overlap sometimes, hence the dedupe.
       const pages = await Promise.all([0, 10, 20, 30].map(offset =>
-        this.api('/search?' + new URLSearchParams({ q, type: 'track', limit: 10, offset })).catch(() => null)
+        this.api('/search?' + new URLSearchParams({ q, type: 'track,playlist', limit: 10, offset })).catch(() => null)
       ));
       const seen = new Set(), items = [];
-      pages.filter(Boolean).forEach(p => (p.tracks?.items || []).forEach(tr => {
-        if (tr && !seen.has(tr.id)) { seen.add(tr.id); items.push(tr); }
-      }));
-      $('playlistRow').classList.add('hidden');
+      const plSeen = new Set(), playlists = [];
+      pages.filter(Boolean).forEach(p => {
+        (p.tracks?.items || []).forEach(tr => {
+          if (tr && !seen.has(tr.id)) { seen.add(tr.id); items.push(tr); }
+        });
+        // Spotify pads playlist results with nulls, hence the truthiness check
+        (p.playlists?.items || []).forEach(pl => {
+          if (pl && pl.uri && !plSeen.has(pl.id)) { plSeen.add(pl.id); playlists.push(pl); }
+        });
+      });
+      this.renderPlaylists(playlists.slice(0, 12), 'Playlists:');
       this.renderTracks(items);
     } catch(e) { alert(e.message); }
   },
 
   async loadPlaylists() {
     try {
-      const d = await this.api('/me/playlists?limit=30');
-      const row = $('playlistRow');
-      row.innerHTML = '';
-      row.classList.remove('hidden');
-      d.items.filter(Boolean).forEach(pl => {
-        const b = document.createElement('button');
-        b.className = 'btn small ghost';
-        b.textContent = pl.name;
-        b.onclick = async () => {
-          const t = await this.api('/playlists/' + pl.id + '/tracks?limit=100');
-          this.renderTracks(t.items.map(i => i.track).filter(Boolean));
-        };
-        row.appendChild(b);
-      });
+      const d = await this.api('/me/playlists?limit=50');
+      this.renderPlaylists((d.items || []).filter(pl => pl && pl.uri), 'Your playlists:');
+      $('trackList').innerHTML = '<p class="muted">Pick a playlist above to start it playing.</p>';
     } catch(e) { alert(e.message); }
   }
 };
