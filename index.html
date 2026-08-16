@@ -370,6 +370,12 @@
             <option value="3000" selected>3s</option>
             <option value="5000">5s (easy)</option>
           </select>
+          <label for="quizStart" id="quizStartLabel">Start</label>
+          <select id="quizStart">
+            <option value="skip" selected>Skip intro</option>
+            <option value="start">From 0:00</option>
+            <option value="random">Random spot</option>
+          </select>
           <label for="quizSecs">Answer in</label>
           <select id="quizSecs">
             <option value="8">8s</option>
@@ -472,6 +478,10 @@ const store = {
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* Reaction times in milliseconds ("347 ms") mean nothing to a party guest —
+   the numbers are big and the unit is unfamiliar. Seconds to two places read
+   instantly and still separate a fast buzz from a slow one. */
+const secs = ms => (Math.max(0, Math.round(ms)) / 1000).toFixed(2) + 's';
 const PEER_PREFIX = 'buzznight-v1-';
 const REDIRECT_URI = location.origin + location.pathname;
 
@@ -1490,7 +1500,7 @@ const Host = {
     const id = this.buzzQueue[idx];
     const p = this.players[id];
     this.setPhase('judging');
-    $('phaseBanner').textContent = '🔔 ' + p.name + ' buzzed first — ' + Math.round(p.buzzMs) + ' ms';
+    $('phaseBanner').textContent = '🔔 ' + p.name + ' buzzed first — ' + secs(p.buzzMs);
     $('judgePanel').classList.remove('hidden');
     $('judgeWho').textContent = p.name + ' is answering…';
     Sound.say(p.name + ' buzzed first!', p.voice, p.style);
@@ -1507,11 +1517,29 @@ const Host = {
     const p = this.players[id];
     if (!p) return;
     if (correct) {
+      // beating everyone to the buzzer AND getting it right is the best thing
+      // that can happen in the game, and it used to pass without comment
+      const onTheBuzzer = this.judgeIdx === 0;
       p.score += pts;
       p.reactions.push(p.buzzMs);
-      this.sendTo(id, { type: 'result', ok: true, pts, score: p.score });
-      this.broadcastOthers(id, { type: 'info', text: p.name + ' got it! +' + pts });
+      this.sendTo(id, { type: 'result', ok: true, pts, score: p.score, onTheBuzzer, ms: Math.round(p.buzzMs) });
+      this.broadcastOthers(id, {
+        type: 'info',
+        text: onTheBuzzer ? '⚡ ' + p.name + ' — first on the buzzer AND correct! +' + pts
+                          : p.name + ' got it! +' + pts
+      });
+      if (onTheBuzzer) {
+        const v = this.voiceFor(p.name);
+        $('phaseBanner').className = 'phase-banner buzzed';
+        $('phaseBanner').textContent = '⚡ ' + p.name + ' — first on the buzzer and correct in ' + secs(p.buzzMs) + '!';
+        Sound.buzz('fanfare');
+        setTimeout(() => Sound.say(p.name + ', first on the buzzer and correct!', v.voice, v.style), 850);
+      }
       this.endRound(false);
+      if (onTheBuzzer) {
+        $('phaseBanner').className = 'phase-banner buzzed';
+        $('phaseBanner').textContent = '⚡ ' + p.name + ' — first on the buzzer and correct in ' + secs(p.buzzMs) + '!';
+      }
     } else {
       p.locked = true;
       this.sendTo(id, { type: 'result', ok: false, score: p.score });
@@ -1530,7 +1558,7 @@ const Host = {
       this.judgeIdx = idx;
       const id = this.buzzQueue[idx];
       const p = this.players[id];
-      $('judgeWho').textContent = '🫳 Steal: ' + p.name + ' (' + Math.round(p.buzzMs) + ' ms)';
+      $('judgeWho').textContent = '🫳 Steal: ' + p.name + ' (' + secs(p.buzzMs) + ')';
       $('phaseBanner').textContent = '🫳 Steal chance: ' + p.name;
       this.phase = 'steal';
       this.startSteal(id);
@@ -1556,6 +1584,8 @@ const Host = {
         $('phaseBanner').textContent = '😅 Everyone’s locked out — reveal it!';
         $('judgePanel').classList.add('hidden');
         this.phase = 'judging';
+        // this is a round end too, even though nobody scored
+        this.pushBoard();
       }
     }
   },
@@ -1590,6 +1620,9 @@ const Host = {
     // "End round / reset buzzers".
     const stillScoring = !$('judgePanel').classList.contains('hidden');
     if (!stillScoring) this.endRound(false);
+    // endRound pushes the board, but revealing mid-scoring skips it, and the
+    // standings should follow every reveal
+    else this.pushBoard();
     // endRound resets the banner to the idle prompt, so paint the answer on the
     // host afterwards. Without this the host sees no change at all and the
     // button reads as broken even though the phones got it.
@@ -1719,7 +1752,7 @@ const Host = {
     tbody.innerHTML = '';
     const entries = Object.entries(this.players).sort((a, b) => b[1].score - a[1].score);
     entries.forEach(([id, p]) => {
-      const avg = p.reactions.length ? Math.round(p.reactions.reduce((s, x) => s + x, 0) / p.reactions.length) + ' ms' : '—';
+      const avg = p.reactions.length ? secs(p.reactions.reduce((s, x) => s + x, 0) / p.reactions.length) : '—';
       const tr = document.createElement('tr');
       tr.innerHTML = `<td>${esc(p.name)} ${p.online ? '' : '<span class="tag grey">offline</span>'}</td>
         <td class="${this.teamMode ? '' : 'hidden'}"><button class="btn small ghost" onclick="Host.cycleTeam('${id}')">${p.team || '—'}</button></td>
@@ -1770,7 +1803,7 @@ const Host = {
     }]);
     if (fastest) steps.push([4200, () => {
       this.broadcast({ type: 'finale', stage: 'fastest', row: fastest });
-      Sound.say('Fastest finger of the night, ' + fastest.name + ', averaging ' + fastest.avg + ' milliseconds.');
+      Sound.say('Fastest finger of the night, ' + fastest.name + ', averaging ' + (fastest.avg/1000).toFixed(2) + ' seconds.');
     }]);
     steps.push([4200, () => {
       this.broadcast({ type: 'finale', stage: 'table', rows, fastest });
@@ -1966,7 +1999,7 @@ const Quiz = {
         const art = al.images[0].url;
         if (seenArt.has(art)) return;
         seenArt.add(art);
-        found.set(key, { label: film, url: art, uri: t.uri });
+        found.set(key, { label: film, url: art, uri: t.uri, dur: t.duration_ms || 0 });
       });
       if (found.size >= count + 12) break;
     }
@@ -2049,6 +2082,17 @@ const Quiz = {
     return this.toQuestions(albums, count);
   },
 
+  // Where to drop the needle. "Skip intro" aims about a fifth in, floored at
+  // 20s so short cues still get past the opening, capped at 45s so a long
+  // score doesn't land in a quiet middle section, and never past 55% of the
+  // track so there's always some left to run.
+  startOffset(dur) {
+    const how = ($('quizStart') || {}).value || 'skip';
+    if (how === 'start' || !dur) return 0;
+    if (how === 'random') return Math.round(dur * (0.15 + Math.random() * 0.4));
+    return Math.round(Math.min(Math.min(Math.max(dur * 0.2, 20000), 45000), dur * 0.55));
+  },
+
   shuffle(a) {
     for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
     return a;
@@ -2061,7 +2105,7 @@ const Quiz = {
     return picks.map(target => {
       const decoys = this.shuffle(items.filter(a => a.label !== target.label)).slice(0, 3);
       const options = this.shuffle([target, ...decoys].map(a => a.label));
-      return { url: target.url, uri: target.uri, answer: target.label, options, correct: options.indexOf(target.label) };
+      return { url: target.url, uri: target.uri, dur: target.dur || 0, answer: target.label, options, correct: options.indexOf(target.label) };
     });
   },
 
@@ -2145,7 +2189,10 @@ const Quiz = {
     // themes have no picture to flash, so answering starts immediately
     const flash = this.mode === 'themes' ? 0 : this.flashMs;
     this.endsAt = Date.now() + flash + this.seconds * 1000;
-    if (this.mode === 'themes' && q.uri) Spot.playUri(q.uri).catch(() => {});
+    // Film scores open with slow builds — starting at 0:00 meant a round of
+    // atmospheric strings nobody could place inside the answer window. Skip
+    // into the track so the main theme is playing when the clock starts.
+    if (this.mode === 'themes' && q.uri) Spot.playUri(q.uri, this.startOffset(q.dur)).catch(() => {});
     Host.broadcast({
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
       img: q.img || null, options: q.options, flashMs: flash, seconds: this.seconds,
@@ -2224,7 +2271,12 @@ const Quiz = {
     const top = Host.boardRows()[0];
     $('quizStatus').textContent = 'Round finished.' + (top ? ' Winner: ' + top.name + ' on ' + top.score + '.' : '');
     $('quizHostView').classList.add('hidden');
-    if (top) Sound.say(top.name + ' wins the album round!');
+    if (top) {
+      const roundName = { covers: 'album cover round', backdrops: 'film stills round',
+                          themes: 'film themes round', posters: 'film poster round' }[this.mode] || 'round';
+      const v = Host.voiceFor(top.name);
+      Sound.say(top.name + ' wins the ' + roundName + '!', v.voice, v.style);
+    }
   },
 
   stop() {
@@ -2286,7 +2338,7 @@ const Player = {
         break;
       case 'buzzAck':
         this.setBuzz(false);
-        this.setStatus(msg.pos === 1 ? '🔔 YOU’RE IN FIRST! (' + msg.ms + ' ms)' : '#' + msg.pos + ' in the queue (' + msg.ms + ' ms)', msg.pos === 1 ? 'good' : '');
+        this.setStatus(msg.pos === 1 ? '🔔 YOU’RE IN FIRST! (' + secs(msg.ms) + ')' : '#' + msg.pos + ' in the queue (' + secs(msg.ms) + ')', msg.pos === 1 ? 'good' : '');
         this.vibe([120, 60, 120]);
         break;
       case 'yourTurn': this.setStatus('🎤 Give your answer out loud!', 'good'); break;
@@ -2301,6 +2353,12 @@ const Player = {
         break;
       case 'result':
         this.hideExtras();
+        if (msg.ok && msg.onTheBuzzer) {
+          this.setStatus('⚡ FIRST ON THE BUZZER AND CORRECT! +' + msg.pts + ' in ' + secs(msg.ms), 'good');
+          $('pScore').textContent = msg.score + ' pts';
+          this.vibe([60, 40, 60, 40, 60, 40, 250]);
+          break;
+        }
         $('pScore').textContent = msg.score + ' pts';
         this.setStatus(msg.ok ? '🎉 CORRECT! +' + msg.pts : '❌ Wrong — locked out this song', msg.ok ? 'good' : 'bad');
         this.vibe(msg.ok ? [80, 40, 80, 40, 200] : [400]);
@@ -2456,7 +2514,7 @@ const Player = {
       const node = document.createElement('div');
       node.className = 'fin-fast' + (isMe(msg.row) ? ' me' : '');
       node.innerHTML = '⚡ Fastest finger<div class="fin-name">' + esc(msg.row.name) +
-        '</div><div class="fin-score">' + msg.row.avg + ' ms average</div>';
+        '</div><div class="fin-score">' + secs(msg.row.avg) + ' average</div>';
       el.insertBefore(node, el.children[1] || null);
       this.vibe([60, 40, 60]);
       return;
@@ -2464,8 +2522,8 @@ const Player = {
     if (msg.stage === 'table') {
       el.innerHTML = '<div class="fin-title">🏁 Final scores</div>' + msg.rows.map((r, i) =>
         '<div class="fin-line' + (isMe(r) ? ' me' : '') + '">' + (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.') +
-        ' ' + esc(r.name) + ' <b>' + r.score + '</b>' + (r.avg != null ? ' <span class="fin-avg">' + r.avg + ' ms</span>' : '') + '</div>').join('') +
-        (msg.fastest ? '<div class="fin-line">⚡ Fastest finger: ' + esc(msg.fastest.name) + ' (' + msg.fastest.avg + ' ms)</div>' : '');
+        ' ' + esc(r.name) + ' <b>' + r.score + '</b>' + (r.avg != null ? ' <span class="fin-avg">' + secs(r.avg) + '</span>' : '') + '</div>').join('') +
+        (msg.fastest ? '<div class="fin-line">⚡ Fastest finger: ' + esc(msg.fastest.name) + ' (' + secs(msg.fastest.avg) + ')</div>' : '');
     }
   },
 
@@ -2494,7 +2552,7 @@ const Player = {
         '</div>' + (note ? '<div class="lb-note">' + esc(note) + '</div>' : '');
     }).join('');
     const ff = msg.fastest
-      ? '<div class="lb-fast">⚡ Fastest finger: ' + esc(msg.fastest.name) + ' · ' + msg.fastest.avg + ' ms</div>'
+      ? '<div class="lb-fast">⚡ Fastest finger: ' + esc(msg.fastest.name) + ' · ' + secs(msg.fastest.avg) + '</div>'
       : '';
     el.innerHTML = '<h2 style="font-size:1rem">🏆 Leaderboard</h2>' + rows + ff;
     el.classList.remove('hidden');
