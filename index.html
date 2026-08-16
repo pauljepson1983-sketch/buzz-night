@@ -323,6 +323,16 @@
         </div>
       </div>
 
+      <div class="card" id="hallCard">
+        <h2>🏅 All-time records</h2>
+        <p class="muted" style="font-size:.85rem">Kept on this laptop across every night. Players are matched by name, so tell people to use the same one each time. "Strongest at" needs at least two rounds in a category before it will call it.</p>
+        <div id="hallBody"></div>
+        <div class="row mt">
+          <button class="btn ghost small" onclick="Hall.render()">Refresh</button>
+          <button class="btn ghost small" onclick="Hall.reset()">Wipe records</button>
+        </div>
+      </div>
+
       <div class="card" id="nightCard">
         <h2>🎬 Tonight's running order</h2>
         <p class="muted" style="font-size:.85rem">Build the night up front, press go, and it runs itself — so you can play instead of operating it. Picture and music rounds score themselves. Add a buzzer round wherever you want to take over and judge.</p>
@@ -1362,6 +1372,7 @@ const Host = {
       $('waShare').href = 'https://wa.me/?text=' + encodeURIComponent('🎶 Buzz Night quiz is on! Grab your buzzer: ' + url + ' (room code ' + this.roomCode + ')');
       Sound.initPickers();
       Night.load();
+      Hall.render();
       this._resuming = false;
       this._resumeTries = 0;
       this.renderScores();
@@ -1874,6 +1885,9 @@ const Host = {
     this.endRound(false);
 
     const fastest = this.teamMode ? null : this.fastestFinger();
+    // the night is over — bank it before the reveal, in case anything is
+    // closed mid-celebration
+    if (!this.teamMode) { Hall.recordGame(rows, fastest); Hall.render(); }
     const steps = [];
     steps.push([0, () => {
       this.broadcast({ type: 'finale', stage: 'intro' });
@@ -2601,6 +2615,17 @@ const Quiz = {
     });
     Host.pushBoard();
 
+    // bank this round against everyone's all-time record
+    const gainsByName = {};
+    Object.entries(this.roundGains || {}).forEach(([id, pts]) => {
+      const p = Host.players[id];
+      if (p && pts > 0) gainsByName[p.name] = (gainsByName[p.name] || 0) + pts;
+    });
+    if (Object.keys(gainsByName).length) {
+      Hall.recordRound(this.mode, gainsByName, drawnWith.map(x => x.name));
+      Hall.render();
+    }
+
     $('quizStatus').textContent = win
       ? 'Round finished. ' + (drawnWith.length > 1 ? 'Drawn: ' + drawnWith.map(x => x.name).join(' & ') : win.name + ' won it') + ' with ' + win.pts + ' this round.'
       : 'Round finished — nobody scored.';
@@ -2653,6 +2678,110 @@ const Quiz = {
     $('quizHostView').classList.add('hidden');
     // release anything waiting on this round, or the running order would hang
     if (this.onFinish) this.onFinish();
+  }
+};
+
+/* ======================================================================
+   HALL OF FAME — records that outlive a single night.
+
+   Keyed on lowercased name, because that is the only identity this game
+   has: PeerJS ids change every session. Same name means same person, which
+   is also how mid-game rejoins work.
+   ====================================================================== */
+const Hall = {
+  data: { players: {} },
+
+  load() {
+    try { this.data = JSON.parse(store.get('buzz_hall') || '') || { players: {} }; }
+    catch (e) { this.data = { players: {} }; }
+    if (!this.data.players) this.data.players = {};
+  },
+  save() { store.set('buzz_hall', JSON.stringify(this.data)); },
+
+  entry(name) {
+    const k = String(name).toLowerCase();
+    if (!this.data.players[k]) {
+      this.data.players[k] = { name, games: 0, points: 0, roundsPlayed: 0, roundWins: 0, gameWins: 0, modes: {}, bestMs: null };
+    }
+    this.data.players[k].name = name; // keep their latest capitalisation
+    return this.data.players[k];
+  },
+
+  // called at the end of every auto-scored round
+  recordRound(mode, gainsByName, winners) {
+    this.load();
+    Object.entries(gainsByName).forEach(([name, pts]) => {
+      const e = this.entry(name);
+      e.points += pts;
+      e.roundsPlayed++;
+      const m = e.modes[mode] = e.modes[mode] || { pts: 0, rounds: 0, wins: 0 };
+      m.pts += pts; m.rounds++;
+      if (winners.includes(name)) { e.roundWins++; m.wins++; }
+    });
+    this.save();
+  },
+
+  // called when the finale runs
+  recordGame(rows, fastest) {
+    this.load();
+    rows.forEach((r, i) => {
+      const e = this.entry(r.name);
+      e.games++;
+      if (i === 0 && rows.length > 1) e.gameWins++;
+    });
+    if (fastest && fastest.avg != null) {
+      const e = this.entry(fastest.name);
+      if (e.bestMs == null || fastest.avg < e.bestMs) e.bestMs = fastest.avg;
+    }
+    this.save();
+  },
+
+  // What someone is actually good at: highest average points per round in a
+  // category, needing at least two rounds so one lucky round isn't a
+  // "strength". Compared against their own average, so it reads as "this is
+  // their thing" rather than just naming whatever they played most.
+  strengthOf(e) {
+    const cats = Object.entries(e.modes).filter(([, m]) => m.rounds >= 2);
+    if (!cats.length) return null;
+    const overall = e.roundsPlayed ? e.points / e.roundsPlayed : 0;
+    const ranked = cats.map(([mode, m]) => ({ mode, avg: m.pts / m.rounds, wins: m.wins }))
+      .sort((a, b) => b.avg - a.avg);
+    const best = ranked[0];
+    if (!overall || best.avg < overall * 1.1) return null; // nothing stands out
+    return best;
+  },
+
+  rows() {
+    this.load();
+    return Object.values(this.data.players)
+      .map(e => ({ ...e, strength: this.strengthOf(e) }))
+      .sort((a, b) => b.points - a.points);
+  },
+
+  reset() {
+    if (!confirm('Wipe all-time records for everyone? This cannot be undone.')) return;
+    this.data = { players: {} };
+    this.save();
+    this.render();
+  },
+
+  render() {
+    const el = $('hallBody');
+    if (!el) return;
+    const rows = this.rows();
+    if (!rows.length) {
+      el.innerHTML = '<p class="muted" style="font-size:.85rem">No games finished yet. Play a night through to the final scores and it will fill in.</p>';
+      return;
+    }
+    el.innerHTML = '<table><thead><tr><th>Player</th><th>Nights</th><th>Wins</th><th>Points</th><th>Rounds won</th><th>Strongest at</th><th>Fastest</th></tr></thead><tbody>' +
+      rows.map(r => {
+        const s = r.strength
+          ? (Quiz.TITLES[r.strength.mode] || r.strength.mode) + ' <span class="muted">(' + Math.round(r.strength.avg) + '/round)</span>'
+          : '<span class="muted">—</span>';
+        return '<tr><td><b>' + esc(r.name) + '</b></td><td>' + r.games + '</td><td>' + r.gameWins + '</td>' +
+          '<td><b>' + r.points + '</b></td><td>' + r.roundWins + '</td><td>' + s + '</td>' +
+          '<td class="muted">' + (r.bestMs != null ? secs(r.bestMs) : '—') + '</td></tr>';
+      }).join('') + '</tbody></table>';
   }
 };
 
