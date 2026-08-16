@@ -571,13 +571,27 @@ const Sound = {
     try {
       this.ensure();
       const t = this.ctx.currentTime;
-      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
-      o.type = 'sawtooth'; o.frequency.setValueAtTime(220, t);
-      o.frequency.linearRampToValueAtTime(170, t + 0.45);
-      g.gain.setValueAtTime(0.5, t);
-      g.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
-      o.connect(g); g.connect(this.ctx.destination);
-      o.start(t); o.stop(t + 0.5);
+      // compressor lets us push the level hard without the crackle raw gain gives
+      const comp = this.ctx.createDynamicsCompressor();
+      comp.threshold.setValueAtTime(-18, t);
+      comp.ratio.setValueAtTime(12, t);
+      comp.attack.setValueAtTime(0.002, t);
+      comp.release.setValueAtTime(0.15, t);
+      const master = this.ctx.createGain();
+      master.gain.setValueAtTime(1.7, t);
+      comp.connect(master); master.connect(this.ctx.destination);
+      // main rasp plus an octave below — two layers carry across a noisy room
+      // far better than one loud one
+      [['sawtooth', 220, 170, 0.85], ['square', 110, 85, 0.55]].forEach(([type, f0, f1, peak]) => {
+        const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+        o.type = type;
+        o.frequency.setValueAtTime(f0, t);
+        o.frequency.linearRampToValueAtTime(f1, t + 0.5);
+        g.gain.setValueAtTime(peak, t);
+        g.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
+        o.connect(g); g.connect(comp);
+        o.start(t); o.stop(t + 0.6);
+      });
     } catch(e) {}
   },
   say(text) {
