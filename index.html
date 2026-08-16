@@ -2132,11 +2132,26 @@ const Quiz = {
      albums and singles are trusted, and when a decade is set anything landing
      outside it is dropped rather than believed.
   --------------------------------------------------------------------- */
+  // "Public Enema Number One - 2015 Remaster" and "Number One - Club Short
+  // Mix" both need reducing to their real title: the suffix gives the game
+  // away on screen and lets one song appear as several questions.
+  baseTitle(name) {
+    return String(name)
+      .replace(/\s*[-–]\s*[^-–]*\b(remaster(ed)?|mix|version|edit|live|mono|stereo|remix|radio|single|album|instrumental|acoustic|demo)\b.*$/i, '')
+      .replace(/\s*[\(\[][^)\]]*\b(remaster(ed)?|mix|version|edit|live|mono|stereo|remix|radio|instrumental|acoustic|demo)\b[^)\]]*[\)\]]\s*/ig, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  },
+
   async buildYears(decade, count, style, extra) {
-    const base = [style, extra].filter(Boolean).join(' ') || 'hits';
+    // Searching for words like "greatest hits" or "number one" matches songs
+    // TITLED that — it returned two different mixes of Alexia's "Number One"
+    // and nothing anyone would recognise. Search the decade (plus any style)
+    // and let popularity decide what's well known.
+    const base = [style, extra].filter(Boolean).join(' ');
     const queries = decade
-      ? [base + ' year:' + decade, 'greatest hits year:' + decade, 'number one year:' + decade]
-      : [base, 'greatest hits', 'classic hits'];
+      ? [(base ? base + ' ' : '') + 'year:' + decade, 'pop year:' + decade, 'rock year:' + decade]
+      : [base || 'pop', 'rock', 'dance'];
     const lo = decade ? +decade.slice(0, 4) : 1950;
     const hi = decade ? +decade.slice(5) : new Date().getFullYear();
 
@@ -2152,14 +2167,24 @@ const Quiz = {
         const yr = +String(al.release_date).slice(0, 4);
         if (!yr || yr < lo || yr > hi) return;
         const artist = (t.artists || []).map(a => a.name).join(', ');
-        const title = t.name.replace(/\s*[\(\[][^)\]]*(remaster|remastered|mono|stereo|version|edit)[^)\]]*[\)\]]\s*$/i, '').trim();
+        const title = this.baseTitle(t.name);
+        // dedupe on the BASE title, so club mixes and radio edits of one song
+        // can't come back as two questions
         const key = (title + '|' + artist).toLowerCase();
-        if (found.has(key)) return;
-        found.set(key, { title: title + ' — ' + artist, year: yr, uri: t.uri, dur: t.duration_ms || 0, url: al.images?.[0]?.url });
+        const prev = found.get(key);
+        if (prev && prev.pop >= (t.popularity || 0)) return;
+        found.set(key, {
+          title: title + ' — ' + artist, year: yr, uri: t.uri,
+          dur: t.duration_ms || 0, url: al.images?.[0]?.url, pop: t.popularity || 0
+        });
       });
-      if (found.size >= count + 10) break;
+      if (found.size >= count + 30) break;
     }
-    const songs = [...found.values()].filter(s => s.uri);
+    // popularity is the only signal we have for "would a room recognise this",
+    // and without it the round fills up with obscure album tracks
+    let songs = [...found.values()].filter(s => s.uri);
+    const known = songs.filter(s => s.pop >= 45);
+    songs = (known.length >= Math.max(4, count) ? known : songs).sort((a, b) => b.pop - a.pop).slice(0, Math.max(count * 3, 24));
     if (songs.length < 4) throw new Error('Only found ' + songs.length + ' datable songs — try a wider decade or a different style.');
     this.available = songs.length;
 
