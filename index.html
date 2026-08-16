@@ -458,6 +458,7 @@
             <option value="backdrops">Film stills</option>
             <option value="faces">Famous faces</option>
             <option value="songs">Name the song (music)</option>
+            <option value="tv">TV theme tunes (music)</option>
             <option value="years">Year of release (music)</option>
             <option value="themes">Film themes (music)</option>
           </select>
@@ -2473,6 +2474,92 @@ const Quiz = {
       .trim();
   },
 
+  /* ---- TV themes --------------------------------------------------------
+     Spotify names theme tracks half a dozen different ways — "Theme from
+     Cheers", "Friends Main Theme", "Tuyo (Narcos Theme)", 'Renaissance ...
+     from "The White Lotus"' — and its TV searches also return unrelated pop
+     songs. So the show name is extracted by pattern and then VERIFIED against
+     TMDB's television database: anything TMDB doesn't recognise as a
+     reasonably known show is dropped, and TMDB's spelling becomes the answer.
+     That verification is what rejects "Crockett's Theme" (a character, not a
+     programme) and a stray Drake track that came back from a TV search.
+  --------------------------------------------------------------------- */
+  showNameFrom(trackName) {
+    const clean = s => String(s || '').replace(/\s+/g, ' ').trim().replace(/[,\-–:]+$/, '');
+    const t = clean(trackName)
+      .replace(/\s*[\(\[][^)\]]*(feat\.|extended version|remaster|radio edit|instrumental|stereo|mono|tv size)[^)\]]*[\)\]]/ig, ' ')
+      .replace(/\s*-\s*(a\s+)?(netflix|hbo|amazon|apple)\b.*$/i, '')
+      .replace(/\s*-\s*from\s+/i, ' from ');
+    const pats = [
+      // an explicit "from <Show>" is the most reliable signal, so try it first
+      /\bfrom\s+(?:the\s+)?(?:tv\s+series\s+|series\s+|show\s+)?["“]([^"”]+)["”]/i,
+      /\bfrom\s+(?:the\s+)?["“']?([A-Z][^"”'()\[\]]{2,40}?)["”']?\s*(?:[\(\[]|$)/,
+      /[\(\[]\s*([^)\]]+?)\s+(?:main\s+)?(?:title\s+)?theme\s*[\)\]]/i,
+      /^(.+?)\s*[\(\[]\s*(?:main\s+)?title\s*(?:theme)?\s*[\)\]]/i,
+      /^(.+?)\s+(?:main\s+)?theme$/i,
+      /^theme\s+(?:song\s+)?(?:to|for|from)\s+(?:the\s+)?(.+)$/i
+    ];
+    for (const re of pats) {
+      const m = t.match(re);
+      if (m && m[1]) {
+        // "The White Lotus: Season 2" won't match anything in TMDB
+        const v = clean(m[1]).replace(/[:,]?\s*(season|series|vol\.?|volume)\s*\d+.*$/i, '').trim();
+        if (v.length > 1 && v.length < 45) return v;
+      }
+    }
+    return null;
+  },
+
+  async verifyShow(name) {
+    this._tvCache = this._tvCache || {};
+    const k = name.toLowerCase();
+    if (k in this._tvCache) return this._tvCache[k];
+    let hit = null;
+    try {
+      const j = await this.tmdb('/search/tv', { query: name });
+      hit = (j.results || [])
+        .filter(r => r.vote_count >= 50 && r.name)
+        .sort((a, b) => b.popularity - a.popularity)[0] || null;
+    } catch (e) {}
+    this._tvCache[k] = hit;
+    return hit;
+  },
+
+  async buildTv(decade, count) {
+    const queries = ['television theme songs', 'tv themes collection', 'classic tv themes',
+                     'original television soundtrack', 'best tv theme tunes', 'cult tv themes'];
+    const lo = decade ? +decade.slice(0, 4) : 0;
+    const hi = decade ? +decade.slice(5) : 9999;
+
+    const shows = new Map();
+    for (const q of queries) {
+      let res;
+      try { res = await Spot.searchRaw(q); } catch (e) { continue; }
+      for (const t of res.tracks) {
+        if (!t.uri || shows.size >= count + 10) continue;
+        const guess = this.showNameFrom(t.name);
+        if (!guess) continue;
+        const show = await this.verifyShow(guess);
+        if (!show) continue;
+        const yr = +String(show.first_air_date || '').slice(0, 4);
+        // when a decade is set, judge it on when the SHOW aired, not when the
+        // compilation album happened to be released
+        if (decade && (!yr || yr < lo || yr > hi)) continue;
+        const key = show.name.toLowerCase();
+        if (shows.has(key)) continue;
+        shows.set(key, {
+          label: show.name, uri: t.uri, dur: t.duration_ms || 0,
+          url: show.poster_path ? this.TMDB_IMG + show.poster_path : null
+        });
+      }
+      if (shows.size >= count + 10) break;
+    }
+    const list = [...shows.values()];
+    if (list.length < 4) throw new Error('Only found ' + list.length + ' TV themes' + (decade ? ' from that decade' : '') + ' — try Any decade.');
+    this.available = list.length;
+    return list;
+  },
+
   /* Gathering well-known, playable, correctly-dated songs is the same job for
      "name the song" and "name the year", so both share this. */
   async collectSongs(decade, count, style, extra) {
@@ -2652,7 +2739,9 @@ const Quiz = {
       : ('films' + (decadeLabel ? ', ' + decadeLabel : ''));
     try {
       let qs;
-      if (this.mode === 'songs') {
+      if (this.mode === 'tv') {
+        qs = this.toQuestions(await this.buildTv(decade, count), count);
+      } else if (this.mode === 'songs') {
         qs = await this.buildSongs(decade, count, style, extra);
       } else if (this.mode === 'faces') {
         qs = this.toQuestions(await this.buildFaces(decade, count), count);
@@ -2668,7 +2757,7 @@ const Quiz = {
         qs = this.toQuestions(films, count);
       }
 
-      if (['themes', 'years', 'songs'].includes(this.mode)) {
+      if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) {
         this.questions = qs.filter(q => q.uri);
         if (!this.questions.length) throw new Error('Could not find playable tracks for that.');
       } else if (this.mode === 'backdrops') {
@@ -2728,7 +2817,7 @@ const Quiz = {
     this.answers = {};
     this.gains = {};
     this.firstCorrect = null;
-    const audioRound = ['themes', 'years', 'songs'].includes(this.mode);
+    const audioRound = ['themes', 'years', 'songs', 'tv'].includes(this.mode);
     // audio rounds have no picture to flash
     const flash = audioRound ? 0 : this.flashMs;
     // Music used to start the instant the question went out, with the clock
@@ -2764,6 +2853,7 @@ const Quiz = {
       backdrops: 'A still from the film flashes up, then four titles. Stills have no writing on them, so nothing gives the answer away. Decade applies; style is ignored. Film data and images from TMDB.',
       themes: 'The film’s theme plays on your speaker and four films appear on the phones. Decade applies; style is ignored.',
       songs: 'A song plays and four song titles appear on the phones. The classic music round. Decade applies; style narrows it.',
+      tv: 'A TV theme tune plays and four shows appear. Show names are checked against TMDB, so what you get is a real programme. Decade filters on when the SHOW aired; style is ignored.',
       years: 'A song plays and four years appear. Decade applies; style narrows it. Remasters are filtered out so the dates are honest.',
       faces: 'A face flashes up and four names appear — drawn from the cast of well-known films, so they are people the room will know. Crop into it makes it much harder. Decade applies; style is ignored. Faces from TMDB.'
     };
@@ -2771,7 +2861,7 @@ const Quiz = {
     const filmMode = !['covers', 'years', 'songs'].includes(m);
     $('quizStyle').disabled = filmMode;
     $('quizTopic').disabled = filmMode;
-    const audioRound = ['themes', 'years', 'songs'].includes(m);
+    const audioRound = ['themes', 'years', 'songs', 'tv'].includes(m);
     $('quizFlash').disabled = audioRound;
     $('quizStart').disabled = !audioRound;
     $('quizCrop').disabled = m !== 'faces';
@@ -2831,7 +2921,7 @@ const Quiz = {
   skipQuestion() {
     if (!this.active) { $('quizStatus').textContent = 'No round running.'; return; }
     clearTimeout(this.tick); clearTimeout(this._closing);
-    if (['themes', 'years', 'songs'].includes(this.mode)) Spot.pause();
+    if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
     Host.broadcast({ type: 'quizSkip' });
     $('quizHostView').innerHTML = '<span class="muted">Question skipped.</span>';
     setTimeout(() => this.next(), 700);
@@ -2840,7 +2930,7 @@ const Quiz = {
   close() {
     if (!this.active) return;
     // stop the theme before the answer goes up, or it plays over the reveal
-    if (['themes', 'years', 'songs'].includes(this.mode)) Spot.pause();
+    if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
     const q = this.questions[this.idx];
     Object.entries(Host.players).forEach(([id, p]) => {
       const a = this.answers[id];
@@ -2860,7 +2950,7 @@ const Quiz = {
   finish() {
     this.active = false;
     clearTimeout(this.tick);
-    if (['themes', 'years', 'songs'].includes(this.mode)) Spot.pause();
+    if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
 
     // Whoever scored most in THIS round, not whoever leads overall — the old
     // version read the leaderboard and crowned the overall leader, so it
@@ -2950,17 +3040,18 @@ const Quiz = {
   // actually being played, so players could not tell what round they were in.
   TITLES: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
-    songs: '🎧 Name the song', years: '📅 Year of release', faces: '⭐ Famous faces'
+    songs: '🎧 Name the song', tv: '📺 TV theme tunes', years: '📅 Year of release', faces: '⭐ Famous faces'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
-    songs: 'Song', years: 'Song', faces: 'Face'
+    songs: 'Song', tv: 'Theme', years: 'Song', faces: 'Face'
   },
   HOWTO: {
     covers: 'A cover flashes up, then four albums. Pick the right one.',
     backdrops: 'A scene from the film flashes up, then four titles.',
     themes: 'Listen to the theme, then pick the film.',
     songs: 'Listen, then pick which song it is.',
+    tv: 'Listen to the theme tune, then pick the TV show.',
     years: 'Listen, then pick the year it came out.',
     faces: 'A face flashes up, then four names. Quick!'
   },
@@ -2969,6 +3060,7 @@ const Quiz = {
     covers: 'album cover round', backdrops: 'film stills round',
     themes: 'film themes round',
     songs: 'name the song round',
+    tv: 'TV themes round',
     years: 'year of release round',
     faces: 'famous faces round'
   },
@@ -2977,7 +3069,7 @@ const Quiz = {
     if (!this.active) { $('quizStatus').textContent = 'No round running.'; return; }
     this.active = false;
     clearTimeout(this.tick);
-    if (['themes', 'years', 'songs'].includes(this.mode)) Spot.pause();
+    if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
     Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
     $('quizStatus').textContent = 'Round stopped.';
     $('quizHostView').classList.add('hidden');
@@ -3177,7 +3269,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', songs: '🎧 Name the song', years: '📅 Year of release', faces: '⭐ Famous faces', buzzer: '🔔 Buzzer round (you judge)'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', years: '📅 Year of release', faces: '⭐ Famous faces', buzzer: '🔔 Buzzer round (you judge)'
   },
 
   load() {
@@ -3264,7 +3356,7 @@ const Night = {
     // This is a MUSIC quiz first. A flat shuffle of all the round types was
     // handing out nights that were mostly pictures, which is not the game.
     // Guarantee the music rounds and let picture rounds fill the rest.
-    const music = Quiz.shuffle(['songs', 'years', 'themes']);
+    const music = Quiz.shuffle(['songs', 'years', 'themes', 'tv']);
     const pics = Quiz.shuffle(['faces', 'backdrops', 'covers']);
     const size = 4 + Math.floor(Math.random() * 2); // 4 or 5
     const wantMusic = Math.max(2, size - 2);        // never fewer than two
@@ -3292,7 +3384,7 @@ const Night = {
     // when there is one — otherwise the round would fail to build.
     const decade = $('quickDecade').value, style = $('quickStyle').value;
     // music-led, same as Surprise me — it's a music quiz
-    const order = ['songs', 'years', 'faces', 'themes'];
+    const order = ['songs', 'tv', 'years', 'faces', 'themes'];
     if (decade || style) order.push('covers');
     order.push('backdrops');
     const chosen = order.slice(0, size);
