@@ -240,24 +240,31 @@
 <!-- ================= HOST SETUP ================= -->
 <div id="hostSetup" class="view">
   <h1>Host setup</h1>
-  <div class="card">
-    <h2>1 · Spotify</h2>
-    <p class="muted mb">Paste your Spotify app Client ID (from developer.spotify.com — see setup guide). Saved on this device.</p>
-    <div class="row">
-      <input type="text" id="clientIdInput" class="grow" placeholder="Spotify Client ID">
-      <button class="btn" id="spotifyLoginBtn" onclick="App.spotifyLogin()">Connect Spotify</button>
+
+  <!-- One button does the lot: opens the room, builds a night if none is
+       saved, and puts the QR on screen. Everything else on this page is for
+       the first time only, or for people who want to fiddle. -->
+  <button class="btn big green" id="quickStartBtn" onclick="App.quickStart()" style="font-size:1.4rem; padding:22px">
+    ⚡ Start a game
+  </button>
+  <p class="muted mt" id="quickStartNote" style="font-size:.9rem"></p>
+
+  <details class="fold mt" id="setupFold">
+    <summary>⚙️ Setup &amp; options</summary>
+    <div class="fold-body">
+      <p class="muted mb" style="font-size:.85rem">Spotify Client ID — from developer.spotify.com. Saved on this device, so you only do this once.</p>
+      <div class="row mb">
+        <input type="text" id="clientIdInput" class="grow" placeholder="Spotify Client ID">
+        <button class="btn" id="spotifyLoginBtn" onclick="App.spotifyLogin()">Connect Spotify</button>
+      </div>
+      <p id="spotifyStatus" class="muted mb"></p>
+      <div class="row">
+        <button class="btn ghost small" onclick="App.createRoom()">Open a room without starting a night</button>
+        <button class="btn alt small hidden" id="resumeBtn" onclick="App.resumeRoom()">Carry on last game</button>
+      </div>
+      <p class="muted mt hidden" id="resumeNote" style="font-size:.85rem"></p>
     </div>
-    <p id="spotifyStatus" class="muted mt"></p>
-  </div>
-  <div class="card">
-    <h2>2 · Start the room</h2>
-    <p class="muted mb">Creates a room code + QR for players. You can start this before or after connecting Spotify.</p>
-    <div class="row">
-      <button class="btn green" onclick="App.createRoom()">Create room</button>
-      <button class="btn alt hidden" id="resumeBtn" onclick="App.resumeRoom()">Carry on last game</button>
-    </div>
-    <p class="muted mt hidden" id="resumeNote" style="font-size:.85rem"></p>
-  </div>
+  </details>
 </div>
 
 <!-- ================= HOST GAME ================= -->
@@ -676,6 +683,28 @@ const App = {
 
   /* ================= host ================= */
   spotifyLogin() { Spot.login(); },
+  /* One press: open the room, make sure there is a night to play, and land on
+     the QR code. Previously this was Create room, then scroll past four cards,
+     then build a plan, then find Start the night. */
+  quickStart() {
+    const saved = Host.loadGame();
+    if (saved && !confirm('Start a NEW game? The saved game (' + saved.players.length + ' players) will be wiped.\n\nPress Cancel, then open Setup & options and choose "Carry on last game", to keep the scores.')) return;
+    Host.clearGame();
+    $('quickStartBtn').disabled = true;
+    Host._afterOpen = () => {
+      // nothing planned? pick a night rather than leaving them on a blank list
+      if (!Night.plan.length) Night.surprise();
+      const card = $('nightCard');
+      $('nightStatus').textContent = Night.plan.length +
+        ' rounds ready. Get everyone to scan the QR above, then press "Start the night".';
+      // the QR is the thing they need first, so show that, not the plan
+      const join = document.querySelector('#hostGame .card');
+      if (join) join.scrollIntoView({ block: 'start' });
+      $('quickStartBtn').disabled = false;
+    };
+    Host.create();
+  },
+
   createRoom() {
     const saved = Host.loadGame();
     if (saved && !confirm('Start a NEW game? The saved game (' + saved.players.length + ' players) will be wiped.\n\nPress Cancel, then "Carry on last game", to keep the scores.')) return;
@@ -687,7 +716,25 @@ const App = {
     if (!saved) { alert('No saved game found.'); return; }
     Host.create(saved);
   },
+  // say what the big button will actually do before they press it, and open
+  // the setup panel by itself the first time, when Spotify isn't connected yet
+  describeQuickStart() {
+    let plan = [];
+    try { plan = JSON.parse(store.get('night_plan') || '[]') || []; } catch (e) {}
+    const connected = !!(Spot.token || store.get('spotify_refresh'));
+    const bits = [];
+    bits.push(plan.length
+      ? 'Opens a room and plays your saved ' + plan.length + '-round night.'
+      : 'Opens a room and picks a surprise night for you.');
+    if (!connected) {
+      bits.push('⚠ Spotify isn’t connected — music rounds won’t work until it is. Open Setup & options below.');
+      $('setupFold').open = true;
+    }
+    $('quickStartNote').textContent = bits.join(' ');
+  },
+
   offerResume() {
+    this.describeQuickStart();
     const saved = Host.loadGame();
     const btn = $('resumeBtn'), note = $('resumeNote');
     if (!saved) { btn.classList.add('hidden'); note.classList.add('hidden'); return; }
@@ -1421,6 +1468,7 @@ const Host = {
       Sound.initPickers();
       Night.load();
       Hall.render();
+      if (this._afterOpen) { const fn = this._afterOpen; this._afterOpen = null; try { fn(); } catch (e) {} }
       this._resuming = false;
       this._resumeTries = 0;
       this.renderScores();
