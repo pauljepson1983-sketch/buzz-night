@@ -3323,6 +3323,10 @@ const Night = {
     // "mixed" is a UI choice, never a real search value — resolve it to a
     // concrete decade per round so each one lands somewhere different
     if (decade === 'mixed') decade = this.randomDecade();
+    // TV themes come from a handful of compilation albums, so the pool is far
+    // too thin to also filter by when the show aired — pinning a decade there
+    // mostly produces a round that can't be built. Always Any.
+    if (mode === 'tv') decade = '';
     const style = $('quickStyle').value;
     return {
       mode, decade,
@@ -3364,10 +3368,13 @@ const Night = {
     const used = [];
     this.plan = pool.slice(0, size).map(m => {
       const r = this.defaultsFor(m);   // resolves "mixed" to its own decade
-      // nudge away from repeating a decade already used this night
-      let guard = 0;
-      while (used.includes(r.decade) && guard++ < 8) r.decade = this.randomDecade();
-      used.push(r.decade);
+      // nudge away from repeating a decade already used this night, but never
+      // hand TV a decade — its pool is too thin to survive one
+      if (m !== 'tv') {
+        let guard = 0;
+        while (used.includes(r.decade) && guard++ < 8) r.decade = this.randomDecade();
+        used.push(r.decade);
+      }
       r.count = 6 + Math.floor(Math.random() * 5);          // 6-10
       if (m === 'faces') r.crop = Math.random() < 0.7 ? 'crop' : 'whole';
       if (m === 'years' || m === 'themes') r.startAt = Math.random() < 0.5 ? 'skip' : 'random';
@@ -3393,7 +3400,7 @@ const Night = {
       const r = this.defaultsFor(m);
       // same anti-repeat as Surprise me, so "mixed decades" really does range
       // rather than landing on the eighties three times
-      if (decade === 'mixed') {
+      if (decade === 'mixed' && m !== 'tv') {
         let guard = 0;
         while (used.includes(r.decade) && guard++ < 8) r.decade = this.randomDecade();
         used.push(r.decade);
