@@ -2963,26 +2963,39 @@ const Quiz = {
       .map(pl => ({ name: pl.name, pos: this.eraPosition(pl) }))
       .filter(pl => pl.pos != null);
 
+    /* Variety first, era second.
+
+       Choosing a category by era alone let the biggest categories dominate:
+       populations and areas are four of the nine and 166 of the 306 facts, so
+       a six-question round came out five populations and one painting — the
+       "not just land mass" complaint all over again. Deal the CATEGORIES
+       round-robin so every kind gets a look in, then hand each question to
+       whichever player it suits best. Variety is what the round is for; era
+       decides who it is aimed at, not what gets asked.
+    */
     const picks = [];
-    if (here.length && $('useEras') && $('useEras').checked) {
-      const used = {};
-      for (let i = 0; picks.length < count; i++) {
-        const who = here[i % here.length];
-        // the category closest to this player's era that still has facts left
-        const options = Object.keys(byKind)
-          .filter(k => byKind[k].length > (used[k] || 0))
-          .sort((x, y) => Math.abs((this.GUESS_VINTAGE[x] ?? 0.5) - who.pos)
-                        - Math.abs((this.GUESS_VINTAGE[y] ?? 0.5) - who.pos));
-        if (!options.length) break;
-        // rotate through the two or three nearest so it isn't monarchs ten times
-        const kind = options[Math.floor(Math.random() * Math.min(3, options.length))];
-        const q = byKind[kind][used[kind] || 0];
-        used[kind] = (used[kind] || 0) + 1;
-        if (!q) break;
-        q.forWhom = [who.name];
-        picks.push(q);
+    const kinds = this.shuffle(Object.keys(byKind));
+    const used = {};
+    const usingEras = here.length && $('useEras') && $('useEras').checked;
+    for (let i = 0; picks.length < count; i++) {
+      const kind = kinds[i % kinds.length];
+      const q = byKind[kind][used[kind] || 0];
+      used[kind] = (used[kind] || 0) + 1;
+      if (!q) {
+        if (kinds.every(k => (used[k] || 0) >= byKind[k].length)) break;
+        continue;
       }
+      if (usingEras) {
+        // whoever's era sits closest to this category gets it
+        const v = this.GUESS_VINTAGE[kind] ?? 0.5;
+        const best = here.slice().sort((a, b) => Math.abs(a.pos - v) - Math.abs(b.pos - v));
+        // rotate among equally-suited players so one person isn't handed everything
+        const tied = best.filter(x => Math.abs(Math.abs(x.pos - v) - Math.abs(best[0].pos - v)) < 0.06);
+        q.forWhom = [tied[picks.length % tied.length].name];
+      }
+      picks.push(q);
     }
+
     // no eras ticked, or not enough facts: fall back to an even deal
     if (picks.length < count) {
       const queues = this.shuffle(Object.values(byKind));
