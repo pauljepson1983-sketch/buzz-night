@@ -1192,22 +1192,51 @@ const Spot = {
 
   async ensureToken() {
     if (!this.token) this.restore();
-    if (this.token && Date.now() < this.expiresAt) return this.token;
-    if (!this.refreshToken) return null;
+    if (this.token && Date.now() < this.expiresAt) { this.lastAuthError = ''; return this.token; }
+    if (!this.clientId) { this.lastAuthError = 'No Spotify Client ID saved — paste it in and press Connect Spotify.'; return null; }
+    if (!this.refreshToken) { this.lastAuthError = 'Spotify is not connected — press Connect Spotify.'; return null; }
     try {
       const r = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: this.refreshToken, client_id: this.clientId })
       });
       const d = await r.json();
-      if (d.access_token) { this.saveTokens(d); return this.token; }
-    } catch(e) {}
+      if (d.access_token) { this.saveTokens(d); this.lastAuthError = ''; return this.token; }
+      /* Spotify has rejected the saved login. Keeping it means the app goes on
+         thinking it is connected and quietly failing every time — worse than
+         having nothing, because with nothing you at least get the Connect
+         button back. So throw it away and say so. */
+      this.lastAuthError = 'Spotify rejected the saved login (' + (d.error_description || d.error || 'no reason given') +
+                           '). Press Connect Spotify to sign in again.';
+      this.forget();
+    } catch (e) {
+      this.lastAuthError = 'Could not reach Spotify: ' + (e && e.message || e);
+    }
     return null;
+  },
+
+  /* Drop credentials Spotify will not honour, so the UI stops lying. */
+  forget() {
+    this.token = null; this.refreshToken = null; this.expiresAt = 0; this.deviceId = null;
+    store.del('spotify_token'); store.del('spotify_refresh'); store.del('spotify_expires');
+    const off = $('spotifyOffline'), on = $('spotifyPanel');
+    if (off) off.classList.remove('hidden');
+    if (on) on.classList.add('hidden');
+  },
+
+  /* Plain English answer to "why is there no music", for the host screen. */
+  status() {
+    if (this.deviceId) return 'Spotify ready.';
+    if (this.lastAuthError) return this.lastAuthError;
+    if (!this.clientId) return 'No Spotify Client ID saved.';
+    if (!this.token && !this.refreshToken) return 'Spotify is not connected — press Connect Spotify.';
+    if (!this.player) return 'Spotify player has not started yet.';
+    return 'Spotify player is starting…';
   },
 
   async api(path, opts = {}) {
     const t = await this.ensureToken();
-    if (!t) throw new Error('Not connected to Spotify');
+    if (!t) throw new Error(this.lastAuthError || 'Not connected to Spotify');
     const r = await fetch('https://api.spotify.com/v1' + path, {
       ...opts, headers: {'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json', ...(opts.headers || {})}
     });
@@ -1240,7 +1269,7 @@ const Spot = {
   async initPlayer() {
     if (this.player && this.deviceId) return this.deviceId;
     if (this.player) return await this.waitForDevice();
-    if (!(await this.ensureToken())) throw new Error('Spotify is not connected — press Connect Spotify first.');
+    if (!(await this.ensureToken())) throw new Error(this.lastAuthError || 'Spotify is not connected — press Connect Spotify.');
     await new Promise(res => {
       window.onSpotifyWebPlaybackSDKReady = res;
       const s = document.createElement('script');
