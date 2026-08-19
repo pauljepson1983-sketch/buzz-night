@@ -765,7 +765,5 @@ window.LOGOS = [
   { name: 'Nationwide',      domain: 'nationwide.co.uk' },
   { name: 'John Lewis',      domain: 'johnlewis.com' },
   { name: 'Waitrose',        domain: 'waitrose.com' },
-  { name: 'Greggs',          domain: 'greggs.co.uk' },
-  { name: 'Boots',           domain: 'boots.com' },
-  { name: 'Aldi',            domain: 'aldi.co.uk' }
+  { name: 'Greggs',          domain: 'greggs.co.uk' }
 ];
