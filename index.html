@@ -1094,7 +1094,9 @@ const App = {
      shown "Nothing planned yet" while a perfectly good night sat in storage —
      and rebuilding it by hand is the last thing anyone wants mid-party. */
   restoreNight() {
-    try { if (window.Night && !Night.plan.length) Night.load(); } catch (e) {}
+    // not window.Night — it is a const, so it never lands on window and the
+    // guard silently skipped the load every time
+    try { if (!Night.plan.length) Night.load(); } catch (e) {}
   },
 
   describeQuickStart() {
