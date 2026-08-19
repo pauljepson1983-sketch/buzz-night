@@ -262,9 +262,28 @@
   .redact-note { font-size: .8rem; }
   #connDot { position: fixed; top: 10px; right: 12px; width: 12px; height: 12px; border-radius: 50%; background: var(--red); }
   #connDot.on { background: var(--green); }
+  /* Round count-in. Covers the whole screen so it cannot be missed, and each
+     number grows and fades on its own — a static number reads as "waiting",
+     a moving one reads as "get ready". */
+  #bigCount { position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+              display: flex; align-items: center; justify-content: center;
+              background: rgba(24, 12, 51, .72); }
+  #bigCount b { font-size: 30vmin; line-height: 1; font-weight: 800; color: #ffd83d;
+                animation: countInPop 1s ease-out forwards; }
+  #bigCount.go b { font-size: 14vmin; }
+  @keyframes countInPop {
+    0%   { transform: scale(.55); opacity: 0 }
+    18%  { transform: scale(1);   opacity: 1 }
+    70%  { transform: scale(1.1); opacity: 1 }
+    100% { transform: scale(1.7); opacity: 0 }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #bigCount b { animation: none; opacity: 1 }
+  }
 </style>
 </head>
 <body>
+<div id="bigCount" class="hidden"><b></b></div>
 <div id="connDot" title="connection"></div>
 
 <!-- ================= LANDING ================= -->
@@ -786,6 +805,25 @@ const FACTS = {
   boxoffice: [["Avatar",2924],["Avengers: Endgame",2799],["Avatar: The Way of Water",2334],["Titanic",2264],["Star Wars: The Force Awakens",2068],["Avengers: Infinity War",2052],["Spider-Man: No Way Home",1921],["Zootopia 2",1868],["Inside Out 2",1699],["Jurassic World",1672],["The Lion King",1662],["The Avengers",1519],["Furious 7",1515],["Top Gun: Maverick",1489],["Avatar: Fire and Ash",1486],["Frozen II",1454],["Barbie",1447],["Avengers: Age of Ultron",1405],["The Super Mario Bros. Movie",1361],["Black Panther",1350],["Harry Potter and the Deathly Hallows: Part 2",1342],["Deadpool & Wolverine",1338],["Star Wars: The Last Jedi",1334],["Jurassic World: Fallen Kingdom",1310],["Frozen",1274],["Beauty and the Beast",1266],["Incredibles 2",1243],["The Fate of the Furious",1236],["Iron Man 3",1216],["Minions",1159],["Captain America: Civil War",1155],["Aquaman",1152],["Spider-Man: Far From Home",1133],["Captain Marvel",1131],["Transformers: Dark of the Moon",1124],["The Lord of the Rings: The Return of the King",1119],["Skyfall",1109],["Transformers: Age of Extinction",1105],["The Dark Knight Rises",1081],["Joker",1079],["Star Wars: The Rise of Skywalker",1074],["Toy Story 4",1074],["Toy Story 3",1067],["Pirates of the Caribbean: Dead Man's Chest",1066],["Moana 2",1059],["Jurassic Park",1058],["Rogue One: A Star Wars Story",1056],["Aladdin",1054],["Pirates of the Caribbean: On Stranger Tides",1047],["Star Wars: Episode I - The Phantom Menace",1047],["Despicable Me 3",1035],["Harry Potter and the Philosopher's Stone",1029],["Finding Dory",1029],["Zootopia",1026],["Alice in Wonderland",1025],["The Hobbit: An Unexpected Journey",1021],["Michael",1021],["The Super Mario Galaxy Movie",1012],["The Dark Knight",1005],["Jurassic World Dominion",1004],["Jumanji: Welcome to the Jungle",995],["Despicable Me 4",972],["Despicable Me 2",971],["The Jungle Book",967],["Toy Story",962],["Pirates of the Caribbean: At World's End",962],["A Minecraft Movie",960],["The Hobbit: The Desolation of Smaug",958],["The Hobbit: The Battle of the Five Armies",956],["Doctor Strange in the Multiverse of Madness",956]],
   runtimes: [["Avatar",162],["Avengers: Endgame",181],["Avatar: The Way of Water",192],["Titanic",194],["Star Wars: The Force Awakens",136],["Avengers: Infinity War",149],["Spider-Man: No Way Home",148],["Zootopia 2",108],["Inside Out 2",97],["Jurassic World",124],["The Lion King",118],["The Avengers",143],["Furious 7",138],["Top Gun: Maverick",131],["Avatar: Fire and Ash",198],["Frozen II",103],["Barbie",114],["Avengers: Age of Ultron",141],["The Super Mario Bros. Movie",93],["Black Panther",135],["Harry Potter and the Deathly Hallows: Part 2",130],["Deadpool & Wolverine",128],["Star Wars: The Last Jedi",152],["Jurassic World: Fallen Kingdom",129],["Frozen",102],["Beauty and the Beast",129],["Incredibles 2",118],["The Fate of the Furious",136],["Iron Man 3",130],["Minions",91],["Captain America: Civil War",147],["Aquaman",143],["Spider-Man: Far From Home",129],["Captain Marvel",124],["Transformers: Dark of the Moon",154],["The Lord of the Rings: The Return of the King",201],["Skyfall",143],["Transformers: Age of Extinction",165],["The Dark Knight Rises",165],["Joker",122],["Star Wars: The Rise of Skywalker",142],["Toy Story 4",100],["Toy Story 3",103],["Pirates of the Caribbean: Dead Man's Chest",151],["Moana 2",100],["Jurassic Park",127],["Rogue One: A Star Wars Story",133],["Aladdin",127],["Pirates of the Caribbean: On Stranger Tides",136],["Star Wars: Episode I - The Phantom Menace",136],["Despicable Me 3",90],["Harry Potter and the Philosopher's Stone",152],["Finding Dory",97],["Zootopia",109],["Alice in Wonderland",108],["The Hobbit: An Unexpected Journey",169],["Michael",128],["The Super Mario Galaxy Movie",98],["The Dark Knight",152],["Jurassic World Dominion",147],["Jumanji: Welcome to the Jungle",119],["Despicable Me 4",94],["Despicable Me 2",98],["The Jungle Book",106],["Toy Story",81],["Pirates of the Caribbean: At World's End",169],["A Minecraft Movie",101],["The Hobbit: The Desolation of Smaug",161],["The Hobbit: The Battle of the Five Armies",144],["Doctor Strange in the Multiverse of Madness",126]]
 };
+
+/* One beat of the count-in. Called directly on the host and from a
+   broadcast on each phone, so the room counts down together. */
+function showCount(text, isGo) {
+  const box = document.getElementById('bigCount');
+  if (!box) return;
+  const b = box.querySelector('b');
+  box.classList.toggle('go', !!isGo);
+  box.classList.remove('hidden');
+  // restart the animation — changing textContent alone will not replay it
+  b.style.animation = 'none';
+  void b.offsetHeight;
+  b.style.animation = '';
+  b.textContent = text;
+}
+function hideCount() {
+  const box = document.getElementById('bigCount');
+  if (box) box.classList.add('hidden');
+}
 
 const PEER_PREFIX = 'buzznight-v1-';
 const REDIRECT_URI = location.origin + location.pathname;
@@ -3450,6 +3488,9 @@ const Quiz = {
       $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' ' + noun + ' from ' + label +
         (short ? '. (Only ' + this.available + ' different albums matched, so that is all there was.)' : '.');
       $('quizHostView').classList.remove('hidden');
+      await this.countIn();
+      // stopping during the count-in must not then fire a question at everyone
+      if (!this.active) { btn.disabled = false; return true; }
       this.next();
       btn.disabled = false;
       return true;
@@ -3458,6 +3499,34 @@ const Quiz = {
       btn.disabled = false;
       return false;
     }
+  },
+
+  /* Three, two, one, go — once per round. Deliberately not per question:
+     the answer clock is short and a count before every one would roughly
+     double the length of a round. */
+  COUNT_IN: ['3', '2', '1', 'GO!'],
+
+  countIn() {
+    return new Promise(resolve => {
+      let i = 0;
+      const beat = () => {
+        if (!this.active) { hideCount(); return resolve(); }
+        const text = this.COUNT_IN[i];
+        showCount(text, text === 'GO!');
+        Host.broadcast({ type: 'countIn', text: text, go: text === 'GO!' });
+        i++;
+        if (i < this.COUNT_IN.length) {
+          this._countTimer = setTimeout(beat, 900);
+        } else {
+          this._countTimer = setTimeout(() => {
+            hideCount();
+            Host.broadcast({ type: 'countInEnd' });
+            resolve();
+          }, 700);
+        }
+      };
+      beat();
+    });
   },
 
   next() {
@@ -3677,6 +3746,9 @@ const Quiz = {
   finish() {
     this.active = false;
     clearTimeout(this.tick);
+    clearTimeout(this._countTimer);
+    hideCount();
+    Host.broadcast({ type: 'countInEnd' });
     if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
 
     // Whoever scored most in THIS round, not whoever leads overall — the old
@@ -3803,6 +3875,9 @@ const Quiz = {
     if (!this.active) { $('quizStatus').textContent = 'No round running.'; return; }
     this.active = false;
     clearTimeout(this.tick);
+    clearTimeout(this._countTimer);
+    hideCount();
+    Host.broadcast({ type: 'countInEnd' });
     if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
     Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
     $('quizStatus').textContent = 'Round stopped.';
@@ -4479,6 +4554,9 @@ const Player = {
         break;
 
       case 'guessResult': this.guessResult(msg); break;
+      case 'countIn': showCount(msg.text, msg.go); break;
+      case 'countInEnd': hideCount(); break;
+
       case 'quizQ':
         this.quizQuestion(msg);
         break;
