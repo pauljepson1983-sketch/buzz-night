@@ -2667,11 +2667,23 @@ const Quiz = {
 
   async buildFaces(decade, count) {
     const gte = decade ? decade.slice(0, 4) + '-01-01' : '1970-01-01';
-    const lte = decade ? decade.slice(5) + '-12-31' : new Date().getFullYear() + '-12-31';
+    // Today, not the end of this year. The old ceiling let films released
+    // weeks ago through, and their cast are nobody the room can name — a live
+    // check on Any returned Michael Johnston, Inde Navarrette and Jaafar
+    // Jackson sitting next to Meryl Streep.
+    const today = new Date().toISOString().slice(0, 10);
+    const decLte = decade ? decade.slice(5) + '-12-31' : today;
+    const lte = decLte < today ? decLte : today;
     const people = new Map();
-    for (let page = 1; page <= 2 && people.size < count + 14; page++) {
+    // One film per franchise, or three Spider-Man films hand over six of the
+    // same series' cast. Same helper the film stills round uses.
+    const takenFilms = [];
+    for (let page = 1; page <= 3 && people.size < count + 14; page++) {
       const disc = await this.tmdb('/discover/movie', {
-        sort_by: 'popularity.desc', 'vote_count.gte': 2000,
+        // vote_count, not popularity — popularity is today's page views and
+        // front-loads films barely anyone has seen yet. Exactly the fault the
+        // film stills round had.
+        sort_by: 'vote_count.desc', 'vote_count.gte': 2000,
         // animation credits its voice cast, and nobody recognises the FACE of
         // the person who voiced Nala — Moira Kelly and Tim Allen both got in
         // this way on the first build
@@ -2679,6 +2691,9 @@ const Quiz = {
         'primary_release_date.gte': gte, 'primary_release_date.lte': lte, page
       });
       for (const m of (disc.results || [])) {
+        const fk = this.franchiseKey(m.title || '');
+        if (!fk || takenFilms.some(k => this.sameFranchise(k, fk))) continue;
+        takenFilms.push(fk);
         let credits;
         try { credits = await this.tmdb('/movie/' + m.id + '/credits', {}); } catch (e) { continue; }
         // Only the two leads. Going four deep pulled in third and fourth
