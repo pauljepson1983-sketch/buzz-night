@@ -2024,7 +2024,15 @@ const Host = {
       return;
     }
     // quiz rounds score themselves; a stray buzz must not open the judge panel
-    if (msg.type === 'buzz' && Quiz.active) return;
+    /* A quiz round is scored automatically, so a stray buzz must not open
+       the judge panel. But dropping it in silence meant that if the flag was
+       ever left set, every buzz for the rest of the night disappeared and
+       nothing on screen said so. */
+    if (msg.type === 'buzz' && Quiz.active) {
+      $('quizStatus').textContent = 'Buzz from ' + (p ? p.name : 'a player') +
+        ' ignored — a quiz round is still running. Press Stop round to hand the buzzers back.';
+      return;
+    }
     if (msg.type === 'buzz') {
       const inGrace = (this.phase === 'capture') ||
         ((this.phase === 'judging' || this.phase === 'steal') && this.firstBuzzAt && (now - this.firstBuzzAt) < this.GRACE_MS);
@@ -2137,10 +2145,17 @@ const Host = {
     if (phase === 'idle') b.textContent = 'Play a song — buzzers go live automatically';
     if (phase === 'armed') { b.textContent = '🟢 BUZZERS LIVE'; b.classList.add('armed'); }
     if (phase === 'judging') { b.classList.add('buzzed'); }
-    $('armBtn').disabled = phase !== 'idle';
+    /* Only pointless while they are already armed. It used to require the
+       phase to be exactly idle, so a phase left at judging or steal locked
+       arming out with no way back — and arm() resets all of that anyway, so
+       it is the natural escape hatch. */
+    $('armBtn').disabled = phase === 'armed';
   },
 
   arm() {
+    // arming is the host saying "buzzers now", so a quiz round that never
+    // tidied up after itself must not go on eating the buzzes
+    if (Quiz.active) Quiz.stop();
     this.clearSteal();
     this.buzzQueue = [];
     this.judgeIdx = -1;
@@ -4854,7 +4869,13 @@ const Night = {
     if (r.mode === 'buzzer') {
       // can't be automated — a person has to judge spoken answers
       this.waiting = true;
-      $('nightStatus').textContent = 'Round ' + n + '/' + total + ' — buzzer round. Play songs and judge as normal, then press Skip round to move on.';
+      /* Arm it here. It used to wait for a song to start, which auto-arms —
+         but that needs Spotify connected, so without it the round simply sat
+         there looking broken. Arming now costs nothing if a song follows,
+         because playing one arms again. */
+      if (Quiz.active) Quiz.stop();
+      Host.arm();
+      $('nightStatus').textContent = 'Round ' + n + '/' + total + ' — buzzer round. Buzzers are LIVE. Play something, judge as normal, then press Skip round to move on.';
       Host.broadcast({ type: 'roundCard', kicker: 'Round ' + n + ' of ' + total, name: '🔔 Buzzer round', how: 'Listen, then hit BUZZ the moment you know it. Say your answer out loud.' });
       Sound.say('Round ' + n + '. Buzzer round. Fingers ready.');
       return; // Night.skip() resumes the queue
