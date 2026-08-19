@@ -3228,7 +3228,11 @@ const Quiz = {
    ====================================================================== */
 const Seen = {
   KEY: 'buzz_seen',
-  FORGET_DAYS: 90,
+  // Paul plays with the same crowd regularly and is happy for favourites to
+  // come back between games — just not so often it feels samey. Thirty days
+  // lets a classic return after a few weeks while a big pool still serves
+  // fresh material first, and nothing repeats inside a single night.
+  FORGET_DAYS: 30,
   MAX_PER_MODE: 600,   // keeps localStorage sane over a lot of nights
 
   load() {
