@@ -3768,7 +3768,26 @@ const Quiz = {
   },
 
   async buildBuzzName(decade, count, style, extra) {
-    const songs = await this.collectSongs(decade, count, style, extra);
+    /* A round in the running order carries both an era and a flavour, and some
+       pairs simply have nothing behind them — britpop in the sixties, motown
+       in the twenties. That used to fail the whole round, which from the sofa
+       looks like the round is broken rather than the search being too narrow.
+       Widen the net instead: drop the flavour, then the era. */
+    let songs = await this.collectSongs(decade, count, style, extra);
+    let how = '';
+    if (songs.length < 2 && style) {
+      songs = await this.collectSongs(decade, count, '', extra);
+      how = ' (nothing for that flavour, so the era on its own)';
+    }
+    if (songs.length < 2 && decade) {
+      songs = await this.collectSongs('', count, style, extra);
+      how = ' (nothing for that era, so the flavour on its own)';
+    }
+    if (songs.length < 2) {
+      songs = await this.collectSongs('', count, '', extra);
+      how = ' (that search was empty, so anything goes)';
+    }
+    this.bnWidened = how;
     this.available = songs.length;
     return songs.map(s => ({
       uri: s.uri, dur: s.dur || 0, label: s.label,
@@ -3781,7 +3800,15 @@ const Quiz = {
      rather than left wondering whether their tap registered. */
   bnBuzz(peerId, n) {
     if (!this.active || this.mode !== 'buzzname') return;
-    if (n !== this.idx + 1 || this.bnHolder || (this.bnLocked || []).includes(peerId)) return;
+    /* Refusing a buzz silently is what froze phones: the button disables
+       itself the moment it is pressed, so with no reply it sat on "Buzzed!"
+       for ever. Every refusal now says so, and carries the song the host is
+       actually on so a phone that missed one can catch up. */
+    if (n !== this.idx + 1 || this.bnHolder || (this.bnLocked || []).includes(peerId)) {
+      const why = (this.bnLocked || []).includes(peerId) ? 'out' : this.bnHolder ? 'taken' : 'late';
+      Host.sendTo(peerId, { type: 'bnDenied', why: why, n: this.idx + 1 });
+      return;
+    }
     const p = Host.players[peerId];
     if (!p) return;
     this.bnHolder = peerId;
@@ -4235,6 +4262,10 @@ const Quiz = {
         noun: this.NOUNS[this.mode] || 'Question',
         roundLabel: this.roundLabel || ''
       });
+      if (this.mode === 'buzzname' && this.bnWidened) {
+        $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' songs' + this.bnWidened + '.';
+        this.bnWidened = '';
+      }
       const short = this.questions.length < count;
       const noun = { covers: 'covers', backdrops: 'stills', themes: 'themes', faces: 'faces', years: 'songs' }[this.mode] || 'questions';
       $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' ' + noun + ' from ' + label +
@@ -5299,7 +5330,11 @@ const Night = {
     const ok = await Quiz.runRound(r);
     if (!this.running) return;
     if (!ok) {
-      $('nightStatus').textContent = 'Round ' + n + ' could not be built — skipping to the next.';
+      // carry the actual reason through instead of a shrug — it is the
+      // difference between 'the game is broken' and 'Spotify is logged out'
+      const why = ($('quizStatus').textContent || '').replace(/^⚠s*/, '');
+      $('nightStatus').textContent = 'Round ' + n + ' could not be built' +
+        (why && /[a-z]/i.test(why) ? ' — ' + why : '') + ' Skipping to the next.';
       await this.wait(2500);
       return this.runNext();
     }
@@ -5502,6 +5537,7 @@ const Player = {
 
       case 'bnYours':   this.bnYours(msg); break;
       case 'bnWaiting': this.bnWaiting(msg); break;
+      case 'bnDenied':  this.bnDenied(msg); break;
       case 'bnSteal':   this.bnSteal(msg); break;
       case 'bnWrong':   this.bnWrong(msg); break;
       case 'bnResult':  this.bnResult(msg); break;
@@ -5792,6 +5828,8 @@ const Player = {
     $('bnNote').textContent = 'Song AND artist scores double';
     $('bnType').classList.add('hidden'); $('bnType').value = '';
     $('bnMic').classList.add('hidden');
+    clearTimeout(this._bnAck);
+    this._bnMine = false;
     const b = $('bnBuzz');
     b.classList.remove('hidden'); b.disabled = false; b.textContent = 'BUZZ';
     b.onclick = () => {
@@ -5799,10 +5837,19 @@ const Player = {
       b.disabled = true; b.textContent = 'Buzzed!';
       this.vibe([80]);
       this.conn.send({ type: 'bnBuzz', n: this._quizN });
+      // belt and braces: if nothing comes back at all, put the button back
+      clearTimeout(this._bnAck);
+      this._bnAck = setTimeout(() => {
+        if (this._quizAnswered || this._bnMine) return;
+        b.disabled = false; b.textContent = 'BUZZ';
+        $('bnNote').textContent = 'That did not get through — try again';
+      }, 1800);
     };
   },
 
   bnYours(msg) {
+    clearTimeout(this._bnAck);
+    this._bnMine = true;
     $('bnBuzz').classList.add('hidden');
     $('bnSaid').textContent = 'Your go —';
     $('bnNote').textContent = 'Say the song and the artist';
@@ -5916,6 +5963,18 @@ const Player = {
       box.disabled = true;
       $('bnSaid').textContent = '“' + box.value + '”';
     };
+  },
+
+  /* The host turned the buzz down. Say why and, unless they are out of this
+     song, give the button back. */
+  bnDenied(msg) {
+    clearTimeout(this._bnAck);
+    if (msg.n) this._quizN = msg.n;        // resync if this phone missed a song
+    const b = $('bnBuzz');
+    if (msg.why === 'out') { b.disabled = true; b.textContent = 'You are out of this one'; return; }
+    if (msg.why === 'taken') { b.disabled = true; b.textContent = 'Someone beat you'; return; }
+    b.disabled = false; b.textContent = 'BUZZ';
+    $('bnNote').textContent = 'Just missed it — go again';
   },
 
   bnWaiting(msg) {
