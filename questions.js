@@ -202,7 +202,176 @@ window.QUESTIONS = [
   { id:'loc-033', cat:'local', diff:'hard',   q:'Newcastle is named after a castle built in which century?', a:'The 11th', w:['The 9th','The 13th','The 15th'] },
   { id:'loc-034', cat:'local', diff:'medium', q:'Which sweeping Newcastle street is often voted one of England’s finest?', a:'Grey Street', w:['Northumberland Street','Pilgrim Street','Dean Street'] },
   { id:'loc-035', cat:'local', diff:'hard',   q:'Which creatures appear on Newcastle United’s club crest?', a:'Seahorses', w:['Magpies','Lions','Dragons'] },
-  { id:'loc-036', cat:'local', diff:'hard',   q:'Which travelling fair is held on Newcastle’s Town Moor?', a:'The Hoppings', w:['The Goose Fair','St Giles Fair','Barnet Fair'] }
+  { id:'loc-036', cat:'local', diff:'hard',   q:'Which travelling fair is held on Newcastle’s Town Moor?', a:'The Hoppings', w:['The Goose Fair','St Giles Fair','Barnet Fair'] },
+
+  /* ==================================================================
+     BATCH THREE — taking the round from 132 to 250.
+
+     Written to a deliberately narrower rule than the earlier batches,
+     because at this volume a wrong answer is likely unless the material
+     is chosen to prevent one. Everything here is a SETTLED fact: a
+     definition, a fixed historical event, a rule of a sport, a name.
+
+     Ruled out on purpose, however tempting:
+       - superlatives that move (biggest, fastest, most capped)
+       - anything a governing body or a discovery can change
+       - "first ever" claims, which almost always have a rival claimant
+       - close calls where two reference books disagree
+
+     The one exception is where a superlative is fixed by geology or
+     definition rather than by record-keeping — the Pacific is the
+     largest ocean and will be next year.
+     ================================================================== */
+
+  /* --- GEOGRAPHY ------------------------------------------------------ */
+  { id:'geo-011', cat:'geography', diff:'easy',   q:'Which is the largest ocean?', a:'The Pacific', w:['The Atlantic','The Indian','The Arctic'] },
+  { id:'geo-012', cat:'geography', diff:'medium', q:'What is the capital of New Zealand?', a:'Wellington', w:['Auckland','Christchurch','Dunedin'] },
+  { id:'geo-013', cat:'geography', diff:'easy',   q:'Which is the largest hot desert in the world?', a:'The Sahara', w:['The Gobi','The Kalahari','The Mojave'] },
+  { id:'geo-014', cat:'geography', diff:'easy',   q:'Which river flows through Cairo?', a:'The Nile', w:['The Tigris','The Euphrates','The Jordan'] },
+  { id:'geo-015', cat:'geography', diff:'medium', q:'Mount Kilimanjaro is in which country?', a:'Tanzania', w:['Kenya','Uganda','Ethiopia'] },
+  { id:'geo-016', cat:'geography', diff:'medium', q:'What is the capital of Brazil?', a:'Brasília', w:['Rio de Janeiro','São Paulo','Salvador'] },
+  { id:'geo-017', cat:'geography', diff:'medium', q:'Which strait separates Spain from Morocco?', a:'Gibraltar', w:['The Bosphorus','The Dardanelles','The Kattegat'] },
+  { id:'geo-018', cat:'geography', diff:'easy',   q:'How many countries make up the United Kingdom?', a:'Four', w:['Two','Three','Five'] },
+  { id:'geo-019', cat:'geography', diff:'medium', q:'Which capital city is split by the Danube into halves called Buda and Pest?', a:'Budapest', w:['Vienna','Bratislava','Belgrade'] },
+  { id:'geo-020', cat:'geography', diff:'easy',   q:'What is the currency of Japan?', a:'The yen', w:['The won','The yuan','The rupee'] },
+  { id:'geo-021', cat:'geography', diff:'easy',   q:'Which country has a maple leaf on its flag?', a:'Canada', w:['Lebanon','Norway','Austria'] },
+  { id:'geo-022', cat:'geography', diff:'medium', q:'Which country is famous for its fjords?', a:'Norway', w:['Sweden','Finland','Denmark'] },
+  { id:'geo-023', cat:'geography', diff:'medium', q:'Which sea is so salty that swimmers float in it?', a:'The Dead Sea', w:['The Black Sea','The Red Sea','The Caspian Sea'] },
+  { id:'geo-024', cat:'geography', diff:'hard',   q:'Which is the deepest trench in the ocean?', a:'The Mariana Trench', w:['The Java Trench','The Tonga Trench','The Puerto Rico Trench'] },
+
+  /* --- FILM & TV ------------------------------------------------------ */
+  { id:'flm-011', cat:'filmtv', diff:'easy',   q:'In Star Wars, who turns out to be Luke Skywalker’s father?', a:'Darth Vader', w:['Obi-Wan Kenobi','Emperor Palpatine','Han Solo'] },
+  { id:'flm-012', cat:'filmtv', diff:'medium', q:'Which hobbit carries the ring in The Lord of the Rings?', a:'Frodo', w:['Sam','Pippin','Merry'] },
+  { id:'flm-013', cat:'filmtv', diff:'easy',   q:'In Toy Story, what sort of toy is Woody?', a:'A cowboy doll', w:['A spaceman','A dinosaur','A soldier'] },
+  { id:'flm-014', cat:'filmtv', diff:'easy',   q:'Who played Jack in Titanic?', a:'Leonardo DiCaprio', w:['Matthew McConaughey','Christian Bale','Matt Damon'] },
+  { id:'flm-015', cat:'filmtv', diff:'medium', q:'Which film is set on the moon Pandora?', a:'Avatar', w:['Interstellar','Dune','Prometheus'] },
+  { id:'flm-016', cat:'filmtv', diff:'medium', q:'What is the family name in The Godfather?', a:'Corleone', w:['Soprano','Gambino','Barzini'] },
+  { id:'flm-017', cat:'filmtv', diff:'medium', q:'Which film features the line “You’re gonna need a bigger boat”?', a:'Jaws', w:['Titanic','The Perfect Storm','Moby Dick'] },
+  { id:'flm-018', cat:'filmtv', diff:'easy',   q:'Which animated film features a green ogre and a talking donkey?', a:'Shrek', w:['Madagascar','Monsters, Inc.','Ice Age'] },
+  { id:'flm-019', cat:'filmtv', diff:'easy',   q:'Who played Indiana Jones?', a:'Harrison Ford', w:['Kurt Russell','Michael Douglas','Tom Selleck'] },
+  { id:'flm-020', cat:'filmtv', diff:'medium', q:'What is the name of the school in Grease?', a:'Rydell High', w:['Ridgemont High','Bayside High','Sunnydale High'] },
+  { id:'flm-021', cat:'filmtv', diff:'medium', q:'Which Hitchcock film features a murder in a shower?', a:'Psycho', w:['The Birds','Vertigo','Rear Window'] },
+  { id:'flm-022', cat:'filmtv', diff:'medium', q:'In Breaking Bad, what name does Walter White go by?', a:'Heisenberg', w:['Schrödinger','Bohr','Planck'] },
+  { id:'flm-023', cat:'filmtv', diff:'easy',   q:'Which TV series features a fight for the Iron Throne?', a:'Game of Thrones', w:['The Witcher','Vikings','The Last Kingdom'] },
+  { id:'flm-024', cat:'filmtv', diff:'medium', q:'Who played Mary Poppins in the 1964 film?', a:'Julie Andrews', w:['Audrey Hepburn','Angela Lansbury','Deborah Kerr'] },
+  { id:'flm-025', cat:'filmtv', diff:'medium', q:'Which film is set in a hotel called the Overlook?', a:'The Shining', w:['Psycho','The Grand Budapest Hotel','Barton Fink'] },
+  { id:'flm-026', cat:'filmtv', diff:'easy',   q:'Which soap opera is set in Albert Square?', a:'EastEnders', w:['Coronation Street','Emmerdale','Doctors'] },
+  { id:'flm-027', cat:'filmtv', diff:'medium', q:'Who played Danny in the film Grease?', a:'John Travolta', w:['Patrick Swayze','Richard Gere','Kevin Bacon'] },
+  { id:'flm-028', cat:'filmtv', diff:'hard',   q:'In The Simpsons, what is Homer’s middle name?', a:'Jay', w:['John','James','Joseph'] },
+
+  /* --- MUSIC ---------------------------------------------------------- */
+  { id:'mus-011', cat:'music', diff:'easy',   q:'Which Beatles album cover shows the band on a zebra crossing?', a:'Abbey Road', w:['Revolver','Let It Be','Rubber Soul'] },
+  { id:'mus-012', cat:'music', diff:'easy',   q:'Who is the lead singer of the Rolling Stones?', a:'Mick Jagger', w:['Keith Richards','Ronnie Wood','Charlie Watts'] },
+  { id:'mus-013', cat:'music', diff:'easy',   q:'Which instrument was Jimi Hendrix famous for playing?', a:'The guitar', w:['The drums','The saxophone','The piano'] },
+  { id:'mus-014', cat:'music', diff:'easy',   q:'Who sang “Like a Prayer”?', a:'Madonna', w:['Cyndi Lauper','Whitney Houston','Kylie Minogue'] },
+  { id:'mus-015', cat:'music', diff:'easy',   q:'Freddie Mercury was the lead singer of which band?', a:'Queen', w:['The Who','Deep Purple','Slade'] },
+  { id:'mus-016', cat:'music', diff:'hard',   q:'What surname was Elton John born with?', a:'Dwight', w:['Wright','Dight','Wightman'] },
+  { id:'mus-017', cat:'music', diff:'medium', q:'Which Motown group did Diana Ross sing with?', a:'The Supremes', w:['The Ronettes','The Shirelles','The Marvelettes'] },
+  { id:'mus-018', cat:'music', diff:'medium', q:'Who wrote and sang “Imagine”?', a:'John Lennon', w:['Paul McCartney','George Harrison','Bob Dylan'] },
+  { id:'mus-019', cat:'music', diff:'medium', q:'Thom Yorke is the singer of which band?', a:'Radiohead', w:['Coldplay','Muse','Blur'] },
+  { id:'mus-020', cat:'music', diff:'easy',   q:'Which country was Bob Marley from?', a:'Jamaica', w:['Trinidad','Barbados','Cuba'] },
+  { id:'mus-021', cat:'music', diff:'easy',   q:'Who sang “Rolling in the Deep”?', a:'Adele', w:['Amy Winehouse','Duffy','Jessie J'] },
+  { id:'mus-022', cat:'music', diff:'medium', q:'Which 1969 festival did Jimi Hendrix famously close?', a:'Woodstock', w:['Monterey','Altamont','the Isle of Wight'] },
+  { id:'mus-023', cat:'music', diff:'medium', q:'Which band sang “Don’t Look Back in Anger”?', a:'Oasis', w:['Blur','Pulp','The Verve'] },
+  { id:'mus-024', cat:'music', diff:'easy',   q:'What does DJ stand for?', a:'Disc jockey', w:['Dance jockey','Double jack','Direct jockey'] },
+  { id:'mus-025', cat:'music', diff:'medium', q:'Which composer kept writing music after going deaf?', a:'Beethoven', w:['Mozart','Chopin','Schubert'] },
+  { id:'mus-026', cat:'music', diff:'easy',   q:'Who is known as the King of Rock and Roll?', a:'Elvis Presley', w:['Chuck Berry','Little Richard','Buddy Holly'] },
+  { id:'mus-027', cat:'music', diff:'medium', q:'Which Welsh singer had a hit with “It’s Not Unusual”?', a:'Tom Jones', w:['Shirley Bassey','Harry Secombe','Aled Jones'] },
+  { id:'mus-028', cat:'music', diff:'easy',   q:'How many members were there in the Beatles?', a:'Four', w:['Three','Five','Six'] },
+
+  /* --- SCIENCE & NATURE ----------------------------------------------- */
+  { id:'sci-011', cat:'science', diff:'easy',   q:'What is H₂O better known as?', a:'Water', w:['Salt','Sugar','Ammonia'] },
+  { id:'sci-012', cat:'science', diff:'easy',   q:'How many planets are there in the solar system?', a:'Eight', w:['Seven','Nine','Ten'] },
+  { id:'sci-013', cat:'science', diff:'easy',   q:'Which force keeps us on the ground?', a:'Gravity', w:['Friction','Magnetism','Inertia'] },
+  { id:'sci-014', cat:'science', diff:'medium', q:'What is the centre of an atom called?', a:'The nucleus', w:['The electron','The proton','The isotope'] },
+  { id:'sci-015', cat:'science', diff:'medium', q:'At sea level, what temperature does water boil at in Celsius?', a:'100', w:['90','110','120'] },
+  { id:'sci-016', cat:'science', diff:'medium', q:'Which gas makes up most of the air we breathe?', a:'Nitrogen', w:['Oxygen','Carbon dioxide','Hydrogen'] },
+  { id:'sci-017', cat:'science', diff:'medium', q:'What is the study of fossils called?', a:'Palaeontology', w:['Archaeology','Geology','Anthropology'] },
+  { id:'sci-018', cat:'science', diff:'medium', q:'Who proposed the theory of evolution by natural selection?', a:'Charles Darwin', w:['Gregor Mendel','Carl Linnaeus','Alfred Nobel'] },
+  { id:'sci-019', cat:'science', diff:'easy',   q:'Which is the largest planet in the solar system?', a:'Jupiter', w:['Saturn','Neptune','Uranus'] },
+  { id:'sci-020', cat:'science', diff:'medium', q:'What does a barometer measure?', a:'Air pressure', w:['Temperature','Humidity','Wind speed'] },
+  { id:'sci-021', cat:'science', diff:'medium', q:'What is frozen carbon dioxide known as?', a:'Dry ice', w:['Black ice','Sea ice','Hard water'] },
+  { id:'sci-022', cat:'science', diff:'medium', q:'How many chambers does the human heart have?', a:'Four', w:['Two','Three','Six'] },
+  { id:'sci-023', cat:'science', diff:'hard',   q:'Which vitamin is also called ascorbic acid?', a:'Vitamin C', w:['Vitamin A','Vitamin D','Vitamin K'] },
+  { id:'sci-024', cat:'science', diff:'medium', q:'Which ship did Charles Darwin make his famous voyage on?', a:'HMS Beagle', w:['HMS Victory','HMS Endeavour','HMS Discovery'] },
+
+  /* --- HISTORY -------------------------------------------------------- */
+  { id:'his-011', cat:'history', diff:'medium', q:'Who was the first Roman emperor?', a:'Augustus', w:['Julius Caesar','Nero','Tiberius'] },
+  { id:'his-012', cat:'history', diff:'medium', q:'Which civilisation built Machu Picchu?', a:'The Inca', w:['The Aztecs','The Maya','The Olmecs'] },
+  { id:'his-013', cat:'history', diff:'easy',   q:'Which US President was assassinated in Dallas in 1963?', a:'John F Kennedy', w:['Abraham Lincoln','Franklin Roosevelt','Lyndon Johnson'] },
+  { id:'his-014', cat:'history', diff:'medium', q:'Who led the Soviet Union during the Second World War?', a:'Stalin', w:['Lenin','Trotsky','Khrushchev'] },
+  { id:'his-015', cat:'history', diff:'medium', q:'The Boer War was fought in which country?', a:'South Africa', w:['Afghanistan','Mesopotamia','Egypt'] },
+  { id:'his-016', cat:'history', diff:'easy',   q:'Who was the first President of the United States?', a:'George Washington', w:['Thomas Jefferson','John Adams','Benjamin Franklin'] },
+  { id:'his-017', cat:'history', diff:'medium', q:'Which queen was known as the Virgin Queen?', a:'Elizabeth I', w:['Mary I','Anne','Victoria'] },
+  { id:'his-018', cat:'history', diff:'medium', q:'Who wrote the wartime diary published as The Diary of a Young Girl?', a:'Anne Frank', w:['Vera Brittain','Sophie Scholl','Etty Hillesum'] },
+  { id:'his-019', cat:'history', diff:'hard',   q:'Which empire was ruled from Constantinople?', a:'The Byzantine Empire', w:['The Persian Empire','The Holy Roman Empire','The Mughal Empire'] },
+  { id:'his-020', cat:'history', diff:'medium', q:'Who is credited with discovering penicillin?', a:'Alexander Fleming', w:['Edward Jenner','Louis Pasteur','Joseph Lister'] },
+  { id:'his-021', cat:'history', diff:'medium', q:'Which Egyptian queen died in 30 BC?', a:'Cleopatra', w:['Nefertiti','Hatshepsut','Berenice'] },
+  { id:'his-022', cat:'history', diff:'easy',   q:'Which country was ruled by Tsars?', a:'Russia', w:['Germany','Austria','Poland'] },
+  { id:'his-023', cat:'history', diff:'medium', q:'Which wall was built across northern England by the Romans?', a:'Hadrian’s Wall', w:['The Antonine Wall','Offa’s Dyke','The Great Wall'] },
+  { id:'his-024', cat:'history', diff:'hard',   q:'Which country did Britain hand Hong Kong back to in 1997?', a:'China', w:['Japan','Taiwan','Singapore'] },
+
+  /* --- THE HUMAN BODY -------------------------------------------------- */
+  { id:'bod-007', cat:'body', diff:'medium', q:'How many teeth does an adult usually have?', a:'32', w:['28','30','36'] },
+  { id:'bod-008', cat:'body', diff:'medium', q:'Which is the largest organ of the human body?', a:'The skin', w:['The liver','The lungs','The brain'] },
+  { id:'bod-009', cat:'body', diff:'medium', q:'Which part of the eye controls the size of the pupil?', a:'The iris', w:['The cornea','The retina','The lens'] },
+  { id:'bod-010', cat:'body', diff:'medium', q:'What is the medical name for the kneecap?', a:'The patella', w:['The tibia','The fibula','The femur'] },
+  { id:'bod-011', cat:'body', diff:'hard',   q:'How many pairs of ribs does a person usually have?', a:'12', w:['10','14','16'] },
+  { id:'bod-012', cat:'body', diff:'medium', q:'What connects muscle to bone?', a:'A tendon', w:['A ligament','A cartilage','A nerve'] },
+  { id:'bod-013', cat:'body', diff:'medium', q:'Which blood cells fight infection?', a:'White blood cells', w:['Red blood cells','Platelets','Plasma cells'] },
+  { id:'bod-014', cat:'body', diff:'hard',   q:'What is the medical term for the voice box?', a:'The larynx', w:['The pharynx','The trachea','The oesophagus'] },
+
+  /* --- WORDS & SAYINGS -------------------------------------------------- */
+  { id:'wor-007', cat:'words', diff:'medium', q:'What is a group of geese on the ground called?', a:'A gaggle', w:['A skein','A flock','A clutch'] },
+  { id:'wor-008', cat:'words', diff:'medium', q:'What is a word that reads the same backwards called?', a:'A palindrome', w:['An anagram','A homonym','An acronym'] },
+  { id:'wor-009', cat:'words', diff:'easy',   q:'How many letters are there in the English alphabet?', a:'26', w:['24','25','28'] },
+  { id:'wor-010', cat:'words', diff:'medium', q:'What is a baby swan called?', a:'A cygnet', w:['A gosling','A duckling','A poult'] },
+  { id:'wor-011', cat:'words', diff:'medium', q:'What does “carpe diem” mean?', a:'Seize the day', w:['Time flies','To the stars','Let it be'] },
+  { id:'wor-012', cat:'words', diff:'hard',   q:'What is the word for a sound-alike word such as “buzz” or “splash”?', a:'Onomatopoeia', w:['Alliteration','Assonance','Hyperbole'] },
+  { id:'wor-013', cat:'words', diff:'easy',   q:'What is a group of lions called?', a:'A pride', w:['A pack','A herd','A troop'] },
+  { id:'wor-014', cat:'words', diff:'medium', q:'What is a female fox called?', a:'A vixen', w:['A doe','A jill','A sow'] },
+
+  /* --- FOOD & DRINK ----------------------------------------------------- */
+  { id:'foo-016', cat:'food', diff:'easy',   q:'Which country does sushi come from?', a:'Japan', w:['China','Korea','Thailand'] },
+  { id:'foo-017', cat:'food', diff:'medium', q:'What is the main ingredient of hummus?', a:'Chickpeas', w:['Butter beans','Lentils','Split peas'] },
+  { id:'foo-018', cat:'food', diff:'easy',   q:'What are dried grapes called?', a:'Raisins', w:['Prunes','Dates','Figs'] },
+  { id:'foo-019', cat:'food', diff:'medium', q:'Which herb is the main flavour in pesto?', a:'Basil', w:['Coriander','Parsley','Oregano'] },
+  { id:'foo-020', cat:'food', diff:'hard',   q:'Which pastry are profiteroles made from?', a:'Choux', w:['Filo','Puff','Shortcrust'] },
+  { id:'foo-021', cat:'food', diff:'medium', q:'Which fruit carries its seeds on the outside?', a:'The strawberry', w:['The raspberry','The blackberry','The gooseberry'] },
+  { id:'foo-022', cat:'food', diff:'hard',   q:'Which scale measures the heat of a chilli?', a:'The Scoville scale', w:['The Richter scale','The Mohs scale','The Beaufort scale'] },
+  { id:'foo-023', cat:'food', diff:'medium', q:'What is Japanese horseradish called?', a:'Wasabi', w:['Miso','Mirin','Ponzu'] },
+
+  /* --- WEIRD BUT TRUE ---------------------------------------------------- */
+  { id:'wei-020', cat:'weird', diff:'hard',   q:'Which planet spins the opposite way to most of the others?', a:'Venus', w:['Mars','Mercury','Neptune'] },
+  { id:'wei-021', cat:'weird', diff:'medium', q:'Which animal cannot stick its tongue out?', a:'The crocodile', w:['The tortoise','The frog','The snake'] },
+  /* "A bloom" was one of the wrong options here until it was checked: bloom
+     is a genuine collective noun for jellyfish, as is swarm, so the question
+     had two right answers. Distractors are now collective nouns that belong
+     firmly to something else. */
+  { id:'wei-022', cat:'weird', diff:'hard',   q:'What is a group of jellyfish called?', a:'A smack', w:['A pod','A shoal','A flock'] },
+  { id:'wei-023', cat:'weird', diff:'medium', q:'Which bird can fly backwards?', a:'The hummingbird', w:['The swift','The kingfisher','The wren'] },
+  { id:'wei-024', cat:'weird', diff:'medium', q:'Which country has a dragon on its flag?', a:'Wales', w:['Scotland','Bhutan','Malta'] },
+  { id:'wei-025', cat:'weird', diff:'hard',   q:'Which animal has fingerprints almost identical to a human’s?', a:'The koala', w:['The chimpanzee','The gorilla','The raccoon'] },
+  { id:'wei-026', cat:'weird', diff:'medium', q:'What colour is a polar bear’s skin under its fur?', a:'Black', w:['White','Pink','Grey'] },
+  { id:'wei-027', cat:'weird', diff:'hard',   q:'What is a group of ravens called?', a:'An unkindness', w:['A malice','A shadow','A gloom'] },
+
+  /* --- SPORT ------------------------------------------------------------- */
+  { id:'spo-001', cat:'sport', diff:'easy',   q:'How many players from one football team are on the pitch?', a:'11', w:['9','10','12'] },
+  { id:'spo-002', cat:'sport', diff:'medium', q:'In which sport is the Ryder Cup contested?', a:'Golf', w:['Tennis','Sailing','Rowing'] },
+  { id:'spo-003', cat:'sport', diff:'easy',   q:'How many holes are there in a full round of golf?', a:'18', w:['9','12','21'] },
+  { id:'spo-004', cat:'sport', diff:'easy',   q:'In which sport would you hit a shuttlecock?', a:'Badminton', w:['Squash','Tennis','Table tennis'] },
+  { id:'spo-005', cat:'sport', diff:'hard',   q:'How many points is a try worth in rugby union?', a:'Five', w:['Three','Four','Six'] },
+  { id:'spo-006', cat:'sport', diff:'medium', q:'How many players are there in a netball team?', a:'Seven', w:['Five','Six','Nine'] },
+  { id:'spo-007', cat:'sport', diff:'medium', q:'What colour jersey does the Tour de France leader wear?', a:'Yellow', w:['Green','Red','White'] },
+  { id:'spo-008', cat:'sport', diff:'medium', q:'In darts, what is the highest score from three darts?', a:'180', w:['150','170','200'] },
+  { id:'spo-009', cat:'sport', diff:'medium', q:'Which country did judo originate in?', a:'Japan', w:['China','Korea','Brazil'] },
+  { id:'spo-010', cat:'sport', diff:'easy',   q:'How many rings are there on the Olympic flag?', a:'Five', w:['Four','Six','Seven'] },
+  { id:'spo-011', cat:'sport', diff:'medium', q:'How many balls are bowled in a cricket over?', a:'Six', w:['Four','Five','Eight'] },
+  { id:'spo-012', cat:'sport', diff:'easy',   q:'Which sport is played with a puck?', a:'Ice hockey', w:['Lacrosse','Hurling','Polo'] },
+  { id:'spo-013', cat:'sport', diff:'medium', q:'How many players are there in a rugby league team?', a:'13', w:['11','15','17'] },
+  { id:'spo-014', cat:'sport', diff:'medium', q:'Which famous horse race is run at Aintree?', a:'The Grand National', w:['The Derby','The Gold Cup','The St Leger'] },
+  { id:'spo-015', cat:'sport', diff:'medium', q:'In snooker, which ball is worth seven points?', a:'The black', w:['The pink','The blue','The brown'] },
+  { id:'spo-016', cat:'sport', diff:'hard',   q:'How many miles is a marathon, to the nearest tenth?', a:'26.2', w:['24.8','25.5','27.4'] }
 
 ];
 
