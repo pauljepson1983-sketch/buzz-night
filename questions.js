@@ -81,12 +81,12 @@ window.QUESTIONS = [
   { id:'sci-010', cat:'science', diff:'hard',   q:'Roughly how long does sunlight take to reach the Earth?', a:'About 8 minutes', w:['About 8 seconds','About 8 hours','It arrives instantly'] },
 
   /* --- HISTORY ------------------------------------------------------ */
-  { id:'his-001', cat:'history', diff:'easy',   q:'In which year was the Battle of Hastings?', a:'1066', w:['1006','1046','1086'] },
+  { id:'his-001', cat:'history', diff:'easy',   q:'Which king was killed at the Battle of Hastings?', a:'King Harold', w:['William the Conqueror','Edward the Confessor','Richard the Lionheart'] },
   { id:'his-002', cat:'history', diff:'easy',   q:'Which English king had six wives?', a:'Henry VIII', w:['Henry VII','George III','Charles II'] },
   { id:'his-003', cat:'history', diff:'easy',   q:'Who was the first person to walk on the Moon?', a:'Neil Armstrong', w:['Buzz Aldrin','Yuri Gagarin','Michael Collins'] },
   { id:'his-004', cat:'history', diff:'easy',   q:'Who was Britain’s first woman Prime Minister?', a:'Margaret Thatcher', w:['Theresa May','Barbara Castle','Nancy Astor'] },
-  { id:'his-005', cat:'history', diff:'medium', q:'In which year did the Titanic sink?', a:'1912', w:['1898','1905','1920'] },
-  { id:'his-006', cat:'history', diff:'medium', q:'In which year was the Great Fire of London?', a:'1666', w:['1566','1606','1706'] },
+  { id:'his-005', cat:'history', diff:'medium', q:'Which port did the Titanic sail from on her maiden voyage?', a:'Southampton', w:['Liverpool','Belfast','Plymouth'] },
+  { id:'his-006', cat:'history', diff:'medium', q:'Where did the Great Fire of London start?', a:'A bakery in Pudding Lane', w:['A brewery on Fleet Street','A candle shop in Cheapside','A tavern on Thames Street'] },
   { id:'his-007', cat:'history', diff:'medium', q:'Which ship carried the Pilgrims to America in 1620?', a:'The Mayflower', w:['The Golden Hind','The Endeavour','The Victory'] },
   { id:'his-008', cat:'history', diff:'medium', q:'Which British monarch reigned for the longest?', a:'Elizabeth II', w:['Queen Victoria','George III','Henry III'] },
   { id:'his-009', cat:'history', diff:'medium', q:'Britain fought which country in the Falklands War of 1982?', a:'Argentina', w:['Chile','Spain','Brazil'] },
@@ -157,7 +157,32 @@ window.QUESTIONS = [
   { id:'wor-003', cat:'words', diff:'medium', q:'Which letter appears most often in written English?', a:'E', w:['A','T','S'] },
   { id:'wor-004', cat:'words', diff:'medium', q:'A murmuration is a flock of which bird?', a:'Starlings', w:['Swallows','Sparrows','Swifts'] },
   { id:'wor-005', cat:'words', diff:'medium', q:'What does “quid pro quo” mean?', a:'Something for something', w:['Money for nothing','Here and there','By the way'] },
-  { id:'wor-006', cat:'words', diff:'medium', q:'What is a group of larks called?', a:'An exaltation', w:['A rejoicing','An ascension','A chorus'] }
+  { id:'wor-006', cat:'words', diff:'medium', q:'What is a group of larks called?', a:'An exaltation', w:['A rejoicing','An ascension','A chorus'] },
+
+  /* --- HOME PATCH: TYNESIDE & THE NORTH EAST -------------------------
+     The category the room will shout loudest at, and the one where a wrong
+     answer will be spotted instantly — everyone playing lives here. Kept to
+     things that are firmly on the record (opening dates, who made what)
+     rather than anything that depends on who you ask down the pub.
+
+     PAUL: check these harder than the rest. You know Gateshead and I don't.
+     ------------------------------------------------------------------- */
+  { id:'loc-001', cat:'local', diff:'medium', q:'Who created the Angel of the North?', a:'Antony Gormley', w:['Anish Kapoor','Henry Moore','Damien Hirst'] },
+  { id:'loc-002', cat:'local', diff:'easy',   q:'Which bridge over the Tyne tilts to let boats through?', a:'The Gateshead Millennium Bridge', w:['The Tyne Bridge','The High Level Bridge','The Redheugh Bridge'] },
+  { id:'loc-003', cat:'local', diff:'medium', q:'BALTIC in Gateshead was converted from what?', a:'A flour mill', w:['A shipyard','A power station','A railway shed'] },
+  { id:'loc-004', cat:'local', diff:'easy',   q:'Which ground do Newcastle United play at?', a:'St James’ Park', w:['The Stadium of Light','The Riverside','Victoria Park'] },
+  { id:'loc-005', cat:'local', diff:'easy',   q:'What is Newcastle United’s nickname?', a:'The Magpies', w:['The Black Cats','The Boro','The Mackems'] },
+  { id:'loc-006', cat:'local', diff:'easy',   q:'Which shopping centre sits beside the A1 in Gateshead?', a:'The Metrocentre', w:['Eldon Square','Dalton Park','Silverlink'] },
+  { id:'loc-007', cat:'local', diff:'easy',   q:'Which Roman wall runs across the North East?', a:'Hadrian’s Wall', w:['The Antonine Wall','Offa’s Dyke','The Devil’s Dyke'] },
+  { id:'loc-008', cat:'local', diff:'hard',   q:'The Tyne Bridge was built by the same firm as which famous bridge?', a:'Sydney Harbour Bridge', w:['The Golden Gate Bridge','The Forth Bridge','Tower Bridge'] },
+  { id:'loc-009', cat:'local', diff:'easy',   q:'Which presenting duo come from Newcastle?', a:'Ant and Dec', w:['French and Saunders','Hale and Pace','Mitchell and Webb'] },
+  { id:'loc-010', cat:'local', diff:'medium', q:'Which children’s TV drama was set in Newcastle?', a:'Byker Grove', w:['Grange Hill','Press Gang','Hollyoaks'] },
+  { id:'loc-011', cat:'local', diff:'medium', q:'Which North East city has a World Heritage cathedral and castle?', a:'Durham', w:['York','Carlisle','Lancaster'] },
+  { id:'loc-012', cat:'local', diff:'medium', q:'Which railway pioneer was born in Wylam, Northumberland?', a:'George Stephenson', w:['Isambard Kingdom Brunel','James Watt','Richard Trevithick'] },
+  { id:'loc-013', cat:'local', diff:'hard',   q:'Which Sunderland-born inventor demonstrated an early electric light bulb?', a:'Joseph Swan', w:['Thomas Edison','Michael Faraday','Humphry Davy'] },
+  { id:'loc-014', cat:'local', diff:'medium', q:'Which seaside town is home to the Spanish City dome?', a:'Whitley Bay', w:['Tynemouth','South Shields','Cullercoats'] },
+  { id:'loc-015', cat:'local', diff:'medium', q:'Which city were the Jarrow marchers heading for?', a:'London', w:['Edinburgh','Manchester','Birmingham'] },
+  { id:'loc-016', cat:'local', diff:'medium', q:'What is Newcastle’s covered Victorian market called?', a:'The Grainger Market', w:['The Bigg Market','The Quayside Market','Eldon Market'] }
 
 ];
 
@@ -394,6 +419,34 @@ window.CLOSEST = {
       ['the Shard', 310],
       ['the Eiffel Tower', 330]
     ]
+  },
+
+  /* --- HOME PATCH: WHAT YEAR ----------------------------------------
+     Local dates are the best closest-to material there is, because the room
+     genuinely half-knows them. Everyone remembers the Angel going up and
+     nobody remembers exactly when, which is precisely the guess this round
+     wants. Items are worded to follow "What year did…", so they read as
+     "What year did the Tyne Bridge open?".
+
+     PAUL: check these harder than the rest. ------------------------- */
+  localyear: {
+    q: n => 'What year did ' + n + '?',
+    unit: '', vintage: 0.5,
+    items: [
+      ['the High Level Bridge open', 1849],
+      ['the Swing Bridge open', 1876],
+      ['Newcastle United form', 1892],
+      ['the Tyne Bridge open', 1928],
+      ['the Jarrow March set off', 1936],
+      ['the Tyne and Wear Metro open', 1980],
+      ['the Metrocentre open', 1986],
+      ['Durham Cathedral become a World Heritage Site', 1986],
+      ['the Stadium of Light open', 1997],
+      ['the Angel of the North go up', 1998],
+      ['the Gateshead Millennium Bridge open', 2001],
+      ['BALTIC open as an art gallery', 2002],
+      ['the Sage Gateshead, now the Glasshouse, open', 2004]
+    ]
   }
 
 };
@@ -433,5 +486,10 @@ window.CLOSEST_ONEOFFS = [
   { q: 'How many times does the average person blink in a day?', a: 20000, unit: '' },
   { q: 'How many sheep are there in New Zealand, in millions?', a: 25, unit: 'million' },
   { q: 'How many hairs are on the average human head?', a: 100000, unit: '' },
-  { q: 'How many muscles are there in an elephant’s trunk?', a: 40000, unit: '' }
+  { q: 'How many muscles are there in an elephant’s trunk?', a: 40000, unit: '' },
+
+  /* two on the doorstep — the wingspan one always surprises people, because
+     the Angel is far wider than it is tall */
+  { q: 'How many bridges cross the Tyne between Newcastle and Gateshead?', a: 7, unit: '' },
+  { q: 'How wide is the Angel of the North from wingtip to wingtip, in feet?', a: 177, unit: 'feet' }
 ];
