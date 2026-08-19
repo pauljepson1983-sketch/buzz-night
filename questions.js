@@ -799,17 +799,17 @@ window.LOGOS = [
    reads better than a percentage.
    ====================================================================== */
 window.MAPS = {
-  world:   { name: 'the world',         file: 'World map with nations.svg',                            proj: 'flat', n: 90,    s: -90,   w: -180,  e: 180 },
-  uk:      { name: 'the UK',            file: 'United Kingdom adm location map.svg',                   proj: 'flat', n: 61,    s: 49,    w: -11,   e: 2.2 },
-  tyne:    { name: 'Tyne and Wear',     file: 'Tyne and Wear UK location map.svg',                     proj: 'flat', n: 55.09, s: 54.78, w: -1.9,  e: -1.3 },
-  france:  { name: 'France',            file: 'France location map-Regions and departements-2016.svg', proj: 'flat', n: 51.5,  s: 41,    w: -5.8,  e: 10 },
-  germany: { name: 'Germany',           file: 'Germany adm location map.svg',                          proj: 'flat', n: 55.1,  s: 47.2,  w: 5.5,   e: 15.5 },
-  italy:   { name: 'Italy',             file: 'Italy provincial location map 2016.svg',                proj: 'flat', n: 47.4,  s: 35.3,  w: 6.2,   e: 19 },
-  india:   { name: 'India',             file: 'India location map.svg',                                proj: 'flat', n: 37.5,  s: 5,     w: 67,    e: 99 },
-  aus:     { name: 'Australia',         file: 'Australia location map.svg',                            proj: 'flat', n: -9,    s: -44.5, w: 111.5, e: 155 },
-  brazil:  { name: 'Brazil',            file: 'Brazil location map.svg',                               proj: 'flat', n: 6,     s: -34,   w: -74.5, e: -32 },
-  usa:     { name: 'the United States', file: 'Usa edcp location map.svg',                             proj: 'usa' },
-  europe:  { name: 'Europe',            file: 'Europe location map.svg',                               proj: 'europe' }
+  world:   { name: 'the world',         file: 'World map with nations.svg',                            proj: 'flat', n: 90,    s: -90,   w: -180,  e: 180 , zoom: 8 },
+  uk:      { name: 'the UK',            file: 'United Kingdom adm location map.svg',                   proj: 'flat', n: 61,    s: 49,    w: -11,   e: 2.2 , zoom: 4 },
+  tyne:    { name: 'Tyne and Wear',     file: 'Tyne and Wear UK location map.svg',                     proj: 'flat', n: 55.09, s: 54.78, w: -1.9,  e: -1.3 , zoom: 3 },
+  france:  { name: 'France',            file: 'France location map-Regions and departements-2016.svg', proj: 'flat', n: 51.5,  s: 41,    w: -5.8,  e: 10 , zoom: 4 },
+  germany: { name: 'Germany',           file: 'Germany adm location map.svg',                          proj: 'flat', n: 55.1,  s: 47.2,  w: 5.5,   e: 15.5 , zoom: 4 },
+  italy:   { name: 'Italy',             file: 'Italy provincial location map 2016.svg',                proj: 'flat', n: 47.4,  s: 35.3,  w: 6.2,   e: 19 , zoom: 4 },
+  india:   { name: 'India',             file: 'India location map.svg',                                proj: 'flat', n: 37.5,  s: 5,     w: 67,    e: 99 , zoom: 5 },
+  aus:     { name: 'Australia',         file: 'Australia location map.svg',                            proj: 'flat', n: -9,    s: -44.5, w: 111.5, e: 155 , zoom: 5 },
+  brazil:  { name: 'Brazil',            file: 'Brazil location map.svg',                               proj: 'flat', n: 6,     s: -34,   w: -74.5, e: -32 , zoom: 5 },
+  usa:     { name: 'the United States', file: 'Usa edcp location map.svg',                             proj: 'usa' , zoom: 6 },
+  europe:  { name: 'Europe',            file: 'Europe location map.svg',                               proj: 'europe' , zoom: 5 }
 };
 
 /* name, latitude, longitude, which map. Add freely — a place only needs a

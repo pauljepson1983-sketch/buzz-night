@@ -3295,7 +3295,7 @@ const Quiz = {
       out.push({
         kind: 'place', seenKey: p.name, label: p.name, answer: p.name, title: p.name,
         prompt: 'Where is ' + p.name + '?', mapUrl: url, mapName: m.name, mapKey: p.map,
-        tx: at.x, ty: at.y, lat: p.lat, lon: p.lon
+        tx: at.x, ty: at.y, lat: p.lat, lon: p.lon, zoom: m.zoom || 4
       });
     });
     if (out.length < 1) throw new Error('No maps came back — try again in a moment.');
@@ -3738,7 +3738,7 @@ const Quiz = {
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
       forWhom: q.forWhom || null, era: q.era || null,
       kind: q.kind || null, prompt: q.prompt || null, unit: q.unit || null,
-      mapUrl: q.mapUrl || null, mapName: q.mapName || null,
+      mapUrl: q.mapUrl || null, mapName: q.mapName || null, mapZoom: q.zoom || null,
       title: this.TITLES[this.mode] || 'Quiz round',
       noun: this.NOUNS[this.mode] || 'Question',
       roundLabel: this.roundLabel || '',
@@ -5064,6 +5064,9 @@ const Player = {
     lock.disabled = true;
     lock.textContent = 'Lock it in';
     lock.classList.remove('hidden');
+    // how far the second tap goes in, set per map — a world map needs far
+    // more than Tyne and Wear, where it would lose every landmark
+    this._zoomFactor = msg.mapZoom || this.ZOOM;
     this._view = null;                     // no zoom until the first tap
     this.applyView();
     this.vibe([40]);
@@ -5081,7 +5084,7 @@ const Player = {
 
       if (!this._view) {
         // first tap: frame up around it so the second tap can be accurate
-        this._view = { cx: at.x, cy: at.y, z: this.ZOOM };
+        this._view = { cx: at.x, cy: at.y, z: this._zoomFactor || this.ZOOM };
         this._pin = at;
         this.applyView();
         $('placeZoomOut').style.display = 'block';
