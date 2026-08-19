@@ -284,11 +284,26 @@
   #placeBox { margin-top: 10px }
   #placeAsk { font-size: 1.15rem; font-weight: 700; text-align: center; margin-bottom: 4px }
   #placeWhere { font-size: .85rem; text-align: center; opacity: .75; margin-bottom: 8px }
-  #placeWrap { position: relative; width: 100%; border-radius: 12px; overflow: hidden;
+  /* The wrapper HUGS the image rather than filling the width. Tall maps —
+     India, Italy, the UK — ran off the bottom of shorter phones, but the
+     obvious fix of capping the height with object-fit would letterbox the
+     image inside the wrapper, and every tap is measured against the wrapper.
+     So the image is capped on both axes and the wrapper shrinks to whatever
+     the image ends up being. The two stay exactly the same box. */
+  #placeBox { text-align: center }
+  #placeWrap { position: relative; display: inline-block; width: auto; max-width: 100%;
+               border-radius: 12px; overflow: hidden;
                background: #0d0722; cursor: crosshair;
                /* none, so dragging pans the map instead of scrolling the page */
                touch-action: none; user-select: none }
-  #placeWrap img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none }
+  /* Size is set in JS, not here. An inline-block wrapper whose width comes
+     from the image, holding an image whose max-width comes from the wrapper,
+     is circular — max-height simply did not bind and tall maps still ran off
+     the bottom. fitMap() measures and sets it outright. */
+  #placeWrap img { display: block; user-select: none; -webkit-user-drag: none }
+  /* the text either side of the map stays left-aligned */
+  #placeAsk, #placeWhere, #placeHint, #placeChart { text-align: center }
+  #placeChart .pc-row { text-align: left }
   .pin { position: absolute; pointer-events: none; box-sizing: border-box }
 
   /* Placing a pin needs PRECISION, so it is a ring you can see the map
@@ -358,6 +373,48 @@
   .pc-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
   .pc-km { flex: none; opacity: .85; font-variant-numeric: tabular-nums }
   .pc-pts { flex: none; width: 3.4em; text-align: right; font-weight: 700 }
+  /* Podium. Third, first, second across, so the winner stands in the middle
+     and highest, the way a podium actually looks. */
+  .podium { display: flex; align-items: flex-end; justify-content: center; gap: 6px; margin: 14px 0 6px }
+  .pod { flex: 1 1 0; max-width: 108px; text-align: center }
+  .pod .who { font-weight: 700; font-size: .85rem; margin-bottom: 4px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .pod .face { width: 42px; height: 42px; border-radius: 50%; margin: 0 auto 5px; overflow: hidden;
+               display: flex; align-items: center; justify-content: center; font-size: 24px;
+               background: rgba(0,0,0,.3); border: 2px solid rgba(255,255,255,.8) }
+  .pod .face img { width: 100%; height: 100%; object-fit: cover }
+  .pod .block { border-radius: 8px 8px 0 0; display: flex; align-items: center;
+                justify-content: center; font-size: 1.5rem; font-weight: 800; color: #2b1a00 }
+  .pod.p1 .block { height: 92px; background: linear-gradient(180deg,#ffd83d,#e8b800) }
+  .pod.p2 .block { height: 68px; background: linear-gradient(180deg,#dfe6ee,#aab6c4) }
+  .pod.p3 .block { height: 52px; background: linear-gradient(180deg,#e0a86b,#b9763b) }
+  .pod .pts { font-size: .78rem; opacity: .8; margin-top: 4px }
+
+  /* Wooden spoon. Meant to be enjoyed, not to sting. */
+  .spoon { display: flex; align-items: center; gap: 10px; margin: 10px 0;
+           padding: 10px 12px; border-radius: 12px;
+           background: rgba(190,130,60,.18); border: 1px solid rgba(190,130,60,.5) }
+  .spoon .em { font-size: 1.7rem }
+  .spoon .txt { font-size: .9rem; line-height: 1.3 }
+
+  /* The boat race. Lanes of water, one boat each, replayed round by round. */
+  .race-wrap { margin: 10px 0 }
+  .race-when { text-align: center; font-weight: 700; font-size: .9rem; margin-bottom: 6px; min-height: 1.2em }
+  .lane { position: relative; height: 30px; margin-bottom: 5px; border-radius: 8px;
+          background: linear-gradient(180deg, rgba(70,140,200,.30), rgba(30,80,140,.30));
+          overflow: hidden }
+  .lane::after { content: ''; position: absolute; right: 5px; top: 0; bottom: 0; width: 2px;
+                 background: repeating-linear-gradient(180deg,#fff 0 4px,transparent 4px 8px); opacity: .6 }
+  .boat { position: absolute; top: 50%; transform: translateY(-50%); left: 0;
+          display: flex; align-items: center; gap: 5px; transition: left 1.1s cubic-bezier(.3,.7,.3,1);
+          white-space: nowrap }
+  .boat .hull { font-size: 18px; line-height: 1 }
+  .boat .face { width: 22px; height: 22px; border-radius: 50%; overflow: hidden; flex: none;
+                display: flex; align-items: center; justify-content: center; font-size: 13px;
+                background: rgba(0,0,0,.4); border: 2px solid #fff }
+  .boat .face img { width: 100%; height: 100%; object-fit: cover }
+  .boat .nm { font-size: .72rem; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.9) }
+  @media (prefers-reduced-motion: reduce) { .boat { transition: none } }
 </style>
 </head>
 <body>
@@ -1826,6 +1883,7 @@ const Host = {
         roomCode: this.roomCode,
         teamMode: this.teamMode,
         at: Date.now(),
+        history: this.history || [],
         players: Object.values(this.players).map(p => ({
           name: p.name, score: p.score, team: p.team, reactions: (p.reactions || []).slice(-20)
         }))
@@ -2272,6 +2330,21 @@ const Host = {
     this.saveGame();
   },
 
+  /* A snapshot of the board after each round, so the finale can show how
+     the night actually unfolded rather than just where it ended. Nothing was
+     keeping this — scores were only ever a running total, so a comeback or a
+     collapse left no trace. */
+  history: [],
+
+  snapshotRound(label) {
+    const scores = {};
+    Object.values(this.players).forEach(p => { scores[p.name] = p.score; });
+    if (!Object.keys(scores).length) return;
+    this.history.push({ label: label || ('Round ' + (this.history.length + 1)), scores: scores });
+    if (this.history.length > 40) this.history.shift();   // a very long night
+    this.saveGame();
+  },
+
   boardRows() {
     if (this.teamMode) {
       const teams = {};
@@ -2479,6 +2552,56 @@ const Host = {
      rather than letting phones run their own timers, so the speech on the
      speaker and the reveal on the phones stay together.
   --------------------------------------------------------------------- */
+  /* Long enough for the race to finish before the next card lands on top
+     of it — a second and a half per round, plus a beat. */
+  raceMs() { return 2200 + ((this.history || []).length + 1) * 1500; },
+
+  /* Something to say rather than just a name. Kept affectionate: the joke
+     lands on the answer, not on the person giving it. */
+  QUIP: {
+    spoon: [
+      'takes the wooden spoon, and frankly earned every inch of it',
+      'finishes last, but finishes, which is more than some manage',
+      'gets the wooden spoon. There is no shame in it. There is a bit of shame in it',
+      'props up the table. Somebody has to, and tonight it is you',
+      'takes the spoon home. Do put it somewhere everyone can see',
+      'came last. On the bright side, the only way is up'
+    ],
+    winner: [
+      'wins, and will be unbearable about it',
+      'takes it. Everyone else, better luck being cleverer',
+      'wins the night. Somebody check their phone for Google',
+      'is your champion, and did not even have the decency to be modest about it',
+      'wins. Please contain your applause, they are insufferable enough'
+    ],
+    miles: [
+      'was so far out you could see it from space',
+      'put it in the wrong hemisphere, which takes some doing',
+      'was closer to the answer by accident earlier in the evening',
+      'has clearly never owned an atlas',
+      'guessed with real confidence, which made it so much worse',
+      'was off by a distance usually measured in flight times'
+    ],
+    close: [
+      'was nearly spot on, which is somehow more annoying',
+      'practically landed on it',
+      'knew that one and wants everybody to know they knew it'
+    ]
+  },
+
+  quip(kind) {
+    const list = this.QUIP[kind] || [];
+    if (!list.length) return '';
+    this._quipsUsed = this._quipsUsed || {};
+    const used = this._quipsUsed[kind] = this._quipsUsed[kind] || [];
+    // do not repeat a line until the whole set has had a turn
+    const fresh = list.filter(l => !used.includes(l));
+    const pick = (fresh.length ? fresh : list)[Math.floor(Math.random() * (fresh.length ? fresh.length : list.length))];
+    if (!fresh.length) this._quipsUsed[kind] = [];
+    this._quipsUsed[kind].push(pick);
+    return pick;
+  },
+
   finale() {
     const rows = this.boardRows();
     if (!rows.length) { alert('Nobody has joined yet.'); return; }
@@ -2498,7 +2621,28 @@ const Host = {
       $('phaseBanner').textContent = '🏁 Final scores…';
       Sound.say('And now, the final scores.');
     }]);
-    if (rows[2]) steps.push([3200, () => {
+    /* Last place first, because the wooden spoon is a laugh and nobody
+       minds it going first. Then everyone between last and fourth in one
+       go — announcing ten places one at a time would take a full minute —
+       and then third, second and first get their moment as before. */
+    if (rows.length > 3) {
+      const spoon = rows[rows.length - 1];
+      steps.push([2600, () => {
+        this.broadcast({ type: 'finale', stage: 'spoon', row: spoon, place: rows.length,
+                         quip: spoon.name + ' ' + this.quip('spoon') });
+        const v = this.voiceFor(spoon.name);
+        Sound.say(spoon.name + ' ' + this.quip('spoon'), v.voice, v.style);
+      }]);
+    }
+    // the middle of the table: places 4 down to second-from-last
+    const middle = rows.slice(3, Math.max(3, rows.length - 1))
+      .map((r, i) => ({ place: i + 4, name: r.name, score: r.score, avatar: r.avatar, photo: r.photo }));
+    if (middle.length) steps.push([2800, () => {
+      this.broadcast({ type: 'finale', stage: 'middle', rows: middle });
+      Sound.say(middle.length === 1 ? 'In fourth place, ' + middle[0].name
+                                    : 'Then ' + middle.map(m => m.name).join(', '));
+    }]);
+    if (rows[2]) steps.push([middle.length ? 3400 : 3200, () => {
       this.broadcast({ type: 'finale', stage: 'place', place: 3, row: rows[2] });
       const v = this.voiceFor(rows[2].name);
       Sound.say('In third place, ' + rows[2].name, v.voice, v.style);
@@ -2512,10 +2656,19 @@ const Host = {
       this.broadcast({ type: 'finale', stage: 'winner', row: rows[0] });
       Sound.buzz('fanfare');
       const v = this.voiceFor(rows[0].name);
-      setTimeout(() => Sound.say('And the winner is, ' + rows[0].name + '!', v.voice, v.style), 900);
+      setTimeout(() => Sound.say('And the winner is, ' + rows[0].name + '! ' + rows[0].name + ' ' +
+        this.quip('winner'), v.voice, v.style), 900);
       $('phaseBanner').textContent = '🏆 ' + rows[0].name + ' wins with ' + rows[0].score;
     }]);
-    if (fastest) steps.push([4200, () => {
+    steps.push([3800, () => {
+      this.broadcast({ type: 'finale', stage: 'podium', rows: rows.slice(0, 3) });
+    }]);
+    // the whole night replayed as a race, so a comeback reads as a comeback
+    if ((this.history || []).length > 1) steps.push([3600, () => {
+      this.broadcast({ type: 'finale', stage: 'race', rows: rows, history: this.history });
+      Sound.say('And here is how the night unfolded.');
+    }]);
+    if (fastest) steps.push([this.raceMs(), () => {
       this.broadcast({ type: 'finale', stage: 'fastest', row: fastest });
       Sound.say('Fastest finger of the night, ' + fastest.name + ', averaging ' + (fastest.avg/1000).toFixed(2) + ' seconds.');
     }]);
@@ -2525,7 +2678,8 @@ const Host = {
       Sound.say('And the night’s awards go to: ' + gongs.map(a => a.name + ', ' + a.label).join('. '));
     }]);
     steps.push([gongs.length ? 6500 : 4200, () => {
-      this.broadcast({ type: 'finale', stage: 'table', rows, fastest, awards: gongs });
+      this.broadcast({ type: 'finale', stage: 'table', rows, fastest, awards: gongs,
+                       history: this.history || [] });
       this.finaleRunning = false;
     }]);
 
@@ -4054,7 +4208,21 @@ const Quiz = {
       $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' +
         esc(q.answer) + (pins.length ? '<div class="muted" style="margin-top:6px;line-height:1.6">' + order + '</div>'
                                      : ' — nobody placed a pin');
-      if (best) { const v = Host.voiceFor(best.name); Sound.say(best.name + ' was closest', v.voice, v.style); }
+      if (best) {
+        const v = Host.voiceFor(best.name);
+        let line = best.name + ' was closest';
+        if (best.km != null && best.km < 60) line = best.name + ' ' + Host.quip('close');
+        Sound.say(line, v.voice, v.style);
+        /* The worst pin is the funniest thing in the round, so it gets its
+           own moment — but only when it is properly, comically wrong, and
+           only when there is more than one person to laugh about it. */
+        const worst = pins[pins.length - 1];
+        if (worst && pins.length > 1 && worst.km != null && worst.km > 900) {
+          const wv = Host.voiceFor(worst.name);
+          setTimeout(() => Sound.say(worst.name + ' ' + Host.quip('miles') +
+            ' — ' + worst.km.toLocaleString() + ' kilometres out', wv.voice, wv.style), 2400);
+        }
+      }
       setTimeout(() => this.next(), 6000);
       return;
     }
@@ -4100,6 +4268,8 @@ const Quiz = {
     clearTimeout(this._countTimer);
     hideCount();
     Host.broadcast({ type: 'countInEnd' });
+    // bank where everyone stood, for the race chart at the end
+    Host.snapshotRound(this.roundLabel || this.TITLES[this.mode] || 'Round');
     if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
 
     // Whoever scored most in THIS round, not whoever leads overall — the old
@@ -5164,7 +5334,19 @@ const Player = {
   /* Tap anywhere to drop the pin, tap again to move it, and nothing counts
      until Lock it in is pressed. This round does not score speed, so there is
      no cost to taking your time over it. */
+  /* Bound once so it can be added and removed cleanly, and re-run when the
+     phone is rotated or the keyboard opens — a map sized for portrait is
+     wrong the moment someone turns their phone sideways. */
+  initMapFitting() {
+    if (this._onMapLoad) return;
+    this._onMapLoad = () => { this.fitMap(); this.applyView(); };
+    window.addEventListener('resize', () => {
+      if ($('placeBox') && !$('placeBox').classList.contains('hidden')) { this.fitMap(); this.applyView(); }
+    });
+  },
+
   placeQuestion(msg) {
+    this.initMapFitting();
     this.setPlaying(true);
     clearInterval(this._quizTimer);
     this._quizN = msg.n; this._quizAnswered = false; this._pin = null;
@@ -5184,7 +5366,13 @@ const Player = {
     $('placeHint').textContent = 'Tap the map to place your pin';
     const wrap = $('placeWrap');
     [...wrap.querySelectorAll('.pin')].forEach(p => p.remove());
-    $('placeMap').src = msg.mapUrl || '';
+    const mapImg = $('placeMap');
+    mapImg.style.width = ''; mapImg.style.height = '';
+    // addEventListener rather than onload, which anything else assigning to
+    // onload would silently replace, leaving the map at its natural size
+    mapImg.addEventListener('load', this._onMapLoad, { once: true });
+    mapImg.src = msg.mapUrl || '';
+    if (mapImg.complete && mapImg.naturalWidth) this._onMapLoad();
     const lock = $('placeLock');
     lock.disabled = true;
     lock.textContent = 'Lock it in';
@@ -5428,6 +5616,36 @@ const Player = {
   /* The button and the pinch control the same thing, so the button has to
      follow along — otherwise it still says "zoom in" after you have already
      pinched in, and pressing it would zoom you out. */
+  /* Fit the map to the screen it is actually on.
+
+     Both axes matter: the tall maps — the UK, Italy, India — overflowed
+     shorter phones and pushed Lock it in off the bottom. Set explicitly
+     because the CSS version was circular, and because every tap is measured
+     against this box, so it has to be exact rather than approximately right. */
+  _onMapLoad: null,   // bound in init so the listener can be removed
+
+  fitMap() {
+    const img = $('placeMap'), box = $('placeBox');
+    if (!img || !img.naturalWidth || !box) return;
+    const availW = Math.max(120, box.clientWidth);
+    /* Measure the room left rather than guessing it. A fixed reserve was
+       wrong on the tall maps — the UK still pushed Lock it in a hundred
+       pixels below the fold. What is above the map is whatever it is; what
+       is below is the hint, the zoom button and the lock button, and the
+       zoom button is reserved for even while it is hidden, or the map would
+       jump the moment a pin goes down. */
+    const wrap = $('placeWrap');
+    const top = wrap ? wrap.getBoundingClientRect().top : 160;
+    const hOf = el => { const e = $(el); return e ? Math.max(e.getBoundingClientRect().height, 34) : 34; };
+    const below = hOf('placeHint') + hOf('placeZoom') + hOf('placeLock') + 34;
+    const availH = Math.max(140, window.innerHeight - top - below);
+    const ar = img.naturalWidth / img.naturalHeight;
+    let w = availW, h = w / ar;
+    if (h > availH) { h = availH; w = h * ar; }
+    img.style.width = Math.round(w) + 'px';
+    img.style.height = Math.round(h) + 'px';
+  },
+
   syncZoomButton() {
     const b = $('placeZoom');
     if (!b) return;
@@ -5657,6 +5875,38 @@ const Player = {
       this.vibe([60, 40, 60]);
       return;
     }
+    if (msg.stage === 'spoon') {
+      const node = document.createElement('div');
+      node.className = 'spoon';
+      node.innerHTML = '<span class="em">🥄</span><span class="txt"><b>' + esc(msg.row.name) +
+        '</b> takes the wooden spoon' + (msg.quip ? '<br><span class="fin-avg">' + esc(msg.quip) + '</span>' : '') +
+        '<br><span class="fin-avg">' + msg.row.score + ' points · last of ' + msg.place + '</span></span>';
+      el.appendChild(node);
+      this.vibe([40, 60, 40]);
+      return;
+    }
+    if (msg.stage === 'middle') {
+      const node = document.createElement('div');
+      node.className = 'fin-block';
+      node.innerHTML = (msg.rows || []).map(r =>
+        '<div class="fin-line' + (isMe(r) ? ' me' : '') + '">' + r.place + '. ' + esc(r.name) +
+        ' <b>' + r.score + '</b></div>').join('');
+      el.appendChild(node);
+      return;
+    }
+    if (msg.stage === 'podium') {
+      const face = r => r.photo ? '<span class="face"><img src="' + esc(r.photo) + '" alt=""></span>'
+                                : '<span class="face">' + esc(r.avatar || '🙂') + '</span>';
+      const col = (r, n) => r ? '<div class="pod p' + n + '"><div class="who">' + esc(r.name) + '</div>' +
+        face(r) + '<div class="block">' + n + '</div><div class="pts">' + r.score + '</div></div>' : '';
+      const p = msg.rows || [];
+      el.innerHTML = '<div class="fin-title">🏆 The podium</div>' +
+        '<div class="podium">' + col(p[2], 3) + col(p[0], 1) + col(p[1], 2) + '</div>' +
+        (this._finaleHtml || '');
+      this.vibe([120, 60, 120]);
+      return;
+    }
+    if (msg.stage === 'race') { this.boatRace(msg); return; }
     if (msg.stage === 'awards') {
       const mine = (this.name || '').toLowerCase();
       el.innerHTML = '<div class="fin-title">🎖️ Awards of the night</div>' +
@@ -5685,6 +5935,53 @@ const Player = {
      Runners are placed by score as a fraction of the leader's, and CSS
      transitions carry them from wherever they were, so the movement between
      rounds is the point rather than the final position. */
+  /* Replays the night as a boat race: a lane each, and the rounds played
+     back one at a time so you watch the positions change. A table of final
+     scores cannot show a comeback; this can. */
+  boatRace(msg) {
+    const el = $('finaleBox');
+    const history = msg.history || [];
+    const rows = msg.rows || [];
+    if (!rows.length) return;
+
+    // everyone gets a lane, up to ten, in finishing order
+    const who = rows.slice(0, 10);
+    const top = Math.max(1, ...who.map(r => r.score));
+    const faceOf = r => r.photo ? '<span class="face"><img src="' + esc(r.photo) + '" alt=""></span>'
+                                : '<span class="face">' + esc(r.avatar || '🙂') + '</span>';
+    el.innerHTML = '<div class="fin-title">🚣 The race to victory</div>' +
+      '<div class="race-wrap"><div class="race-when" id="raceWhen">On your marks…</div>' +
+      who.map(r => '<div class="lane"><div class="boat" data-nm="' + esc(r.name) + '" style="left:0">' +
+        '<span class="hull">🚣</span>' + faceOf(r) + '<span class="nm">' + esc(r.name) + '</span></div></div>').join('') +
+      '</div>';
+
+    const place = (scores, label) => {
+      $('raceWhen').textContent = label;
+      [...el.querySelectorAll('.boat')].forEach(b => {
+        const s = scores ? (scores[b.dataset.nm] || 0) : 0;
+        // 84% so a boat at full score still sits inside its lane
+        b.style.left = Math.max(0, Math.min(84, (s / top) * 84)) + '%';
+      });
+    };
+
+    clearInterval(this._raceTimer);
+    let i = 0;
+    place(null, history.length ? 'On your marks…' : 'Final standings');
+    this._raceTimer = setInterval(() => {
+      if (i >= history.length) {
+        clearInterval(this._raceTimer);
+        const final = {};
+        rows.forEach(r => { final[r.name] = r.score; });
+        place(final, '🏁 Final standings');
+        this.vibe([80, 50, 160]);
+        return;
+      }
+      const h = history[i++];
+      place(h.scores, 'After ' + h.label);
+      this.vibe([30]);
+    }, 1500);
+  },
+
   renderRace(msg) {
     const box = $('raceBox');
     const rows = msg.rows || [];
