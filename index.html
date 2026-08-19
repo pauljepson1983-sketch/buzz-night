@@ -4308,29 +4308,6 @@ const Quiz = {
     // into the track so the main theme is playing when the clock starts.
     if (audioRound && q.uri) this.playTrack(q, leadIn);
 
-    /* Buzz and name it runs itself from here. Everything below — the answer
-       clock and close() — belongs to rounds where everyone answers at once;
-       here the song plays until somebody buzzes.
-
-       Clearing bnHolder and bnLocked per song is what was missing: they were
-       set on the first buzz and never reset, so from song two onwards every
-       buzz was turned away as "someone already has it". */
-    if (this.mode === 'buzzname') {
-      this.bnHolder = null;
-      this.bnLocked = [];
-      this.bnBuzzedAt = 0;
-      this.bnPlayedAt = Date.now() + leadIn;
-      clearTimeout(this.tick);
-      clearTimeout(this.bnTimer);
-      /* The whole song plays — the buzz is what stops it, not a clock. A
-         thirty second cap meant tracks were cut off mid-verse while nobody
-         had buzzed yet, which is the opposite of how this round should feel.
-         The backstop is whatever is left of the track, so a round still moves
-         on if a song is left running to the end. */
-      const left = Math.max(20000, (q.dur || 0) - this.startOffset(q.dur));
-      this.tick = setTimeout(() => this.bnReveal(null, null, 0, 0), leadIn + left + 1500);
-      return;
-    }
     Host.broadcast({
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
       forWhom: q.forWhom || null, era: q.era || null,
@@ -4348,6 +4325,29 @@ const Quiz = {
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
       esc(q.answer) + ' <span class="muted">(waiting for answers…)</span>';
     clearTimeout(this.tick);
+
+    /* Buzz and name it takes over from here — but only AFTER the question has
+       gone out above. Returning before the broadcast is exactly what broke it:
+       the host played the song and the phones were never told a question had
+       started, so no buzzer ever appeared and nothing could happen. The bug
+       survived testing because the tests called bnBuzz directly and never
+       checked that a phone had received anything.
+
+       Everything below belongs to rounds where everyone answers at once; here
+       the song plays until somebody buzzes. */
+    if (this.mode === 'buzzname') {
+      this.bnHolder = null;
+      this.bnLocked = [];
+      this.bnBuzzedAt = 0;
+      this.bnPlayedAt = Date.now() + leadIn;
+      clearTimeout(this.bnTimer);
+      // the whole track runs; the backstop is simply whatever is left of it,
+      // so a song nobody buzzes on still ends and the round moves on
+      const left = Math.max(20000, (q.dur || 0) - this.startOffset(q.dur));
+      this.tick = setTimeout(() => this.bnReveal(null, null, 0, 0), leadIn + left + 1500);
+      return;
+    }
+
     this.tick = setTimeout(() => this.close(), flash + leadIn + this.seconds * 1000 + 400);
   },
 
