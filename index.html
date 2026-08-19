@@ -540,7 +540,7 @@
         <div class="row mb sound-settings">
           <label for="quizCount">Questions</label>
           <select id="quizCount">
-            <option>5</option><option selected>10</option><option>15</option>
+            <option>5</option><option>8</option><option selected>10</option><option>12</option><option>15</option>
           </select>
           <label for="quizFlash">Flash</label>
           <select id="quizFlash">
@@ -3242,25 +3242,35 @@ const Seen = {
 
   // unseen first (shuffled so it isn't the same order every night), then the
   // least recently used, so a thin pool still fills a round
+  // Everything used tonight, across every round type. The long-term store is
+  // per round-type, which meant the same song could headline both the "name
+  // the song" round and the "year of release" round on the same evening —
+  // measured at four overlaps out of ten. This spans modes and outranks it.
+  nightUsed: new Set(),
+  newNight() { this.nightUsed = new Set(); },
+
   rank(mode, items) {
     const seen = this.load()[mode] || {};
     const cutoff = Date.now() - this.FORGET_DAYS * 864e5;
-    const fresh = [], stale = [];
+    const fresh = [], stale = [], tonight = [];
     items.forEach(it => {
-      const t = seen[this.keyOf(it)];
+      const k = this.keyOf(it);
+      if (this.nightUsed.has(k)) { tonight.push(it); return; }   // last resort
+      const t = seen[k];
       if (!t || t < cutoff) fresh.push(it);
       else stale.push({ it, t });
     });
     Quiz.shuffle(fresh);
     stale.sort((a, b) => a.t - b.t);           // oldest seen comes back first
-    return fresh.concat(stale.map(x => x.it));
+    // already-used-tonight only get picked if there is genuinely nothing else
+    return fresh.concat(stale.map(x => x.it)).concat(Quiz.shuffle(tonight));
   },
 
   mark(mode, items) {
     this.load();
     const bag = this.data[mode] = this.data[mode] || {};
     const now = Date.now();
-    items.forEach(it => { const k = this.keyOf(it); if (k) bag[k] = now; });
+    items.forEach(it => { const k = this.keyOf(it); if (k) { bag[k] = now; this.nightUsed.add(k); } });
     // trim the oldest if it ever grows silly
     const keys = Object.keys(bag);
     if (keys.length > this.MAX_PER_MODE) {
@@ -3470,7 +3480,7 @@ const Night = {
       // only pass the flavour to rounds that actually use it
       style: this.STYLE_USED_BY.includes(mode) ? style : '',
       extra: '',
-      count: 8,
+      count: 10,
       flash: mode === 'faces' ? 2000 : 3000,
       secs: 10,
       startAt: 'skip',
@@ -3512,7 +3522,7 @@ const Night = {
         while (used.includes(r.decade) && guard++ < 8) r.decade = this.randomDecade();
         used.push(r.decade);
       }
-      r.count = 6 + Math.floor(Math.random() * 5);          // 6-10
+      r.count = 10;                                          // Paul wants ten a round
       if (m === 'faces') r.crop = Math.random() < 0.7 ? 'crop' : 'whole';
       if (m === 'years' || m === 'themes') r.startAt = Math.random() < 0.5 ? 'skip' : 'random';
       return r;
@@ -3598,6 +3608,7 @@ const Night = {
     if (!this.plan.length) { alert('Add some rounds first.'); return; }
     if (this.running) return;
     this.running = true; this.idx = -1;
+    Seen.newNight();   // a fresh evening: nothing counts as used-tonight yet
     $('nightGoBtn').disabled = true;
     Sound.say('Welcome to Buzz Night. Here we go.');
     await this.wait(2600);
