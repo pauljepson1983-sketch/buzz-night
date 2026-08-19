@@ -4496,9 +4496,13 @@ const Player = {
     // picker changed, so anyone who accepted the defaults arrived with no
     // avatar and no eras — which silently switched off the era targeting for
     // them and left them blank on the host's list.
-    this.savePrefs();
-    // returning players skip straight past it, but only if it was THIS name
-    this.showSetup(!this.setupDone());
+    // A returning player skips the setup step — but skipping it must still
+    // tell the host they are set, or they sit on "setting up…" for ever
+    // having never pressed anything.
+    const done = this.setupDone();
+    this.savePrefs(false, done);
+    this.showSetup(!done);
+    if (done) this.setStatus('✅ You’re all set — waiting for the host', 'good');
   },
 
   AVATARS: ['🙂','😎','🦊','🐼','🐸','🦁','🐙','🦄','👾','🤖','🎃','👻','🍕','⚡','🌟','🎸','🏆','💀'],
