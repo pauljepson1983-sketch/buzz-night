@@ -278,6 +278,9 @@ $('play').onclick = async () => {
   if (!s) return;
   $('play').disabled = true; $('play').textContent = 'Starting…';
   try {
+    // the buzz silences the player rather than pausing it, so turn it back
+    // up here or the next song plays to an empty room
+    try { if (S.player) await S.player.setVolume(1); } catch (e) {}
     await S.api('/me/player/play?device_id=' + S.deviceId, {
       method: 'PUT', body: JSON.stringify({ uris: [s.uri], position_ms: 0 })
     });
@@ -296,37 +299,29 @@ $('buzz').onclick = async () => {
   $('buzz').disabled = true; $('buzz').textContent = 'Buzzed!';
   $('status').textContent = 'Stopping the music…';
 
-  /* Pause through the player itself, not the web API. The API call is a
-     request to Spotify's servers which then reaches this device, and asking
-     it afterwards whether the music stopped gives a stale answer — measured
-     live: it still reported "playing" after the sound had gone. The player
-     object is right here in the page and stops immediately. */
-  /* Fire it, do not wait on it. The promise pause() hands back does not
-     resolve until Spotify acknowledges the command, which took well over a
-     second live, while the sound itself stops long before that. Reading the
-     player's own state costs about three milliseconds, so ask it repeatedly
-     instead of waiting on the acknowledgement. */
+  /* Silence first, pause second.
+
+     The obvious way round is to pause and then wait until the player says it
+     has stopped, and it does not work. The promise pause() returns waits on
+     Spotify acknowledging the command, over a second live. getCurrentState()
+     takes a full second per call here and its answer stays stale, so polling
+     it never sees the pause at all. player_state_changed does not fire. All
+     three routes gave the same three second gap between the buzz and being
+     able to speak, which is far too long with a room watching.
+
+     Volume is different: it is handled inside this page, so setting it to
+     zero is instant and measurable. Kill the sound at once, open the
+     microphone a moment later, and let the pause land in its own time.
+
+     The microphone must not open while sound is still coming out, or it
+     transcribes the record instead of the player. A live test caught exactly
+     that: it heard "I just can't look it's killing me and", which is the
+     lyric of the song that was playing. */
+  try { if (S.player) await S.player.setVolume(0); } catch (e) {}
   if (S.player) S.player.pause().catch(() => {});
-  /* Tell Spotify's servers as well, so anything else showing the account
-     agrees the music has stopped, but do not wait on it. Measured live, that
-     round trip took two seconds on its own, which is two seconds of silence
-     between the buzz and being able to speak. */
   S.api('/me/player/pause?device_id=' + S.deviceId, { method: 'PUT' }).catch(() => {});
 
-  /* Only now open the microphone. Sound carries on out of the speakers for a
-     moment after the button is pressed, and the recogniser transcribes it
-     happily — a live test heard "I just can't look it's killing me and",
-     which is the lyric of the song that was playing rather than anything the
-     player said. In a room with the music up that would happen every time. */
-  const stopBy = Date.now() + 2500;   // a backstop, not the normal path
-  while (Date.now() < stopBy) {
-    try {
-      const st = S.player ? await S.player.getCurrentState() : null;
-      if (!st || st.paused) break;
-    } catch (e) { break; }
-    await new Promise(r => setTimeout(r, 40));
-  }
-  await new Promise(r => setTimeout(r, 200));   // let the speakers fall silent
+  await new Promise(r => setTimeout(r, 250));   // let the speakers fall silent
 
   $('status').textContent = 'Music stopped — say the song and the artist';
   $('say').style.display = 'block';
