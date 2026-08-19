@@ -3,77 +3,82 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Buzz test — say the song</title>
+<title>Buzz test — name that tune</title>
 <style>
   :root { color-scheme: dark }
   * { box-sizing: border-box }
   body { margin: 0; padding: 18px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
          background: #1a0f35; color: #fff; min-height: 100vh }
   h1 { font-size: 1.15rem; margin: 0 0 4px }
-  .sub { opacity: .7; font-size: .85rem; margin-bottom: 18px; line-height: 1.4 }
+  .sub { opacity: .7; font-size: .85rem; margin-bottom: 16px; line-height: 1.45 }
   .card { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
           border-radius: 14px; padding: 16px; margin-bottom: 14px }
-  .song { font-size: 1.35rem; font-weight: 800; line-height: 1.2 }
-  .by { opacity: .75; margin-top: 2px }
   button { width: 100%; border: none; border-radius: 14px; font-weight: 800;
-           font-family: inherit; cursor: pointer }
-  #say { padding: 26px 12px; font-size: 1.3rem; color: #06331d;
-         background: linear-gradient(180deg,#5ce6a2,#16a86a); box-shadow: 0 6px 0 #0b6b43 }
-  #say:active { transform: translateY(3px); box-shadow: 0 3px 0 #0b6b43 }
-  #say.listening { animation: pulse 1s ease-in-out infinite }
-  #say:disabled { filter: grayscale(.6) brightness(.75); box-shadow: 0 3px 0 #0b6b43 }
+           font-family: inherit; cursor: pointer; margin-bottom: 10px }
+  #play { padding: 22px 12px; font-size: 1.2rem; color: #06231f;
+          background: linear-gradient(180deg,#7fe0ff,#22a5cc); box-shadow: 0 6px 0 #12657f }
+  #buzz { padding: 30px 12px; font-size: 1.7rem; color: #2b0016;
+          background: linear-gradient(180deg,#ff5fae,#e11d74); box-shadow: 0 6px 0 #8d0f47 }
+  #say  { padding: 26px 12px; font-size: 1.3rem; color: #06331d;
+          background: linear-gradient(180deg,#5ce6a2,#16a86a); box-shadow: 0 6px 0 #0b6b43 }
+  button:active { transform: translateY(3px) }
+  button:disabled { filter: grayscale(.65) brightness(.72); box-shadow: 0 3px 0 #333 }
+  .listening { animation: pulse 1s ease-in-out infinite }
   @keyframes pulse { 50% { filter: brightness(1.25) } }
-  .ghost { background: rgba(255,255,255,.1); color: #fff; padding: 12px; font-size: .95rem; margin-top: 10px }
-  #heard { font-size: 1.05rem; min-height: 1.4em; margin-top: 14px; font-weight: 700 }
-  #verdict { margin-top: 12px; font-size: 1.1rem; font-weight: 800; line-height: 1.35 }
+  .ghost { background: rgba(255,255,255,.1); color: #fff; padding: 12px; font-size: .95rem }
+  #spot { font-size: .85rem; line-height: 1.6; background: rgba(0,0,0,.28);
+          border-radius: 10px; padding: 12px; margin-bottom: 14px }
+  #status { font-size: .95rem; min-height: 1.3em; margin: 4px 0 12px; opacity: .9 }
+  #heard { font-size: 1.05rem; min-height: 1.3em; font-weight: 700; margin-top: 6px }
+  #verdict { margin-top: 10px; font-size: 1.1rem; font-weight: 800; line-height: 1.35 }
   .good { color: #21d07a } .half { color: #ffd83d } .bad { color: #ff6b8a }
-  .note { font-size: .8rem; opacity: .65; margin-top: 10px; line-height: 1.4 }
-  #why { margin-top: 14px; font-size: .85rem; line-height: 1.7;
+  #why { margin-top: 12px; font-size: .85rem; line-height: 1.7;
          background: rgba(0,0,0,.28); border-radius: 10px; padding: 12px }
   #why:empty { display: none }
-  ol { padding-left: 20px; line-height: 1.6; font-size: .9rem }
+  #answer { margin-top: 12px; font-size: 1.05rem; font-weight: 800 }
+  .note { font-size: .8rem; opacity: .65; margin-top: 10px; line-height: 1.45 }
   code { background: rgba(0,0,0,.35); padding: 1px 5px; border-radius: 5px; font-size: .85em }
+  .ok { color: #21d07a } .no { color: #ff6b8a }
 </style>
 </head>
 <body>
 
-<h1>Buzz test — say the song</h1>
-<p class="sub">This is the one part of the buzzer round that has never been tested on a real
-phone: speaking an answer and having it marked. No Spotify, no room, no other
-players — just this. Open it on the phone you would actually play on.</p>
+<h1>Buzz test — name that tune</h1>
+<p class="sub">The whole round on one page, using your own Spotify: a song plays, you buzz to
+stop it, then you say what it is. No room, nobody else, nothing to set up —
+it borrows the Spotify login from the main game, so if you are connected
+there you are connected here.</p>
 
-<div class="card">
-  <div class="song" id="title">Wonderwall</div>
-  <div class="by" id="artist">by Oasis</div>
-</div>
+<div id="spot">Checking Spotify…</div>
 
-<button id="say">🎤 Say it</button>
-<button class="ghost" id="next">Give me a different song</button>
+<div id="status">—</div>
+
+<button id="play" disabled>▶ Play a song</button>
+<button id="buzz" disabled>BUZZ</button>
+<button id="say" style="display:none">🎤 Say it</button>
 
 <div id="heard"></div>
 <div id="verdict"></div>
 <div id="why"></div>
-<p class="note" id="support"></p>
+<div id="answer"></div>
 
-<div class="card" style="margin-top:20px">
+<button class="ghost" id="next">Next song →</button>
+
+<div class="card" style="margin-top:16px">
   <b style="font-size:.95rem">What to try</b>
-  <ol>
-    <li>Say the song <b>and</b> the artist — should score <b>both</b></li>
-    <li>Say only the song — should score <b>half</b></li>
-    <li>Say it sloppily: <i>"erm, is it Wonderwall by Oasis?"</i> — should still score both</li>
-    <li>Say something wrong — should score <b>nothing</b></li>
-    <li>Try it with the telly on, to see how it copes with noise</li>
-  </ol>
-  <p class="note">Whatever it heard is shown in quotes, so if it marks you wrong you can see
-  whether the phone misheard you or the marking was too strict. That is the
-  thing I need to know before this goes back in the game.</p>
+  <p class="note" style="opacity:.85">Play it, buzz as soon as you know it, then say
+  <b>the song and the artist</b>. Both scores double, one of the two scores half.
+  Try it sloppily too — <i>"erm, is it Wonderwall by Oasis?"</i> should still score.</p>
+  <p class="note">If it marks you wrong, the grey box shows exactly what your phone heard and
+  how close it got — that separates the phone mishearing you from my marking
+  being too strict, which need opposite fixes.</p>
 </div>
 
+<script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script>
-/* ── the exact marking used by the round ───────────────────────────────────
-   Kept identical on purpose: if it behaves differently here than in the game
-   the test is worthless. Spaces are stripped entirely because speech engines
-   split words their own way — "wonder wall" has to match "Wonderwall".      */
+const $ = id => document.getElementById(id);
+
+/* ── marking: identical to the round, or this test proves nothing ───────── */
 const squash = s => String(s || '').toLowerCase()
   .replace(/\(.*?\)|\[.*?\]/g, ' ')
   .replace(/\s*-\s*(remaster|remastered|live|mono|stereo|radio edit|single version|version).*$/i, '')
@@ -81,7 +86,6 @@ const squash = s => String(s || '').toLowerCase()
   .replace(/[^a-z0-9 ]/g, ' ')
   .replace(/\b(the|a|an|by|its|it|feat|featuring|and)\b/g, ' ')
   .replace(/\s+/g, '').trim();
-
 function lev(a, b) {
   const m = a.length, n = b.length;
   if (!m) return n; if (!n) return m;
@@ -94,88 +98,175 @@ function lev(a, b) {
   }
   return prev[n];
 }
-
+const tolFor = t => t.length <= 8 ? 1 : t.length <= 16 ? 2 : 3;
 function heardIn(said, target) {
   const h = squash(said), tg = squash(target);
   if (!tg || tg.length < 2 || !h) return false;
   if (h.includes(tg)) return true;
-  const tol = tg.length <= 8 ? 1 : tg.length <= 16 ? 2 : 3;
+  const tol = tolFor(tg);
   for (let i = 0; i + tg.length - tol <= h.length; i++)
     for (const len of [tg.length - tol, tg.length, tg.length + tol])
       if (len > 0 && lev(h.substr(i, len), tg) <= tol) return true;
   return false;
 }
 
-/* ── a handful of songs to try ─────────────────────────────────────────── */
-const SONGS = [
-  ['Wonderwall', 'Oasis'],
-  ['Bohemian Rhapsody', 'Queen'],
-  ["Livin' On A Prayer", 'Bon Jovi'],
-  ['Rolling In The Deep', 'Adele'],
-  ['Dancing Queen', 'ABBA'],
-  ["Don't Look Back in Anger", 'Oasis'],
-  ['Sweet Caroline', 'Neil Diamond'],
-  ['Common People', 'Pulp']
-];
-let idx = 0;
-const $ = id => document.getElementById(id);
-function show() {
-  $('title').textContent = SONGS[idx][0];
-  $('artist').textContent = 'by ' + SONGS[idx][1];
-  $('heard').textContent = '';
-  $('verdict').textContent = '';
-  $('verdict').className = '';
+/* ── Spotify, borrowed from the main game ───────────────────────────────
+   The game stores its login in this browser under the same address, so this
+   page can pick it up without a second sign-in and without registering
+   another redirect URL. Every step reports what it found, because a silent
+   failure here is exactly what wasted so much time.                        */
+const S = {
+  token: null, refresh: null, expires: 0, clientId: '', deviceId: null, player: null,
+  read() {
+    this.token = localStorage.getItem('spotify_token');
+    this.refresh = localStorage.getItem('spotify_refresh');
+    this.expires = parseInt(localStorage.getItem('spotify_expires') || '0', 10);
+    this.clientId = localStorage.getItem('spotify_client_id') || '';
+  },
+  async ensure() {
+    this.read();
+    if (this.token && Date.now() < this.expires) return this.token;
+    if (!this.refresh || !this.clientId) return null;
+    try {
+      const r = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: this.refresh, client_id: this.clientId })
+      });
+      const d = await r.json();
+      if (d.access_token) {
+        this.token = d.access_token;
+        this.expires = Date.now() + (d.expires_in - 60) * 1000;
+        localStorage.setItem('spotify_token', this.token);
+        localStorage.setItem('spotify_expires', String(this.expires));
+        if (d.refresh_token) localStorage.setItem('spotify_refresh', d.refresh_token);
+        return this.token;
+      }
+      this.lastError = d.error_description || d.error || 'refused';
+    } catch (e) { this.lastError = e.message; }
+    return null;
+  },
+  async api(path, opts = {}) {
+    const t = await this.ensure();
+    if (!t) throw new Error(this.lastError || 'not connected');
+    const r = await fetch('https://api.spotify.com/v1' + path,
+      Object.assign({ headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' } }, opts));
+    if (r.status === 204) return {};
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((d.error && d.error.message) || ('Spotify said ' + r.status));
+    return d;
+  }
+};
+
+let line = [];
+function say(msg, cls) { line.push('<span class="' + (cls||'') + '">' + msg + '</span>'); $('spot').innerHTML = line.join('<br>'); }
+
+async function startSpotify() {
+  line = [];
+  S.read();
+  if (!S.clientId) { say('✗ No Spotify Client ID saved in this browser. Open the main game and connect Spotify first.', 'no'); return false; }
+  if (!S.refresh && !S.token) { say('✗ Not connected. Open the main game, press Connect Spotify, then come back.', 'no'); return false; }
+  const t = await S.ensure();
+  if (!t) { say('✗ Spotify refused the saved login: ' + (S.lastError || 'no reason given') + '. Reconnect in the main game.', 'no'); return false; }
+  say('✓ Borrowed the login from the game', 'ok');
+
+  // the player needs Premium and a device before anything will play
+  await new Promise(res => {
+    if (window.Spotify && window.Spotify.Player) return res();
+    window.onSpotifyWebPlaybackSDKReady = res;
+    setTimeout(res, 6000);
+  });
+  if (!window.Spotify || !window.Spotify.Player) { say('✗ Spotify player script did not load (a blocker or the network).', 'no'); return false; }
+
+  S.player = new Spotify.Player({ name: 'Buzz test', getOAuthToken: cb => S.ensure().then(cb), volume: 0.9 });
+  S.player.addListener('initialization_error', e => say('✗ Player error: ' + e.message, 'no'));
+  S.player.addListener('authentication_error', e => say('✗ Login rejected by the player: ' + e.message, 'no'));
+  S.player.addListener('account_error', () => say('✗ This account cannot stream here — Spotify Premium is needed.', 'no'));
+  S.player.addListener('ready', ({ device_id }) => { S.deviceId = device_id; say('✓ Player ready', 'ok'); });
+  S.player.addListener('not_ready', () => { S.deviceId = null; say('✗ Player went away', 'no'); });
+
+  const joined = await S.player.connect();
+  if (!joined) { say('✗ Spotify would not accept the player.', 'no'); return false; }
+  const got = await new Promise(res => {
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+      if (S.deviceId) { clearInterval(iv); res(true); }
+      else if (Date.now() - t0 > 9000) { clearInterval(iv); res(false); }
+    }, 250);
+  });
+  if (!got) { say('✗ No device came online within 9 seconds. Needs Premium, and some browsers block it — try Chrome.', 'no'); return false; }
+  return true;
 }
-$('next').onclick = () => { idx = (idx + 1) % SONGS.length; show(); };
-show();
 
-/* ── does this phone do speech at all? ─────────────────────────────────── */
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-$('support').textContent = SR
-  ? 'This phone has speech recognition. It will ask for the microphone the first time.'
-  : 'This phone has NO built-in speech recognition — in the real round it would fall back to Whisper or typing. Worth telling me if you see this.';
+/* ── the songs ──────────────────────────────────────────────────────────── */
+let songs = [], idx = 0, buzzed = false;
 
-function mark(guesses) {
-  const [title, artist] = SONGS[idx];
-  let gotT = false, gotA = false;
-  for (const g of guesses) { gotT = gotT || heardIn(g, title); gotA = gotA || heardIn(g, artist); }
-  const v = $('verdict');
-  if (gotT && gotA) { v.textContent = '✅ BOTH — song and artist. That is full marks.'; v.className = 'good'; }
-  else if (gotT)    { v.textContent = '🟡 HALF — got the song, missed the artist.'; v.className = 'half'; }
-  else if (gotA)    { v.textContent = '🟡 HALF — got the artist, missed the song.'; v.className = 'half'; }
-  else              { v.textContent = '❌ NOTHING — that would be marked wrong.'; v.className = 'bad'; }
-
-  /* Show the actual comparison. "It heard me but not the song" can mean the
-     phone misheard, or that the matching was too strict — and those need
-     opposite fixes. This makes it obvious which. */
-  const best = guesses[0] || '';
-  const hs = squash(best), ts = squash(title), as = squash(artist);
-  $('why').innerHTML =
-    '<b>What it actually compared</b><br>' +
-    'you said → <code>' + (hs || '(nothing)') + '</code><br>' +
-    'song is  → <code>' + ts + '</code>  ' + (gotT ? '✅ matched' : '❌ not found') + '<br>' +
-    'artist is → <code>' + as + '</code>  ' + (gotA ? '✅ matched' : '❌ not found') +
-    (!gotT && hs ? '<br><span style="opacity:.7">closest the song got: ' +
-       Math.min(...Array.from({length: Math.max(1, hs.length - ts.length + 5)},
-         (_, i) => lev(hs.substr(i, ts.length), ts))) +
-       ' letters out (needs ' + (ts.length <= 8 ? 1 : ts.length <= 16 ? 2 : 3) + ' or fewer)</span>' : '');
+async function loadSongs() {
+  $('status').textContent = 'Finding songs…';
+  const found = [], seen = new Set();
+  for (const q of ['year:1990-1999 britpop', 'year:1980-1989 pop', 'year:2000-2009 rock']) {
+    try {
+      const d = await S.api('/search?type=track&limit=10&q=' + encodeURIComponent(q));
+      for (const t of (d.tracks && d.tracks.items) || []) {
+        if (!t.uri || seen.has(t.name)) continue;
+        seen.add(t.name);
+        found.push({ title: t.name, artist: (t.artists || []).map(a => a.name).join(', '), uri: t.uri, dur: t.duration_ms });
+      }
+    } catch (e) { $('status').textContent = 'Song search failed: ' + e.message; return; }
+  }
+  if (!found.length) { $('status').textContent = 'Spotify returned no songs.'; return; }
+  for (let i = found.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [found[i],found[j]]=[found[j],found[i]]; }
+  songs = found;
+  $('play').disabled = false;
+  $('status').textContent = songs.length + ' songs ready. Press play.';
 }
 
-$('say').onclick = () => {
-  if (!SR) { $('heard').textContent = 'No speech recognition on this phone.'; return; }
+function reset() {
+  buzzed = false;
+  $('heard').textContent = ''; $('verdict').textContent = ''; $('verdict').className = '';
+  $('why').innerHTML = ''; $('answer').textContent = '';
+  $('play').disabled = !songs.length; $('play').textContent = '▶ Play a song';
+  $('buzz').disabled = true; $('buzz').textContent = 'BUZZ';
+  $('say').style.display = 'none'; $('say').disabled = false;
+  if (songs.length) $('status').textContent = 'Song ' + (idx + 1) + ' of ' + songs.length + '. Press play.';
+}
+
+$('play').onclick = async () => {
+  const s = songs[idx];
+  if (!s) return;
+  $('play').disabled = true; $('play').textContent = 'Starting…';
+  try {
+    await S.api('/me/player/play?device_id=' + S.deviceId, {
+      method: 'PUT', body: JSON.stringify({ uris: [s.uri], position_ms: 0 })
+    });
+    $('status').textContent = '🎵 Playing — buzz when you know it';
+    $('play').textContent = 'Playing…';
+    $('buzz').disabled = false;
+  } catch (e) {
+    $('status').textContent = '✗ Could not play: ' + e.message;
+    $('play').disabled = false; $('play').textContent = '▶ Play a song';
+  }
+};
+
+$('buzz').onclick = async () => {
+  if (buzzed) return;
+  buzzed = true;
+  $('buzz').disabled = true; $('buzz').textContent = 'Buzzed!';
+  try { await S.api('/me/player/pause?device_id=' + S.deviceId, { method: 'PUT' }); } catch (e) {}
+  $('status').textContent = 'Music stopped — say the song and the artist';
+  $('say').style.display = 'block';
+  listen();
+};
+
+function listen() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const btn = $('say');
+  if (!SR) { $('heard').textContent = 'This phone has no speech recognition.'; revealAnswer(); return; }
   let rec;
   try { rec = new SR(); } catch (e) { $('heard').textContent = 'Could not start: ' + e.message; return; }
-  rec.lang = 'en-GB';
-  rec.interimResults = true;
-  rec.maxAlternatives = 5;      // the right answer is often the second guess
-  rec.continuous = false;
-  btn.classList.add('listening');
-  btn.textContent = '🎤 Listening…';
-  btn.disabled = true;
+  rec.lang = 'en-GB'; rec.interimResults = true; rec.maxAlternatives = 5; rec.continuous = false;
+  btn.classList.add('listening'); btn.textContent = '🎤 Listening…'; btn.disabled = true;
   let done = false;
-  const finish = () => { btn.classList.remove('listening'); btn.textContent = '🎤 Say it'; btn.disabled = false; };
-
+  const stop = () => { btn.classList.remove('listening'); btn.textContent = '🎤 Say it again'; btn.disabled = false; };
   rec.onresult = ev => {
     const last = ev.results[ev.results.length - 1];
     $('heard').textContent = '“' + last[0].transcript + '”';
@@ -183,21 +274,57 @@ $('say').onclick = () => {
     done = true;
     const alts = [];
     for (let i = 0; i < last.length; i++) alts.push(last[i].transcript);
-    // show every guess the phone offered — this is what I need to see
-    $('heard').innerHTML = '“' + alts[0] + '”' +
-      (alts.length > 1 ? '<br><span style="opacity:.6;font-size:.85rem">also heard: ' +
-        alts.slice(1).map(a => '“' + a + '”').join(', ') + '</span>' : '');
-    mark(alts);
-    finish();
+    $('heard').innerHTML = '“' + alts[0] + '”' + (alts.length > 1
+      ? '<br><span style="opacity:.6;font-size:.85rem">also heard: ' + alts.slice(1).map(a=>'“'+a+'”').join(', ') + '</span>' : '');
+    mark(alts); stop();
   };
-  rec.onerror = e => {
-    $('heard').textContent = 'Microphone problem: ' + e.error +
-      (e.error === 'not-allowed' ? ' — permission was refused' : '');
-    finish();
-  };
-  rec.onend = () => { if (!done) { $('heard').textContent = $('heard').textContent || 'Heard nothing — try again'; } finish(); };
-  try { rec.start(); } catch (e) { $('heard').textContent = 'Could not start listening: ' + e.message; finish(); }
-};
+  rec.onerror = e => { $('heard').textContent = 'Microphone problem: ' + e.error +
+    (e.error === 'not-allowed' ? ' — permission refused' : ''); stop(); };
+  rec.onend = () => { if (!done) $('heard').textContent = $('heard').textContent || 'Heard nothing — try again'; stop(); };
+  try { rec.start(); } catch (e) { $('heard').textContent = 'Could not listen: ' + e.message; stop(); }
+}
+$('say').onclick = () => listen();
+
+function mark(guesses) {
+  const s = songs[idx];
+  let gotT = false, gotA = false;
+  for (const g of guesses) { gotT = gotT || heardIn(g, s.title); gotA = gotA || heardIn(g, s.artist); }
+  const v = $('verdict');
+  if (gotT && gotA) { v.textContent = '✅ BOTH — song and artist. Full marks.'; v.className = 'good'; }
+  else if (gotT)    { v.textContent = '🟡 HALF — got the song, missed the artist.'; v.className = 'half'; }
+  else if (gotA)    { v.textContent = '🟡 HALF — got the artist, missed the song.'; v.className = 'half'; }
+  else              { v.textContent = '❌ NOTHING — marked wrong.'; v.className = 'bad'; }
+
+  const hs = squash(guesses[0] || ''), ts = squash(s.title), as = squash(s.artist);
+  let closest = '';
+  if (!gotT && hs) {
+    let best = 99;
+    for (let i = 0; i < Math.max(1, hs.length); i++) best = Math.min(best, lev(hs.substr(i, ts.length), ts));
+    closest = '<br><span style="opacity:.7">closest the song got: ' + best +
+              ' letters out (needs ' + tolFor(ts) + ' or fewer)</span>';
+  }
+  $('why').innerHTML = '<b>What it actually compared</b><br>' +
+    'you said → <code>' + (hs || '(nothing)') + '</code><br>' +
+    'song is → <code>' + ts + '</code>  ' + (gotT ? '✅' : '❌') + '<br>' +
+    'artist is → <code>' + as + '</code>  ' + (gotA ? '✅' : '❌') + closest;
+  revealAnswer();
+}
+
+function revealAnswer(prefix) {
+  const s = songs[idx];
+  if (!s) return;
+  $('answer').textContent = (prefix ? prefix + ' — ' : 'It was: ') + s.title + ' — ' + s.artist;
+  $('status').textContent = 'Press next for another.';
+}
+
+$('next').onclick = () => { if (!songs.length) return; idx = (idx + 1) % songs.length; reset(); };
+
+(async () => {
+  const ready = await startSpotify();
+  if (ready) await loadSongs();
+  else $('status').textContent = 'Sort the Spotify line above first, then reload this page.';
+  reset();
+})();
 </script>
 </body>
 </html>
