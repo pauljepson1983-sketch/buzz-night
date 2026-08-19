@@ -1841,14 +1841,39 @@ const Host = {
   onMessage(conn, msg) {
     const now = performance.now();
     if (msg.type === 'join') {
-      // Reattach by name so a refresh keeps your score. This used to require
-      // the old entry to be flagged offline, but a phone that refreshes often
-      // gets its new connection in before PeerJS reports the old one closed,
-      // so the player came back as a duplicate on zero points. Match on name
-      // alone and hang up the stale connection.
-      const wanted = String(msg.name).slice(0, 14);
-      let carry = null;
-      const existing = Object.entries(this.players).find(([id, p]) => p.name.toLowerCase() === wanted.toLowerCase());
+      /* Is this somebody coming back, or somebody new?
+
+         Matching on name alone got this wrong in the worst way: it closed the
+         existing player's connection and took their slot, so two people
+         called the same thing meant the second one kicked the first out.
+
+         Each phone now keeps a device id, so a genuine refresh is recognised
+         for certain. Falling back to the name is kept for a player who has
+         cleared their storage or moved to another phone, but only when that
+         entry has gone quiet — someone still answering is plainly a different
+         person who happens to share a name, and they get a numbered name of
+         their own rather than being thrown off. */
+      let wanted = String(msg.name || '').slice(0, 14).trim() || 'Player';
+      const device = msg.device || null;
+      let carry = null, existing = null;
+
+      if (device) {
+        existing = Object.entries(this.players).find(([id, p]) => p.device && p.device === device) || null;
+      }
+      if (!existing) {
+        existing = Object.entries(this.players).find(([id, p]) =>
+          p.name.toLowerCase() === wanted.toLowerCase() && !this.isPresent(p)) || null;
+      }
+      // a live player of the same name is someone else — give this one a number
+      if (!existing) {
+        const taken = n => Object.values(this.players).some(p => p.name.toLowerCase() === n.toLowerCase());
+        if (taken(wanted)) {
+          let n = 2;
+          while (taken(wanted.slice(0, 12) + ' ' + n)) n++;
+          wanted = wanted.slice(0, 12) + ' ' + n;
+        }
+      }
+
       if (existing && existing[0] !== conn.peer) {
         carry = existing[1];
         try { if (carry.conn && carry.conn !== conn) carry.conn.close(); } catch (e) {}
@@ -1860,7 +1885,7 @@ const Host = {
         this.rekey(existing[0], conn.peer);
       }
       this.players[conn.peer] = {
-        conn, name: wanted, online: true,
+        conn, name: wanted, online: true, device: device || (carry && carry.device) || null,
         score: carry ? carry.score : 0, team: carry ? carry.team : null,
         rtt: 60, locked: false, lastSeen: Date.now(), reactions: carry ? carry.reactions : [],
         stats: carry && carry.stats ? carry.stats : this.blankStats(),
@@ -4730,7 +4755,7 @@ const Player = {
       this.conn = this.peer.connect(PEER_PREFIX + room, { reliable: true });
       this.room = room;
       this.conn.on('open', () => {
-        this.conn.send({ type: 'join', name: this.name });
+        this.conn.send({ type: 'join', name: this.name, device: this.deviceId() });
         this.markHeard();
         this.startWatchdog();
         $('connDot').classList.add('on');
@@ -4929,6 +4954,19 @@ const Player = {
      link is gone whatever the connection object claims about itself. */
   HEARD_TIMEOUT: 15000,
 
+  /* A stable id for this phone, so the host can tell a refresh from a
+     different person with the same name. Kept in storage, so it survives a
+     reload — which is exactly the case it exists for. */
+  deviceId() {
+    let d = '';
+    try { d = store.get('device_id') || ''; } catch (e) {}
+    if (!d) {
+      d = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      try { store.set('device_id', d); } catch (e) {}
+    }
+    return d;
+  },
+
   markHeard() { this._lastHeard = Date.now(); },
 
   startWatchdog() {
@@ -4961,7 +4999,7 @@ const Player = {
         this.conn = conn;
         this._relinking = false;
         this.markHeard();
-        conn.send({ type: 'join', name: this.name });
+        conn.send({ type: 'join', name: this.name, device: this.deviceId() });
         $('connDot').classList.add('on');
         this.setStatus('Back in — waiting for the quizmaster…');
       });
