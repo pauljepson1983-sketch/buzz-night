@@ -2833,6 +2833,26 @@ const Quiz = {
     { key: 'monarchs',   q: n => 'What year did ' + n + ' take the throne?', unit: '', conv: v => v }
   ],
 
+  /* Where each category sits on an old-to-new axis, 0 being deep history and
+     1 being the last few years. Used to point monarchs and old masters at the
+     players who ticked the earlier eras, and company foundings and modern
+     towers at the ones who ticked the later ones. Populations and areas sit in
+     the middle because they belong to nobody in particular. */
+  GUESS_VINTAGE: {
+    monarchs: 0.00, paintings: 0.08, monuments: 0.25,
+    countrypop: 0.5, citypop: 0.5, ukcities: 0.5, area: 0.5,
+    buildings: 0.85, companies: 0.9
+  },
+
+  // a player's position on that same axis, from the eras they ticked
+  eraPosition(p) {
+    if (!p.eras || !p.eras.length) return null;
+    const span = Night.DECADES;
+    const vals = p.eras.map(e => span.indexOf(e)).filter(i => i >= 0);
+    if (!vals.length) return null;
+    return vals.reduce((n, i) => n + i, 0) / vals.length / (span.length - 1);
+  },
+
   buildGuess(count) {
     const pool = [];
     this.GUESS_KINDS.forEach(k => (FACTS[k.key] || []).forEach(([name, value]) => {
@@ -2850,20 +2870,49 @@ const Quiz = {
       const k = f.seenKey.split(':')[0];
       (byKind[k] = byKind[k] || []).push(f);
     });
-    const queues = this.shuffle(Object.values(byKind));
+    // Who is here, and how far back do they go? Players who ticked the
+    // sixties get the monarchs; players who ticked the twenties get SpaceX.
+    const here = Object.values(Host.players || {})
+      .filter(pl => Host.isPresent(pl))
+      .map(pl => ({ name: pl.name, pos: this.eraPosition(pl) }))
+      .filter(pl => pl.pos != null);
+
     const picks = [];
-    for (let round = 0; picks.length < count; round++) {
-      let took = false;
-      for (const qq of queues) {
-        if (picks.length >= count) break;
-        if (qq[round]) { picks.push(qq[round]); took = true; }
+    if (here.length && $('useEras') && $('useEras').checked) {
+      const used = {};
+      for (let i = 0; picks.length < count; i++) {
+        const who = here[i % here.length];
+        // the category closest to this player's era that still has facts left
+        const options = Object.keys(byKind)
+          .filter(k => byKind[k].length > (used[k] || 0))
+          .sort((x, y) => Math.abs((this.GUESS_VINTAGE[x] ?? 0.5) - who.pos)
+                        - Math.abs((this.GUESS_VINTAGE[y] ?? 0.5) - who.pos));
+        if (!options.length) break;
+        // rotate through the two or three nearest so it isn't monarchs ten times
+        const kind = options[Math.floor(Math.random() * Math.min(3, options.length))];
+        const q = byKind[kind][used[kind] || 0];
+        used[kind] = (used[kind] || 0) + 1;
+        if (!q) break;
+        q.forWhom = [who.name];
+        picks.push(q);
       }
-      if (!took) break;
+    }
+    // no eras ticked, or not enough facts: fall back to an even deal
+    if (picks.length < count) {
+      const queues = this.shuffle(Object.values(byKind));
+      for (let round = 0; picks.length < count; round++) {
+        let took = false;
+        for (const qq of queues) {
+          if (picks.length >= count) break;
+          if (qq[round] && !picks.includes(qq[round])) { picks.push(qq[round]); took = true; }
+        }
+        if (!took) break;
+      }
     }
     // spread the categories out rather than ten populations in a row
     return this.shuffle(picks).map(f => ({
       kind: 'guess', prompt: f.prompt, answer: f.answer, unit: f.unit,
-      seenKey: f.seenKey, title: f.label
+      seenKey: f.seenKey, title: f.label, forWhom: f.forWhom || null
     }));
   },
 
