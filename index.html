@@ -668,6 +668,13 @@
     <p class="muted" style="font-size:.8rem; margin-top:6px">Your eras</p>
     <div id="eraPicker" class="av-row"></div>
     <p class="muted" style="font-size:.75rem" id="eraNote"></p>
+    <button class="btn big green mt" id="readyBtn" onclick="Player.ready()">✓ I'm ready</button>
+  </div>
+  <div class="card hidden" id="myChip" style="text-align:left">
+    <div class="row">
+      <span class="grow" id="myChipText" style="font-size:.9rem"></span>
+      <button class="btn ghost small" onclick="Player.editMe()">Change</button>
+    </div>
   </div>
   <div class="card hidden" id="myKitCard" style="text-align:left">
     <h2 style="font-size:1rem">🔊 Your buzzer</h2>
@@ -4457,8 +4464,9 @@ const Player = {
     fill($('myBuzzer'), msg.buzzers, msg.buzzer, 'Same as host');
     fill($('myVoice'), (msg.voices || []).map(v => [v.uri, v.label]), msg.voice, 'Same as host');
     fill($('myStyle'), msg.styles, msg.style, 'Normal');
-    $('myKitCard').classList.remove('hidden');
     this.initMe();
+    // returning players skip straight past it
+    this.showSetup(store.get('me_ready') !== '1');
   },
 
   AVATARS: ['🙂','😎','🦊','🐼','🐸','🦁','🐙','🦄','👾','🤖','🎃','👻','🍕','⚡','🌟','🎸','🏆','💀'],
@@ -4509,6 +4517,32 @@ const Player = {
       : 'Nothing ticked — you will get whatever the host picked.';
   },
 
+  /* Picking a face, your eras and a buzzer is a one-off. Leaving all three
+     pickers on screen for the rest of the night made the phone a wall of
+     options — Paul's words — so once you say you're ready they collapse to a
+     single line with a Change link, and a rejoin remembers you were done. */
+  ready() {
+    store.set('me_ready', '1');
+    this.showSetup(false);
+  },
+  editMe() { this.showSetup(true); },
+
+  showSetup(on) {
+    const me = $('myMeCard'), kit = $('myKitCard'), chip = $('myChip');
+    if (me) me.classList.toggle('hidden', !on);
+    if (kit) kit.classList.toggle('hidden', !on);
+    if (chip) chip.classList.toggle('hidden', on);
+    if (!on && chip) {
+      const photo = store.get('my_photo');
+      const face = photo ? '📷' : (this.avatar || '🙂');
+      const eras = (this.eras || []).map(e => e.slice(2, 4) + 's').join(', ') || 'any era';
+      const buzz = ($('myBuzzer') && $('myBuzzer').selectedOptions[0]) ? $('myBuzzer').selectedOptions[0].textContent : '';
+      $('myChipText').innerHTML = face + ' <b>' + esc(this.name || '') + '</b> · ' + esc(eras) +
+        (buzz && buzz !== 'Same as host' ? ' · ' + esc(buzz) : '');
+    }
+    this._setupOpen = !!on;
+  },
+
   selfie() { $('selfieFile').click(); },
 
   // Shrunk hard before it goes anywhere: it only ever needs to be a small
@@ -4536,6 +4570,7 @@ const Player = {
   },
 
   savePrefs(test) {
+    if (this._setupOpen === false) this.showSetup(false);  // refresh the summary line
     if (!this.conn) return;
     this.conn.send({
       type: 'prefs',
@@ -4554,9 +4589,13 @@ const Player = {
      sat directly under a live question, competing with it and pushing it up
      the page. Shown while waiting, hidden the moment a question lands. */
   setPlaying(on) {
-    const me = $('myMeCard'), kit = $('myKitCard');
-    if (me) me.classList.toggle('hidden', !!on);
-    if (kit) kit.classList.toggle('hidden', !!on);
+    const chip = $('myChip');
+    if (on) {
+      ['myMeCard', 'myKitCard', 'myChip'].forEach(id => { const el = $(id); if (el) el.classList.add('hidden'); });
+    } else {
+      // back to whichever state they were in, not always the full pickers
+      this.showSetup(this._setupOpen && store.get('me_ready') !== '1');
+    }
     this._playing = !!on;
   },
 
