@@ -154,6 +154,14 @@
               background: var(--panel2); color: var(--text); cursor: pointer; }
   .era-chip.on { border-color: var(--green); background: rgba(6,214,160,.18); }
 
+  /* ---- closest wins ---- */
+  #guessInput { width: 100%; padding: 14px; border-radius: 12px; border: 2px solid var(--panel2);
+                background: var(--panel2); color: var(--text); font-weight: 800; }
+  .gs-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: .9rem; }
+  .gs-row.me { color: var(--gold); font-weight: 800; }
+  .gs-val { min-width: 6.5rem; text-align: right; font-weight: 800; }
+  .gs-truth { font-size: 1.25rem; font-weight: 900; color: var(--green); margin: 6px 0; }
+
   /* ---- the racing post ---- */
   #raceBox { text-align: left; }
   .race-track { position: relative; height: 44px; margin: 6px 0 2px; border-radius: 10px;
@@ -489,6 +497,7 @@
             <option value="faces">Famous faces</option>
             <option value="songs">Name the song (music)</option>
             <option value="tv">TV theme tunes (music)</option>
+            <option value="guess">Closest wins (numbers)</option>
             <option value="years">Year of release (music)</option>
             <option value="themes">Film themes (music)</option>
           </select>
@@ -635,6 +644,13 @@
     <div id="quizArtWrap"><img id="quizArt" alt="album cover"></div>
     <div id="quizCountdown"></div>
     <div id="quizOptions"></div>
+    <div id="guessBox" class="hidden">
+      <p id="guessPrompt" style="font-size:1.15rem; font-weight:800; margin:10px 0"></p>
+      <input type="number" id="guessInput" inputmode="numeric" placeholder="Your guess"
+             style="font-size:1.4rem; text-align:center" onkeydown="if(event.key==='Enter')Player.sendGuess()">
+      <button class="btn big green mt" id="guessBtn" onclick="Player.sendGuess()">Lock it in</button>
+      <div id="guessScale" class="mt"></div>
+    </div>
     <div id="quizFeedback"></div>
   </div>
   <button id="buzzBtn" disabled>BUZZ</button>
@@ -695,6 +711,28 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
    the numbers are big and the unit is unfamiliar. Seconds to two places read
    instantly and still separate a fast buzz from a slow one. */
 const secs = ms => (Math.max(0, Math.round(ms)) / 1000).toFixed(2) + 's';
+/* ======================================================================
+   FACT BANK for the closest-wins round.
+
+   Harvested from Wikidata (structured, sourced, community-maintained) on
+   the date in FACTS.fetched rather than written from memory, then cleaned:
+   duplicate
+   statements collapsed, units pinned so feet cannot masquerade as metres,
+   and unbuilt concept towers dropped — Wikidata happily lists X-Seed 4000
+   at 4000m and an office block at 1313m, neither of which exists as built.
+
+   Baked in rather than queried live: the Wikidata endpoint answered twice
+   then began timing out under repeated use, and a round that hangs mid
+   party is worse than no round. Refresh from the host screen when wanted.
+   ====================================================================== */
+const FACTS = {
+  fetched: "2026-08-19",
+  countrypop: [["People's Republic of China",1404890000],["India",1326093247],["United States",340110988],["Indonesia",275439000],["Pakistan",223773700],["Brazil",213421037],["Nigeria",211400708],["Bangladesh",171466990],["Russia",146119928],["Mexico",132274416],["Ethiopia",128691692],["Japan",123802000],["Egypt",114535772],["Philippines",112729484],["Democratic Republic of the Congo",105789731],["Vietnam",96208984],["Iran",92417700],["Turkey",85372377],["Germany",83577140],["France",68605616],["United Kingdom",67326569],["Thailand",66188503],["South Africa",62027503],["Italy",58850717],["Tanzania",57310019],["Myanmar",53370609],["Colombia",52321152],["South Korea",51466201],["Spain",48592909],["Kenya",48468138],["Argentina",47327407],["Uganda",47123531],["Algeria",46164219],["Afghanistan",41454761],["Ukraine",41167335],["Sudan",40533330],["Iraq",38274618],["Poland",37563071],["Canada",36991981],["Morocco",36828330],["Angola",36749906],["Uzbekistan",34915100],["Malaysia",34231700],["Peru",34157732],["Saudi Arabia",33000000],["Ghana",32833031],["Madagascar",31964956],["Venezuela",31250306],["Ivory Coast",31165654],["Mozambique",29668834],["Nepal",29164578],["Cameroon",28372687],["Yemen",28250420],["Australia",27614411],["North Korea",26418204],["Syria",23865423],["Burkina Faso",23025776],["Mali",22395489],["Niger",21477348],["Sri Lanka",21444000]],
+  citypop: [["Shanghai",24870895],["Beijing",21893095],["Guangzhou",18676605],["Shenzhen",17494398],["Istanbul",15655924],["Lagos",15070000],["Karachi",14910352],["Tokyo",14264798],["Ho Chi Minh City",14002598],["Tianjin",13866009],["Moscow",13274285],["Xi'an",12952907],["Suzhou",12748262],["Zhengzhou",12600574],["Wuhan",12326518],["Hangzhou",11936010],["Baoding",11544036],["São Paulo",11451999],["Lahore",11126285],["Shijiazhuang",10640458],["Dongguan",10466625],["Qingdao",10071722],["Changsha",10047914],["Lima",9943800],["Cairo",9801536],["Nanyang",9713112],["Wenzhou",9572903],["Foshan",9498863],["Ningbo",9404283],["Weifang",9386705],["Hefei",9369881],["Nanjing",9314685],["Mexico City",9209944],["Jinan",9202432],["Xuzhou",9083790],["Shenyang",9070093],["Changchun",9066906],["Kuala Lumpur",9000280],["Ganzhou",8970014],["New York City",8804190],["Quanzhou",8782285],["Nanning",8741584],["Hanoi",8717600],["Kunming",8460088],["Jining",8357897],["Fuzhou",8291268],["Fuyang",8200264],["Baghdad",8126755],["Veracruz",8062579],["Bogotá",8034649],["Shangqiu",7816831],["Nantong",7726635],["Tangshan",7717983],["Ahmedabad",7645000]],
+  area: [["Russia",17125191],["Canada",9984670],["United States",9826675],["People's Republic of China",9596961],["Brazil",8515767],["Australia",8148250],["India",3287263],["Argentina",2780400],["Kazakhstan",2724900],["Algeria",2381741],["Democratic Republic of the Congo",2344858],["Saudi Arabia",2250000],["Kingdom of Denmark",2220930],["Greenland",2166086],["Mexico",1972550],["Indonesia",1904570],["Sudan",1886068],["Libya",1759541],["Iran",1648195],["Mongolia",1564116],["Peru",1285216],["Chad",1284000],["Niger",1267000],["Angola",1246700],["Mali",1240192],["South Africa",1221037],["Colombia",1141748],["Ethiopia",1104300],["Bolivia",1098581],["Mauritania",1030700],["Egypt",1010408],["Tanzania",947303],["Nigeria",923768],["Venezuela",912050],["Pakistan",881913],["Namibia",825615],["Mozambique",801590],["Turkey",783562],["Chile",756102],["Zambia",752618],["Morocco",710850],["Myanmar",676577],["Afghanistan",652230],["Pahlavi Iran",648195],["South Sudan",644329],["France",643801],["Somalia",637657],["Central African Republic",622984],["Ukraine",603550],["Madagascar",587295],["Botswana",581737],["Kenya",581309]],
+  buildings: [["Burj Khalifa",830],["Burj Azizi",725],["Dubai One Tower",711],["Merdeka 118",679],["Shanghai Tower",632],["Abraj Al Bait",601],["Makkah Clock Royal Tower Hotel",601],["Phuong Trach Tower",600],["Ping An Finance Centre",599],["Lotte World Tower",556],["One World Trade Center",546],["CTF Finance Centre",530],["Tianjin Chow Tai Fook Binhai Center",530],["China Zun",528],["Dalian Greenland Center",518],["Evergrande International Financial Center T1",518],["Six Senses Residences",516],["Taipei 101",508],["Suzhou Zhongnan Center",499],["Shanghai World Financial Center",494],["Yongsan Landmark Tower",485],["International Commerce Centre",484],["Wuhan Greenland Center",476],["Oriental Pearl Tower",468],["Tianjin R&F Guangdong Tower",468],["Chengdu Greenland Tower",468],["Lakhta Centre",462],["Landmark 81",462],["American Commerce Center",460],["International Commerce Center 1",458],["The Exchange 106",454],["Empire State Building",453],["Changsha IFS",452],["Zifeng Tower",450],["Suzhou IFS",450]]
+};
+
 const PEER_PREFIX = 'buzznight-v1-';
 const REDIRECT_URI = location.origin + location.pathname;
 
@@ -1677,6 +1715,10 @@ const Host = {
     }
     if (msg.type === 'quizA') {
       Quiz.answer(conn.peer, msg.n, msg.choice);
+      return;
+    }
+    if (msg.type === 'quizG') {
+      Quiz.guess(conn.peer, msg.n, msg.value);
       return;
     }
     // quiz rounds score themselves; a stray buzz must not open the judge panel
@@ -2764,6 +2806,31 @@ const Quiz = {
     });
   },
 
+  /* Closest-wins. No four options: everyone types a number and the nearest
+     takes it. Scored on a curve rather than winner-takes-all, because with six
+     players one winner and five nils kills the round. */
+  GUESS_KINDS: [
+    { key: 'countrypop', q: n => 'How many people live in ' + n + '?', unit: 'people' },
+    { key: 'citypop',    q: n => 'What is the population of the city of ' + n + '?', unit: 'people' },
+    { key: 'area',       q: n => 'How big is ' + n + ', in square kilometres?', unit: 'km²' },
+    { key: 'buildings',  q: n => 'How tall is ' + n + ', in metres?', unit: 'm' }
+  ],
+
+  buildGuess(count) {
+    const pool = [];
+    this.GUESS_KINDS.forEach(k => (FACTS[k.key] || []).forEach(([name, value]) => {
+      pool.push({ seenKey: k.key + ':' + name, label: name, prompt: k.q(name), answer: value, unit: k.unit });
+    }));
+    if (pool.length < 4) throw new Error('Fact bank is empty.');
+    this.available = pool.length;
+    const picks = Seen.rank('guess', pool).slice(0, Math.min(count, pool.length));
+    // spread the categories out rather than ten populations in a row
+    return this.shuffle(picks).map(f => ({
+      kind: 'guess', prompt: f.prompt, answer: f.answer, unit: f.unit,
+      seenKey: f.seenKey, title: f.label
+    }));
+  },
+
   // rounds whose source can be pointed at a decade
   MIXABLE: ['covers', 'backdrops', 'themes', 'faces', 'years', 'songs'],
 
@@ -2885,7 +2952,9 @@ const Quiz = {
         qs = await this.buildChunk(decade, count, style, extra, label);
       }
 
-      if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) {
+      if (this.mode === 'guess') {
+        this.questions = qs;
+      } else if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) {
         this.questions = qs.filter(q => q.uri);
         if (!this.questions.length) throw new Error('Could not find playable tracks for that.');
       } else if (this.mode === 'backdrops') {
@@ -2963,6 +3032,7 @@ const Quiz = {
     Host.broadcast({
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
       forWhom: q.forWhom || null, era: q.era || null,
+      kind: q.kind || null, prompt: q.prompt || null, unit: q.unit || null,
       title: this.TITLES[this.mode] || 'Quiz round',
       noun: this.NOUNS[this.mode] || 'Question',
       roundLabel: this.roundLabel || '',
@@ -3062,6 +3132,46 @@ const Quiz = {
     Host.broadcast({ type: 'quizSkip' });
     $('quizHostView').innerHTML = '<span class="muted">Question skipped.</span>';
     setTimeout(() => this.next(), 700);
+  },
+
+  guess(peerId, n, value) {
+    if (!this.active || n !== this.idx + 1 || this.answers[peerId]) return;
+    const v = Number(value);
+    if (!isFinite(v)) return;
+    this.answers[peerId] = { value: v };
+    Host.renderScores();
+    this.checkAllIn();
+  },
+
+  /* Closest takes it, but second and third still score, and anyone within a
+     tenth of the answer gets a bonus. Winner-takes-all leaves most of the room
+     on nothing, which is exactly when people stop playing. */
+  scoreGuesses() {
+    const q = this.questions[this.idx];
+    const truth = q.answer;
+    const entries = Object.entries(this.answers)
+      .map(([id, a]) => ({ id, value: a.value, off: Math.abs(a.value - truth) }))
+      .sort((a, b) => a.off - b.off);
+    const AWARD = [25, 15, 10];
+    entries.forEach((e, i) => {
+      const p = Host.players[e.id];
+      if (!p) return;
+      let pts = i < AWARD.length ? AWARD[i] : 3;
+      const within = truth ? e.off / Math.abs(truth) : 1;
+      if (within <= 0.10) pts += 10;          // close enough to deserve it
+      p.score += pts;
+      p.stats = p.stats || Host.blankStats();
+      p.stats.answered++;
+      if (i === 0) p.stats.correct++;
+      p.stats.bestSingle = Math.max(p.stats.bestSingle || 0, pts);
+      p.stats.byMode.guess = (p.stats.byMode.guess || 0) + pts;
+      this.gains[e.id] = pts;
+      this.roundGains[e.id] = (this.roundGains[e.id] || 0) + pts;
+      e.pts = pts;
+    });
+    Host.renderScores();
+    Host.saveGame();
+    return entries;
   },
 
   close() {
@@ -3177,11 +3287,11 @@ const Quiz = {
   // actually being played, so players could not tell what round they were in.
   TITLES: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
-    songs: '🎧 Name the song', tv: '📺 TV theme tunes', years: '📅 Year of release', faces: '⭐ Famous faces'
+    songs: '🎧 Name the song', tv: '📺 TV theme tunes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
-    songs: 'Song', tv: 'Theme', years: 'Song', faces: 'Face'
+    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face'
   },
   HOWTO: {
     covers: 'A cover flashes up, then four albums. Pick the right one.',
@@ -3189,6 +3299,7 @@ const Quiz = {
     themes: 'Listen to the theme, then pick the film.',
     songs: 'Listen, then pick which song it is.',
     tv: 'Listen to the theme tune, then pick the TV show.',
+    guess: 'Type your best guess. Closest to the real number wins it.',
     years: 'Listen, then pick the year it came out.',
     faces: 'A face flashes up, then four names. Quick!'
   },
@@ -3198,6 +3309,7 @@ const Quiz = {
     themes: 'film themes round',
     songs: 'name the song round',
     tv: 'TV themes round',
+    guess: 'closest wins round',
     years: 'year of release round',
     faces: 'famous faces round'
   },
@@ -3420,7 +3532,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', years: '📅 Year of release', faces: '⭐ Famous faces', buzzer: '🔔 Buzzer round (you judge)'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', buzzer: '🔔 Buzzer round (you judge)'
   },
 
   load() {
@@ -3830,6 +3942,7 @@ const Player = {
         this.setStatus('');
         break;
 
+      case 'guessResult': this.guessResult(msg); break;
       case 'quizQ':
         this.quizQuestion(msg);
         break;
@@ -3914,6 +4027,7 @@ const Player = {
   },
 
   quizQuestion(msg) {
+    if (msg.kind === 'guess') return this.guessQuestion(msg);
     $('roundCard').classList.add('hidden');
     clearInterval(this._quizTimer);
     this._quizN = msg.n;
@@ -3985,6 +4099,77 @@ const Player = {
     } else {
       setTimeout(showOptions, msg.flashMs);
     }
+  },
+
+  guessQuestion(msg) {
+    clearInterval(this._quizTimer);
+    this._quizN = msg.n; this._quizAnswered = false;
+    this.setStatus('');
+    $('quizPanel').classList.remove('hidden');
+    $('buzzBtn').classList.add('hidden');
+    $('quizArtWrap').classList.remove('showing');
+    $('quizOptions').innerHTML = '';
+    $('quizFeedback').textContent = '';
+    $('guessScale').innerHTML = '';
+    $('guessBox').classList.remove('hidden');
+    $('quizProgress').textContent = (msg.noun || 'Question') + ' ' + msg.n + ' of ' + msg.total;
+    $('guessPrompt').textContent = msg.prompt || '';
+    const inp = $('guessInput');
+    inp.value = ''; inp.disabled = false;
+    $('guessBtn').disabled = false;
+    $('guessBtn').textContent = 'Lock it in';
+    setTimeout(() => { try { inp.focus(); } catch (e) {} }, 250);
+    let left = msg.seconds;
+    const cd = $('quizCountdown');
+    cd.textContent = left; cd.classList.remove('hurry');
+    this._quizTimer = setInterval(() => {
+      left--;
+      cd.textContent = left > 0 ? left : '⏱';
+      if (left <= 3) cd.classList.add('hurry');
+      if (left <= 0) { clearInterval(this._quizTimer); this.lockGuess(); }
+    }, 1000);
+  },
+
+  sendGuess() {
+    if (this._quizAnswered || !this.conn) return;
+    const raw = $('guessInput').value;
+    const v = Number(raw);
+    if (raw === '' || !isFinite(v)) { this.setStatus('Type a number first', 'bad'); return; }
+    this._quizAnswered = true;
+    this.lockGuess();
+    this.conn.send({ type: 'quizG', n: this._quizN, value: v });
+    $('quizFeedback').textContent = 'Locked in — ' + v.toLocaleString();
+    this.vibe([60]);
+  },
+
+  lockGuess() {
+    $('guessInput').disabled = true;
+    $('guessBtn').disabled = true;
+    $('guessBtn').textContent = 'Locked';
+  },
+
+  // everyone's guesses lined up against the truth, so you can see how far out
+  // you were and who pipped you
+  guessResult(msg) {
+    clearInterval(this._quizTimer);
+    $('quizCountdown').textContent = '';
+    const me = (this.name || '').toLowerCase();
+    const rows = (msg.board || []).map((r, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '&nbsp;&nbsp;';
+      const off = msg.truth ? Math.round(Math.abs(r.value - msg.truth) / Math.abs(msg.truth) * 100) : 0;
+      return '<div class="gs-row' + (r.name.toLowerCase() === me ? ' me' : '') + '">' + medal +
+        ' <span class="grow">' + esc(r.name) + '</span>' +
+        '<span class="gs-val">' + r.value.toLocaleString() + '</span>' +
+        '<span class="muted" style="min-width:3.5rem;text-align:right">' + (off > 999 ? '999+' : off) + '%</span>' +
+        '<b style="min-width:2.5rem;text-align:right">+' + r.pts + '</b></div>';
+    }).join('');
+    $('guessScale').innerHTML =
+      '<div class="gs-truth">Answer: ' + msg.truth.toLocaleString() + ' ' + esc(msg.unit || '') + '</div>' +
+      (rows || '<p class="muted">Nobody guessed.</p>');
+    $('quizFeedback').textContent = msg.gained ? '+' + msg.gained + ' points' : 'No points this time';
+    $('pScore').textContent = msg.score + ' pts';
+    const won = msg.board && msg.board[0] && msg.board[0].name.toLowerCase() === me;
+    this.vibe(won ? [80, 40, 80, 40, 200] : [180]);
   },
 
   quizAnswer(choice, btn) {
