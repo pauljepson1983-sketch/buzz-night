@@ -673,7 +673,7 @@
   <div class="card hidden" id="myChip" style="text-align:left">
     <div class="row">
       <span class="grow" id="myChipText" style="font-size:.9rem"></span>
-      <button class="btn ghost small" onclick="Player.editMe()">Change</button>
+      <button class="btn ghost small" id="changeBtn" onclick="Player.editMe()">Change</button>
     </div>
   </div>
   <div class="card hidden" id="myKitCard" style="text-align:left">
@@ -4539,6 +4539,10 @@ const Player = {
   editMe() { this.showSetup(true); },
 
   showSetup(on) {
+    // Once a round has started your face and eras are locked. Changing eras
+    // mid-game would let someone steer the questions towards themselves, and
+    // swapping face or buzzer part-way through just confuses the room.
+    if (this._locked) on = false;
     const me = $('myMeCard'), kit = $('myKitCard'), chip = $('myChip');
     if (me) me.classList.toggle('hidden', !on);
     if (kit) kit.classList.toggle('hidden', !on);
@@ -4549,7 +4553,10 @@ const Player = {
       const eras = (this.eras || []).map(e => e.slice(2, 4) + 's').join(', ') || 'any era';
       const buzz = ($('myBuzzer') && $('myBuzzer').selectedOptions[0]) ? $('myBuzzer').selectedOptions[0].textContent : '';
       $('myChipText').innerHTML = face + ' <b>' + esc(this.name || '') + '</b> · ' + esc(eras) +
-        (buzz && buzz !== 'Same as host' ? ' · ' + esc(buzz) : '');
+        (buzz && buzz !== 'Same as host' ? ' · ' + esc(buzz) : '') +
+        (this._locked ? ' <span class="muted">· locked in</span>' : '');
+      const cb = $('changeBtn');
+      if (cb) cb.classList.toggle('hidden', !!this._locked);
     }
     this._setupOpen = !!on;
   },
@@ -4600,6 +4607,7 @@ const Player = {
      sat directly under a live question, competing with it and pushing it up
      the page. Shown while waiting, hidden the moment a question lands. */
   setPlaying(on) {
+    if (on) this._locked = true;   // first question of the night locks you in
     const chip = $('myChip');
     if (on) {
       ['myMeCard', 'myKitCard', 'myChip'].forEach(id => { const el = $(id); if (el) el.classList.add('hidden'); });
