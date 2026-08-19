@@ -306,9 +306,22 @@
                      background: #fff; box-shadow: 0 0 0 1.5px #ff2d95 }
   .pin.locked { box-shadow: 0 0 0 2px #fff, 0 0 0 6px rgba(255,45,149,.45) }
 
-  /* Everyone else's pins sit back — they are context, not the answer. */
-  .pin.other { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
-               background: rgba(255,255,255,.55); border: 2px solid rgba(0,0,0,.35) }
+  /* Everyone else's pins, shown at the reveal only. Each gets its own
+     colour and its name, because seeing where the rest of the room went is
+     most of the fun — as grey dots they were unreadable. */
+  /* Big enough to carry a face. The coloured ring still separates two
+     people who picked the same emoji. */
+  .pin.other { width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
+               border: 3px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.6);
+               display: flex; align-items: center; justify-content: center;
+               font-size: 15px; line-height: 1; overflow: hidden }
+  .pin.other img { width: 100%; height: 100%; object-fit: cover; border-radius: 50% }
+  .pin-label { position: absolute; left: 50%; top: 100%; transform: translate(-50%, 3px);
+               font-size: .68rem; font-weight: 700; white-space: nowrap; padding: 1px 5px;
+               border-radius: 6px; background: rgba(12,6,30,.82); color: #fff;
+               pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.8) }
+  .pin.truth .pin-label { background: #21d07a; color: #06331d; top: auto; bottom: 100%;
+                          transform: translate(-50%, -6px); font-size: .78rem }
 
   /* The revealed answer is the opposite job: it has to be spotted instantly
      from across the room, so it is big, bright and it moves. */
@@ -3952,7 +3965,11 @@ const Quiz = {
     // own path here rather than the multiple-choice one below.
     if (q && q.kind === 'place') {
       const ranked = this.scorePlaces();
-      const pins = ranked.map(e => ({ name: (Host.players[e.id] || {}).name || '?', x: e.x, y: e.y, pts: e.pts, km: e.km }));
+      const pins = ranked.map(e => {
+        const pl = Host.players[e.id] || {};
+        return { name: pl.name || '?', avatar: pl.avatar || null, photo: pl.photo || null,
+                 x: e.x, y: e.y, pts: e.pts, km: e.km };
+      });
       Object.entries(Host.players).forEach(([id, pl]) => {
         Host.sendTo(id, { type: 'placeResult', tx: q.tx, ty: q.ty, name: q.answer,
           pins, mine: this.answers[id] || null, gained: this.gains[id] || 0, score: pl.score });
@@ -5298,6 +5315,8 @@ const Player = {
     img.style.transform = v ? 'scale(' + v.z + ') translate(' + (50 - v.cx) + '%, ' + (50 - v.cy) + '%)' : '';
     wrap.classList.toggle('zoomed', !!v);
     [...wrap.querySelectorAll('.pin')].forEach(el => {
+      // labels live inside a pin and move with it; only the pins themselves
+      // carry map coordinates
       const mx = parseFloat(el.dataset.mx), my = parseFloat(el.dataset.my);
       if (!isFinite(mx)) return;
       const at = this.mapToView(mx, my);
@@ -5337,19 +5356,46 @@ const Player = {
     this.applyView();
     $('placeZoom').style.display = 'none';
     [...wrap.querySelectorAll('.pin.other, .pin.truth')].forEach(p => p.remove());
+
+    /* Colours cycle so two people never look alike in a normal room, and
+       none of them clash with your own magenta or the green answer. */
+    const COLOURS = ['#4dabf7', '#ffa94d', '#b197fc', '#63e6be', '#ff8787', '#ffd43b'];
+    let seat = 0;
     (msg.pins || []).forEach(p => {
-      const mine = p.name && this.name && p.name.toLowerCase() === this.name.toLowerCase();
-      if (mine) return;
+      if (p.name && this.name && p.name.toLowerCase() === this.name.toLowerCase()) return;
       const el = document.createElement('div');
       el.className = 'pin other';
       el.dataset.mx = p.x; el.dataset.my = p.y;
       el.style.left = p.x + '%'; el.style.top = p.y + '%';
+      // the ring is their colour; the middle is whatever face they chose
+      el.style.borderColor = COLOURS[seat++ % COLOURS.length];
+      el.style.background = 'rgba(12,6,30,.75)';
+      if (p.photo) {
+        const im = document.createElement('img');
+        im.src = p.photo; im.alt = '';
+        el.appendChild(im);
+      } else {
+        const face = document.createElement('span');
+        face.textContent = p.avatar || '🙂';
+        el.appendChild(face);
+      }
+      const tag = document.createElement('span');
+      tag.className = 'pin-label';
+      tag.textContent = p.name + (p.km != null ? ' · ' + p.km.toLocaleString() + 'km' : '');
+      el.appendChild(tag);
       wrap.appendChild(el);
     });
+
     const truth = document.createElement('div');
     truth.className = 'pin truth';
     truth.dataset.mx = msg.tx; truth.dataset.my = msg.ty;
     truth.style.left = msg.tx + '%'; truth.style.top = msg.ty + '%';
+    if (msg.name) {
+      const tag = document.createElement('span');
+      tag.className = 'pin-label';
+      tag.textContent = msg.name;
+      truth.appendChild(tag);
+    }
     wrap.appendChild(truth);
     const me = (msg.pins || []).find(p => p.name && this.name && p.name.toLowerCase() === this.name.toLowerCase());
     $('placeHint').textContent = me
