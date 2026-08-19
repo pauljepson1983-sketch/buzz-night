@@ -4375,8 +4375,11 @@ const Player = {
     this.peer = new Peer();
     this.peer.on('open', () => {
       this.conn = this.peer.connect(PEER_PREFIX + room, { reliable: true });
+      this.room = room;
       this.conn.on('open', () => {
         this.conn.send({ type: 'join', name: this.name });
+        this.markHeard();
+        this.startWatchdog();
         $('connDot').classList.add('on');
         App.showView('playerGame');
         Wake.on();
@@ -4384,7 +4387,8 @@ const Player = {
         this.setStatus('Waiting for the quizmaster…');
       });
       this.conn.on('data', msg => this.onMessage(msg));
-      this.conn.on('close', () => { $('connDot').classList.remove('on'); this.setStatus('Lost connection — reload to rejoin.', 'bad'); this.setBuzz(false); });
+      // no longer tells anyone to reload: the watchdog rebuilds the link
+      this.conn.on('close', () => { $('connDot').classList.remove('on'); this.setStatus('Reconnecting…'); this.setBuzz(false); });
     });
     this.peer.on('error', e => {
       $('joinError').textContent = e.type === 'peer-unavailable' ? 'Room not found — check the code.' : 'Connection error: ' + e.type;
@@ -4393,6 +4397,7 @@ const Player = {
   },
 
   onMessage(msg) {
+    this.markHeard();
     switch (msg.type) {
       case 'ping': this.conn.send({ type: 'pong', t: msg.t }); break;
       case 'welcome':
@@ -4556,6 +4561,66 @@ const Player = {
         this.setStatus('🏁 Round over!');
         break;
     }
+  },
+
+  /* The host pings every 4s. Fifteen seconds of complete silence means the
+     link is gone whatever the connection object claims about itself. */
+  HEARD_TIMEOUT: 15000,
+
+  markHeard() { this._lastHeard = Date.now(); },
+
+  startWatchdog() {
+    clearInterval(this._watchdog);
+    this._watchdog = setInterval(() => {
+      if (!this.room || this._relinking) return;
+      if (Date.now() - (this._lastHeard || 0) < this.HEARD_TIMEOUT) return;
+      this.relink();
+    }, 5000);
+  },
+
+  /* Rebuild the data connection to the same room. The host matches a
+     rejoining player on NAME, so the score and stats come back with them
+     even though PeerJS has given them a new id. */
+  relink() {
+    if (this._relinking || !this.room) return;
+    this._relinking = true;
+    $('connDot').classList.remove('on');
+    this.setStatus('Reconnecting…');
+
+    const attach = () => {
+      let conn;
+      try { conn = this.peer.connect(PEER_PREFIX + this.room, { reliable: true }); }
+      catch (e) { this._relinking = false; return; }
+      // if it never opens, drop the flag so the next tick can try again
+      const giveUp = setTimeout(() => { this._relinking = false; }, 8000);
+      conn.on('open', () => {
+        clearTimeout(giveUp);
+        try { if (this.conn && this.conn !== conn) this.conn.close(); } catch (e) {}
+        this.conn = conn;
+        this._relinking = false;
+        this.markHeard();
+        conn.send({ type: 'join', name: this.name });
+        $('connDot').classList.add('on');
+        this.setStatus('Back in — waiting for the quizmaster…');
+      });
+      conn.on('data', msg => this.onMessage(msg));
+      conn.on('close', () => { $('connDot').classList.remove('on'); this.setBuzz(false); });
+      conn.on('error', () => { clearTimeout(giveUp); this._relinking = false; });
+    };
+
+    // the broker can drop the peer itself; reconnect that first if so
+    if (this.peer && this.peer.destroyed) {
+      this.peer = new Peer();
+      this.peer.on('open', attach);
+      this.peer.on('error', () => { this._relinking = false; });
+      return;
+    }
+    if (this.peer && this.peer.disconnected) {
+      try { this.peer.reconnect(); } catch (e) {}
+      setTimeout(attach, 800);
+      return;
+    }
+    attach();
   },
 
   quizQuestion(msg) {
