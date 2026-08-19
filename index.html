@@ -1557,8 +1557,22 @@ const Host = {
     } catch (e) { flash('Press & hold the link above'); }
   },
 
+  /* Four random letters will eventually spell something you would rather not
+     project onto the wall at a party — the generator produced PUTA while we
+     were testing. Rerolls anything on the list, and any code with no digit in
+     it, which removes most readable words at a stroke. */
+  RUDE: ['PUTA','PUTO','CUNT','FUCK','SHIT','TWAT','WANK','ARSE','PISS','TITS','SLUT','CO CK',
+         'DICK','KKK','RAPE','NAZI','PAKI','SPIC','MERD','CACA','PEDO','ANAL','JIZZ','TURD'],
   newCode() {
-    return [...crypto.getRandomValues(new Uint8Array(4))].map(b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('');
+    const pick = () => [...crypto.getRandomValues(new Uint8Array(4))]
+      .map(b => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[b % 31]).join('');
+    for (let i = 0; i < 40; i++) {
+      const c = pick();
+      if (!/[2-9]/.test(c)) continue;                 // force a digit: kills most words
+      if (this.RUDE.some(w => c.includes(w.replace(/s/g, '')))) continue;
+      return c;
+    }
+    return pick();
   },
 
   create(resume) {
