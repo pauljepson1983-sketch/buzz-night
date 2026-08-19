@@ -1367,8 +1367,11 @@ const Spot = {
     });
   },
 
-  async togglePlay() { if (this.player) this.player.togglePlay(); },
-  async nextTrack() { if (this.player) this.player.nextTrack(); },
+  /* Anything that starts sound has to undo the hush. A buzz round leaves the
+     volume at zero on purpose, and without this the host presses play
+     afterwards, hears nothing, and reasonably concludes Spotify is broken. */
+  async togglePlay() { await this.unhush(); if (this.player) this.player.togglePlay(); },
+  async nextTrack() { await this.unhush(); if (this.player) this.player.nextTrack(); },
 
   // Development-mode apps can't read playlist contents (403 on
   // /playlists/{id}/tracks, and the playlist object comes back with the track
@@ -1376,6 +1379,7 @@ const Spot = {
   // are a play-this-whole-thing button, not a track list, and the host moves
   // through it with "Next song".
   async playContext(uri, name) {
+    await this.unhush();
     if (!this.deviceId) { alert('Spotify player not ready yet — wait a second and try again.'); return; }
     await this.api('/me/player/play?device_id=' + this.deviceId, {
       method: 'PUT', body: JSON.stringify({ context_uri: uri })
@@ -1437,7 +1441,7 @@ const Spot = {
   async seekMs(ms, alsoPlay) {
     if (!this.player) return;
     await this.player.seek(ms);
-    if (alsoPlay && this.isPaused) this.player.resume();
+    if (alsoPlay && this.isPaused) { await this.unhush(); this.player.resume(); }
   },
   userSeek(v) {
     this.seeking = true;
@@ -4691,6 +4695,9 @@ const Quiz = {
     // bank where everyone stood, for the race chart at the end
     Host.snapshotRound(this.roundLabel || this.TITLES[this.mode] || 'Round');
     if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
+    // a buzz round leaves the volume at zero on purpose; hand it back before
+    // the round ends, or the host is left with a Spotify that plays silence
+    if (this.mode === 'buzzname') { Spot.pause(); Spot.unhush(); }
 
     // Whoever scored most in THIS round, not whoever leads overall — the old
     // version read the leaderboard and crowned the overall leader, so it
@@ -4826,6 +4833,9 @@ const Quiz = {
     hideCount();
     Host.broadcast({ type: 'countInEnd' });
     if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
+    // a buzz round leaves the volume at zero on purpose; hand it back before
+    // the round ends, or the host is left with a Spotify that plays silence
+    if (this.mode === 'buzzname') { Spot.pause(); Spot.unhush(); }
     Host.broadcast({ type: 'quizEnd', rows: Host.boardRows() });
     $('quizStatus').textContent = 'Round stopped.';
     $('quizHostView').classList.add('hidden');
