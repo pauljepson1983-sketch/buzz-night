@@ -5096,7 +5096,12 @@ const Player = {
     const pts = new Map();          // every finger currently on the map
     let drag = null, pinch = null, gestured = false;
 
-    const frame = () => $('placeMap').getBoundingClientRect();
+    /* The WRAPPER, not the image. getBoundingClientRect on a scaled element
+       returns its transformed box, so once zoomed the image measured three
+       times too wide with its left edge off-screen — every tap then resolved
+       to the wrong place, and panning moved by a third of what it should.
+       The wrapper is never transformed, so it is the visible frame. */
+    const frame = () => wrap.getBoundingClientRect();
     const midOf = () => {
       const a = [...pts.values()];
       return { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2,
