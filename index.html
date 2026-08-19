@@ -4465,8 +4465,13 @@ const Player = {
     fill($('myVoice'), (msg.voices || []).map(v => [v.uri, v.label]), msg.voice, 'Same as host');
     fill($('myStyle'), msg.styles, msg.style, 'Normal');
     this.initMe();
-    // returning players skip straight past it
-    this.showSetup(store.get('me_ready') !== '1');
+    // Tell the host who we are straight away. Prefs were only sent when a
+    // picker changed, so anyone who accepted the defaults arrived with no
+    // avatar and no eras — which silently switched off the era targeting for
+    // them and left them blank on the host's list.
+    this.savePrefs();
+    // returning players skip straight past it, but only if it was THIS name
+    this.showSetup(!this.setupDone());
   },
 
   AVATARS: ['🙂','😎','🦊','🐼','🐸','🦁','🐙','🦄','👾','🤖','🎃','👻','🍕','⚡','🌟','🎸','🏆','💀'],
@@ -4521,8 +4526,14 @@ const Player = {
      pickers on screen for the rest of the night made the phone a wall of
      options — Paul's words — so once you say you're ready they collapse to a
      single line with a Change link, and a rejoin remembers you were done. */
+  // Keyed on the name, because two people sharing one phone or browser were
+  // inheriting each other's face, eras and setup-done flag.
+  readyKey() { return 'me_ready_' + String(this.name || '').toLowerCase(); },
+  setupDone() { return store.get(this.readyKey()) === '1'; },
+
   ready() {
-    store.set('me_ready', '1');
+    store.set(this.readyKey(), '1');
+    this.savePrefs();
     this.showSetup(false);
   },
   editMe() { this.showSetup(true); },
@@ -4594,7 +4605,7 @@ const Player = {
       ['myMeCard', 'myKitCard', 'myChip'].forEach(id => { const el = $(id); if (el) el.classList.add('hidden'); });
     } else {
       // back to whichever state they were in, not always the full pickers
-      this.showSetup(this._setupOpen && store.get('me_ready') !== '1');
+      this.showSetup(this._setupOpen && !this.setupDone());
     }
     this._playing = !!on;
   },
