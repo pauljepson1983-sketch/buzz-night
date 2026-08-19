@@ -759,6 +759,15 @@ const FACTS = {
 const PEER_PREFIX = 'buzznight-v1-';
 const REDIRECT_URI = location.origin + location.pathname;
 
+/* Players must land on the SAME build the host is running. Paul kept getting
+   an old app because the QR was generated with whatever version string I had
+   typed at the time, so it went stale the moment I deployed again. The join
+   link now inherits the host page's own ?v=, whatever that happens to be. */
+function joinUrlFor(room) {
+  const v = new URLSearchParams(location.search).get('v');
+  return REDIRECT_URI + '?room=' + room + (v ? '&v=' + encodeURIComponent(v) : '');
+}
+
 const App = {
   role: null,
 
@@ -1514,7 +1523,7 @@ const Host = {
   teamMode: false, stealTimer: null, stealLeft: 0,
 
   invite() {
-    const url = REDIRECT_URI + '?room=' + this.roomCode;
+    const url = joinUrlFor(this.roomCode);
     return { url, text: '🎶 Buzz Night quiz is on! Tap to grab your buzzer (room ' + this.roomCode + '):' };
   },
   async shareInvite() {
@@ -1575,7 +1584,7 @@ const Host = {
       $('connDot').classList.add('on');
       App.showView('hostGame');
       $('roomCodeBig').textContent = this.roomCode;
-      const url = REDIRECT_URI + '?room=' + this.roomCode;
+      const url = joinUrlFor(this.roomCode);
       $('joinUrl').textContent = url;
       $('waShare').href = 'https://wa.me/?text=' + encodeURIComponent('🎶 Buzz Night quiz is on! Grab your buzzer: ' + url + ' (room code ' + this.roomCode + ')');
       Sound.initPickers();
