@@ -4631,8 +4631,10 @@ const Player = {
       ['myMeCard', 'myKitCard'].forEach(id => { const el = $(id); if (el) el.classList.add('hidden'); });
     } else {
       // back to whichever state they were in, not always the full pickers
-      // never reopen the pickers after play has started
-      this.showSetup(false);
+      // Never reopen the pickers once play has started — but a routine phase
+      // message arrives the moment you join, and that was slamming the setup
+      // step shut before anyone could use it.
+      this.showSetup(this._locked ? false : !this.setupDone());
     }
     this._playing = !!on;
   },
