@@ -326,7 +326,9 @@
 
   #placeZoom { display: none; margin-top: 8px; width: 100% }
   #placeWrap.zoomed { cursor: zoom-in }
-  #placeMap { transition: transform .18s ease-out }
+  /* No transition. Panning is driven directly by the finger, and easing
+     it made the map trail behind and feel sluggish. */
+  #placeMap { will-change: transform }
   #placeHint { font-size: .85rem; text-align: center; margin-top: 8px; min-height: 1.2em }
 </style>
 </head>
@@ -5094,7 +5096,7 @@ const Player = {
        Still no pinch-zoom: two thumbs on a phone being passed round a room
        trigger it constantly by accident. */
     const pts = new Map();          // every finger currently on the map
-    let drag = null, pinch = null, gestured = false;
+    let drag = null, pinch = null, gestured = false, prevPin = null;
 
     /* The WRAPPER, not the image. getBoundingClientRect on a scaled element
        returns its transformed box, so once zoomed the image measured three
@@ -5108,20 +5110,49 @@ const Player = {
                d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) };
     };
 
+    /* The pin goes down on pointerDOWN, not up, so it appears the instant
+       you touch the map. If the touch turns out to be a drag or a pinch it
+       is taken back and the previous pin restored. */
+    const placeAt = ev => {
+      const r = frame();
+      if (!r.width || !r.height) { $('placeHint').textContent = 'Map still loading — try again in a second'; return false; }
+      this._pin = this.viewToMap((ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height);
+      this.drawPin('mine', this._pin.x, this._pin.y);
+      lock.disabled = false;
+      $('placeZoom').style.display = 'block';
+      return true;
+    };
+    const takeBackPin = () => {
+      this._pin = prevPin ? { x: prevPin.x, y: prevPin.y } : null;
+      const el = wrap.querySelector('.pin.mine');
+      if (this._pin) this.drawPin('mine', this._pin.x, this._pin.y);
+      else { if (el) el.remove(); lock.disabled = true; }
+    };
+
     wrap.onpointerdown = ev => {
       if (this._quizAnswered) return;
+      /* A missed pointerup used to leave a ghost in here forever, and since a
+         tap only counted when the map was empty of pointers, every later tap
+         was thrown away. The first finger of any new touch clears it out. */
+      if (ev.isPrimary) { pts.clear(); pinch = null; drag = null; gestured = false; }
       pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
-      // capture keeps a drag alive if the finger leaves the map, but it
-      // throws on some browsers rather than being merely unavailable
-      try { wrap.setPointerCapture && wrap.setPointerCapture(ev.pointerId); } catch (e) {}
+
       if (pts.size === 1) {
+        prevPin = this._pin ? { x: this._pin.x, y: this._pin.y } : null;
         drag = { x: ev.clientX, y: ev.clientY,
                  cx: this._view ? this._view.cx : 50, cy: this._view ? this._view.cy : 50 };
         gestured = false;
+        if (placeAt(ev)) {
+          $('placeHint').textContent = this._view
+            ? 'Drag to move about, tap to adjust, then lock it in'
+            : 'Tap to move it, pinch to zoom, or lock it in';
+          this.vibe([20]);
+        }
       } else if (pts.size === 2) {
-        // a second finger turns this into a pinch, never a pin
+        // a second finger means a pinch, so the pin the first one dropped goes back
         gestured = true;
         drag = null;
+        takeBackPin();
         const m = midOf(), r = frame();
         const under = this.viewToMap((m.x - r.left) / r.width, (m.y - r.top) / r.height);
         pinch = { d: m.d, z: this._view ? this._view.z : 1, under: under };
@@ -5155,11 +5186,19 @@ const Player = {
         return;
       }
 
-      // One finger: drag the map about. A few pixels of wobble is still a tap.
       if (!drag) return;
       const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
-      if (!gestured && Math.hypot(dx, dy) < 6) return;
-      gestured = true;
+      if (!gestured) {
+        // a few pixels of wobble is still a tap — thumbs are not precise
+        if (Math.hypot(dx, dy) < 8) return;
+        gestured = true;
+        takeBackPin();
+        // only now is capture worth having, to keep the drag alive if the
+        // finger wanders off the map. Capturing on every tap is what let a
+        // later press on Lock it in still reach the map.
+        try { wrap.setPointerCapture && wrap.setPointerCapture(ev.pointerId); } catch (e) {}
+        $('placeHint').textContent = 'Drag to move about, tap to place your pin';
+      }
       if (!this._view) return;                       // nothing to pan when fully out
       this._view.cx = Math.max(0, Math.min(100, drag.cx - dx / r.width * 100 / this._view.z));
       this._view.cy = Math.max(0, Math.min(100, drag.cy - dy / r.height * 100 / this._view.z));
@@ -5167,27 +5206,15 @@ const Player = {
     };
 
     const endPointer = ev => {
-      const had = pts.has(ev.pointerId);
       pts.delete(ev.pointerId);
+      try { wrap.releasePointerCapture && wrap.releasePointerCapture(ev.pointerId); } catch (e) {}
       if (pts.size < 2) pinch = null;
-      if (pts.size > 0 || !had || this._quizAnswered) return;
-      const wasGesture = gestured;
+      if (pts.size) return;
       drag = null; gestured = false;
-      if (wasGesture) return;                        // a drag or pinch never drops a pin
-      const r = frame();
-      if (!r.width || !r.height) { $('placeHint').textContent = 'Map still loading — try again in a second'; return; }
-      this._pin = this.viewToMap((ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height);
-      this.drawPin('mine', this._pin.x, this._pin.y);
-      lock.disabled = false;
-      $('placeZoom').style.display = 'block';
-      $('placeHint').textContent = this._view
-        ? 'Pinch or drag to move about, tap to adjust, then lock it in'
-        : 'Tap to move it, pinch to zoom, or lock it in';
-      this.vibe([20]);
+      // the pin is already down from pointerdown — nothing to do but tidy up
     };
     wrap.onpointerup = endPointer;
-    wrap.onpointercancel = ev => { pts.delete(ev.pointerId); if (pts.size < 2) pinch = null;
-                                   if (!pts.size) { drag = null; gestured = false; } };
+    wrap.onpointercancel = endPointer;
 
     /* Zoom keeps whatever pin is already down in the middle, so nothing
        jumps anywhere surprising — you get a closer look at your own answer. */
@@ -5206,6 +5233,8 @@ const Player = {
       this.applyView();
     };
 
+    // stops a press on the button being read as a touch on the map
+    lock.onpointerdown = ev => ev.stopPropagation();
     lock.onclick = () => {
       if (this._quizAnswered || !this._pin) return;
       this._quizAnswered = true;
