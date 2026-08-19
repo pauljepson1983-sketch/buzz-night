@@ -343,6 +343,21 @@
      it made the map trail behind and feel sluggish. */
   #placeMap { will-change: transform }
   #placeHint { font-size: .85rem; text-align: center; margin-top: 8px; min-height: 1.2em }
+  /* Where-is-it results. The order and the gaps are the payoff of the round,
+     so they get a panel rather than one line about your own pin. */
+  #placeChart { margin-top: 12px; border-radius: 12px; overflow: hidden; background: rgba(255,255,255,.05) }
+  #placeChart .ph { padding: 8px 10px; font-weight: 700; font-size: .9rem; background: rgba(255,255,255,.07) }
+  .pc-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+            border-top: 1px solid rgba(255,255,255,.07); font-size: .9rem }
+  .pc-row.me { background: rgba(255,45,149,.16) }
+  .pc-pos { width: 1.7em; text-align: center; flex: none; font-weight: 700 }
+  .pc-face { width: 24px; height: 24px; border-radius: 50%; flex: none; overflow: hidden;
+             display: flex; align-items: center; justify-content: center; font-size: 14px;
+             background: rgba(0,0,0,.35) }
+  .pc-face img { width: 100%; height: 100%; object-fit: cover }
+  .pc-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .pc-km { flex: none; opacity: .85; font-variant-numeric: tabular-nums }
+  .pc-pts { flex: none; width: 3.4em; text-align: right; font-weight: 700 }
 </style>
 </head>
 <body>
@@ -775,6 +790,7 @@
       <div id="placeWhere"></div>
       <div id="placeWrap"><img id="placeMap" alt=""></div>
       <div id="placeHint"></div>
+      <div id="placeChart" class="hidden"></div>
       <button class="btn ghost small" id="placeZoom">🔍 Zoom in to fine-tune</button>
       <button class="btn green" id="placeLock" style="width:100%;margin-top:10px">Lock it in</button>
     </div>
@@ -3298,11 +3314,46 @@ const Quiz = {
     return { x: (lon - m.w) / (m.e - m.w) * 100, y: (m.n - lat) / (m.n - m.s) * 100 };
   },
 
-  // only the flat maps can be read backwards, which is why the real distance
-  // in kilometres is reported for those and left off the others
+  /* A point on the picture back into a real latitude and longitude.
+
+     Flat maps invert exactly. The curved ones — America's conic, Europe's
+     azimuthal — have no tidy inverse, so they are solved numerically: run a
+     grid of real positions through the SAME forward formula, keep the
+     closest, then close in around it. Smooth projections, so it settles in a
+     few passes and lands well inside a kilometre.
+
+     Worth doing because "you were 340km out" means something to a room and
+     "6% of the map out" does not. */
   mapLatLon(m, x, y) {
-    if (m.proj !== 'flat') return null;
-    return { lat: m.n - (y / 100) * (m.n - m.s), lon: m.w + (x / 100) * (m.e - m.w) };
+    if (m.proj === 'flat') {
+      return { lat: m.n - (y / 100) * (m.n - m.s), lon: m.w + (x / 100) * (m.e - m.w) };
+    }
+    const box = this.SEARCH[m.proj];
+    if (!box) return null;
+    let n = box.n, s = box.s, w = box.w, e = box.e, best = null;
+    for (let pass = 0; pass < 6; pass++) {
+      const steps = pass === 0 ? 24 : 8;
+      let found = null;
+      for (let i = 0; i <= steps; i++) {
+        for (let j = 0; j <= steps; j++) {
+          const lat = n + (s - n) * (i / steps), lon = w + (e - w) * (j / steps);
+          const at = this.mapXY(m, lat, lon);
+          const d = (at.x - x) * (at.x - x) + (at.y - y) * (at.y - y);
+          if (!found || d < found.d) found = { d: d, lat: lat, lon: lon };
+        }
+      }
+      best = found;
+      const dLat = (s - n) / steps, dLon = (e - w) / steps;
+      n = best.lat - dLat; s = best.lat + dLat;
+      w = best.lon - dLon; e = best.lon + dLon;
+    }
+    return best ? { lat: best.lat, lon: best.lon } : null;
+  },
+
+  // where to look for the curved maps, comfortably wider than each covers
+  SEARCH: {
+    usa:    { n: 52, s: 22, w: -128, e: -64 },
+    europe: { n: 74, s: 32, w: -28,  e: 52 }
   },
 
   kmBetween(a, b) {
@@ -4001,9 +4052,12 @@ const Quiz = {
       });
       Host.pushBoard();
       const best = pins[0];
+      const order = pins.map((p, i) =>
+        (i + 1) + '. ' + esc(p.name) + (p.km != null ? ' — ' + p.km.toLocaleString() + 'km' : '') +
+        (p.pts ? ' (+' + p.pts + ')' : '')).join('<br>');
       $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' +
-        esc(q.answer) + (best ? ' — closest: ' + esc(best.name) + (best.km != null ? ' (' + best.km.toLocaleString() + 'km out)' : '')
-                              : ' — nobody placed a pin');
+        esc(q.answer) + (pins.length ? '<div class="muted" style="margin-top:6px;line-height:1.6">' + order + '</div>'
+                                     : ' — nobody placed a pin');
       if (best) { const v = Host.voiceFor(best.name); Sound.say(best.name + ' was closest', v.voice, v.style); }
       setTimeout(() => this.next(), 6000);
       return;
@@ -4902,6 +4956,11 @@ const Player = {
         clearInterval(this._quizTimer);
         clearInterval(this._quizLead);
         $('quizPanel').classList.add('hidden');
+        // wiped here too, so nothing can survive into the next round even if
+        // this phone misses the next quizStart
+        $('quizPrompt').textContent = ''; $('quizPrompt').classList.add('hidden');
+        $('placeBox').classList.add('hidden');
+        $('placeChart').classList.add('hidden');
         $('buzzBtn').classList.add('hidden');
         const el = $('roundCard');
         let body;
@@ -5041,8 +5100,11 @@ const Player = {
     $('quizCountdown').textContent = '';
     // the question goes up straight away and stays up; the options follow
     const prompt = $('quizPrompt');
+    // Emptied, not merely hidden. A phone that reconnects mid-round never
+    // receives quizStart, so it never ran the clear there and the last
+    // Fastest finger question sat on screen through the following round.
     if (msg.prompt) { prompt.textContent = msg.prompt; prompt.classList.remove('hidden'); }
-    else prompt.classList.add('hidden');
+    else { prompt.textContent = ''; prompt.classList.add('hidden'); }
     // flash the cover, then drop it away — the options only appear afterwards
     // so nobody can sit and compare the picture against the answers
     if (msg.img) {
@@ -5138,6 +5200,8 @@ const Player = {
     this.applyView();
     $('placeZoom').style.display = 'none';
     $('placeZoom').textContent = '🔍 Zoom in to fine-tune';
+    $('placeChart').classList.add('hidden');
+    $('placeChart').innerHTML = '';
     this.vibe([40]);
 
     /* One tap places the pin, and that is enough on its own. Zooming is now
@@ -5440,8 +5504,30 @@ const Player = {
       ? (me.km != null ? 'You were ' + me.km.toLocaleString() + 'km out' + (msg.gained ? ' — ' + msg.gained + ' points' : '')
                        : (msg.gained ? msg.gained + ' points' : 'No points this time'))
       : 'No pin placed';
+    /* Who was closest, in order, with the real distance. The order and the
+       gap between people is the payoff of this round, so it gets a panel of
+       its own rather than one line of text about your own pin. */
+    const medal = i => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.';
+    const chart = $('placeChart');
+    const rows = (msg.pins || []).map((p, i) => {
+      const mine = p.name && this.name && p.name.toLowerCase() === this.name.toLowerCase();
+      const face = p.photo
+        ? '<span class="pc-face"><img src="' + esc(p.photo) + '" alt=""></span>'
+        : '<span class="pc-face">' + esc(p.avatar || '🙂') + '</span>';
+      return '<div class="pc-row' + (mine ? ' me' : '') + '">' +
+             '<span class="pc-pos">' + medal(i) + '</span>' + face +
+             '<span class="pc-name">' + esc(p.name) + (mine ? ' (you)' : '') + '</span>' +
+             '<span class="pc-km">' + (p.km != null ? p.km.toLocaleString() + ' km' : '') + '</span>' +
+             '<span class="pc-pts">' + (p.pts ? '+' + p.pts : '0') + '</span></div>';
+    }).join('');
+    chart.innerHTML = rows
+      ? '<div class="ph">📍 ' + esc(msg.name || 'Closest wins') + '</div>' + rows
+      : '<div class="ph">Nobody placed a pin</div>';
+    chart.classList.remove('hidden');
+
     $('pScore').textContent = (msg.score || 0) + ' pts';
     $('placeLock').classList.add('hidden');
+    $('placeZoom').style.display = 'none';
     wrap.onclick = null;
   },
 
