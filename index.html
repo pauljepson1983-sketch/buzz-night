@@ -2795,12 +2795,30 @@ const Quiz = {
     // one person, one era is just a normal round
     if (eras.length === 1 && here.length === 1) return null;
 
-    // More eras claimed than questions available: keep the most widely
-    // claimed, otherwise the guaranteed-one-each rule overshoots the round
-    // length and builds more questions than the host asked for.
-    let plan = eras.map(e => ({ decade: e, who: claims[e], count: 1 }))
-                   .sort((a, b) => b.who.length - a.who.length)
-                   .slice(0, count);
+    // More eras claimed than questions available: something has to be cut,
+    // and the cut has to be made PER PERSON, not per era. Taking the most
+    // claimed eras off the top gave someone who ticked three decades three
+    // questions and someone who ticked one only a single question. Instead
+    // deal round-robin through the players, so everybody is covered once
+    // before anyone gets a second.
+    let plan;
+    if (eras.length > count) {
+      const queues = here.map(pl => pl.eras.slice().sort((x, y) => claims[y].length - claims[x].length));
+      const picked = [];
+      for (let pass = 0; picked.length < count; pass++) {
+        let tookAny = false;
+        for (const q of queues) {
+          if (picked.length >= count) break;
+          const e = q[pass];
+          if (e && !picked.includes(e)) { picked.push(e); tookAny = true; }
+        }
+        if (!tookAny) break;
+      }
+      plan = picked.map(e => ({ decade: e, who: claims[e], count: 1 }));
+    } else {
+      plan = eras.map(e => ({ decade: e, who: claims[e], count: 1 }))
+                 .sort((a, b) => b.who.length - a.who.length);
+    }
     const totalClaims = plan.reduce((n, x) => n + x.who.length, 0) || 1;
     const left = Math.max(0, count - plan.length);
     plan.forEach(slot => { slot.count += Math.floor(left * (slot.who.length / totalClaims)); });
