@@ -2972,54 +2972,50 @@ const Quiz = {
     return null;
   },
 
-  async verifyShow(name) {
-    this._tvCache = this._tvCache || {};
-    const k = name.toLowerCase();
-    if (k in this._tvCache) return this._tvCache[k];
-    let hit = null;
-    try {
-      const j = await this.tmdb('/search/tv', { query: name });
-      hit = (j.results || [])
-        .filter(r => r.vote_count >= 50 && r.name)
-        .sort((a, b) => b.popularity - a.popularity)[0] || null;
-    } catch (e) {}
-    this._tvCache[k] = hit;
-    return hit;
-  },
 
+  /* Themes come from the curated show list, one lookup per show.
+
+     Before this the round ran six fixed searches and stopped when it had
+     enough, so it saw the same twenty-odd shows every night whatever Seen
+     did with them. Naming the shows ourselves makes the pool as big as the
+     list and puts the choice of programmes in the right hands — British
+     first, cartoons included, American only where it actually aired here.
+
+     Decade is ignored, as it was before: a show's air date is not the same
+     thing as when its theme was released, and the round already ignores it
+     via Night.NO_DECADE. */
   async buildTv(decade, count) {
-    const queries = ['television theme songs', 'tv themes collection', 'classic tv themes',
-                     'original television soundtrack', 'best tv theme tunes', 'cult tv themes'];
-    const lo = decade ? +decade.slice(0, 4) : 0;
-    const hi = decade ? +decade.slice(5) : 9999;
+    const bank = (window.TVSHOWS || []);
+    if (bank.length < 4) throw new Error('The TV show list did not load — check questions.js sits next to index.html.');
+    this.available = bank.length;
 
-    const shows = new Map();
-    for (const q of queries) {
+    const flat = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+    // over-fetch: some shows have no theme on Spotify, and the decoys want
+    // more names than the round has questions
+    const want = count + 8;
+    const picks = Seen.rank('tv', bank.map(s => ({ seenKey: s, label: s, name: s })));
+    const out = [];
+
+    for (const show of picks) {
+      if (out.length >= want) break;
       let res;
-      try { res = await Spot.searchRaw(q); } catch (e) { continue; }
-      for (const t of res.tracks) {
-        if (!t.uri || shows.size >= count + 10) continue;
-        const guess = this.showNameFrom(t.name);
-        if (!guess) continue;
-        const show = await this.verifyShow(guess);
-        if (!show) continue;
-        const yr = +String(show.first_air_date || '').slice(0, 4);
-        // when a decade is set, judge it on when the SHOW aired, not when the
-        // compilation album happened to be released
-        if (decade && (!yr || yr < lo || yr > hi)) continue;
-        const key = show.name.toLowerCase();
-        if (shows.has(key)) continue;
-        shows.set(key, {
-          label: show.name, uri: t.uri, dur: t.duration_ms || 0,
-          url: show.poster_path ? this.TMDB_IMG + show.poster_path : null
-        });
-      }
-      if (shows.size >= count + 10) break;
+      try { res = await Spot.searchRaw(show.name + ' theme'); } catch (e) { continue; }
+      const tracks = (res.tracks || []).filter(t => t.uri);
+      if (!tracks.length) continue;
+      /* Prefer a track that actually names the show. Searching "Bagpuss
+         theme" will happily return something unrelated if nothing matches,
+         and an unrelated tune makes the question unanswerable rather than
+         hard. */
+      const named = flat(show.name);
+      const hit = tracks.find(t => flat(t.name).includes(named))
+               || tracks.find(t => flat(t.album && t.album.name || '').includes(named));
+      if (!hit) continue;
+      out.push({ label: show.name, uri: hit.uri, dur: hit.duration_ms || 0, url: null });
+      $('quizStatus').textContent = 'Finding theme tunes… ' + out.length + ' of ' + want;
     }
-    const list = [...shows.values()];
-    if (list.length < 4) throw new Error('Only found ' + list.length + ' TV themes' + (decade ? ' from that decade' : '') + ' — try Any decade.');
-    this.available = list.length;
-    return list;
+
+    if (out.length < 4) throw new Error('Only found ' + out.length + ' theme tunes — Spotify may be having a moment.');
+    return out;
   },
 
   /* Gathering well-known, playable, correctly-dated songs is the same job for

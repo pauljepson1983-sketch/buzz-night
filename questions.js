@@ -1030,3 +1030,104 @@ window.PLACES.push(
   { name: 'Boldon',           lat: 54.95, lon: -1.44,  map: 'tyne' },
   { name: 'Longbenton',       lat: 55.01, lon: -1.58,  map: 'tyne' }
 );
+
+
+/* ======================================================================
+   TV SHOWS — for the theme tunes round.
+
+   The round used to run six fixed searches against Spotify and stop as soon
+   as it had enough. Same searches, same results, same twenty-odd shows every
+   night, so the same themes kept coming round however long you played.
+
+   Curated instead, the same way the logo round is: the shows are named here
+   and the theme is looked up per show. That makes the pool as big as this
+   list, and puts the choice of shows in the right hands.
+
+   Chosen to Paul's brief:
+     - British shows first, across every decade
+     - cartoons and children's TV count, and are some of the best of them
+     - American shows only where they genuinely aired here — Cheers and
+       Fresh Prince yes, US daytime nobody in Britain saw, no
+
+   Add freely. A show only needs a theme Spotify can find; anything it cannot
+   is skipped at build time rather than breaking the round.
+   ====================================================================== */
+window.TVSHOWS = [
+  /* --- British comedy ------------------------------------------------- */
+  'Only Fools and Horses', 'Blackadder', 'Fawlty Towers', "Dad's Army", 'Porridge',
+  'Yes Minister', 'One Foot in the Grave', 'Keeping Up Appearances', 'Last of the Summer Wine',
+  'Open All Hours', "Some Mothers Do 'Ave 'Em", 'The Vicar of Dibley', 'Absolutely Fabulous',
+  'The Young Ones', 'Bottom', 'Red Dwarf', 'Father Ted', 'Black Books', 'The Office',
+  'The Inbetweeners', 'Gavin and Stacey', 'Peep Show', 'Birds of a Feather', 
+  'Hi-de-Hi', "'Allo 'Allo", 'Are You Being Served', 'Steptoe and Son', 'The Good Life',
+  'Rising Damp', 'Men Behaving Badly', 'Goodnight Sweetheart', 'Outnumbered', 'The Royle Family',
+  'Dinnerladies', 'Two Pints of Lager', 'Gimme Gimme Gimme', 'Spaced', 'The IT Crowd',
+  'Mrs Brown’s Boys', 'Still Game', 'Rab C Nesbitt', 'Bread', 'Just Good Friends',
+
+  /* --- British drama and crime ---------------------------------------- */
+  'Doctor Who', 'Sherlock', 'Downton Abbey', 'Poldark', 'Call the Midwife', 'Casualty',
+  'Holby City', 'The Bill', 'Heartbeat', 'Inspector Morse', 'Midsomer Murders',
+  'A Touch of Frost', 'Prime Suspect', 'Cracker', 'Life on Mars', 'Spooks', 'Luther',
+  'Broadchurch', 'Line of Duty', 'Peaky Blinders', 'Doc Martin', 'Lovejoy', 'Bergerac',
+  'Minder', 'The Professionals', 'The Sweeney', "London's Burning", 'Auf Wiedersehen Pet',
+  'Boon', 'Van der Valk', 'The Onedin Line', 'Howards Way', 'Juliet Bravo', 'Z Cars',
+  'Dixon of Dock Green', 'Softly Softly', 'Jonathan Creek', 'Silent Witness', 'Waking the Dead',
+  'Foyle’s War', 'Vera', 'Shetland', 'Happy Valley', 
+
+  /* --- British soaps --------------------------------------------------- */
+  'Coronation Street', 'EastEnders', 'Emmerdale', 'Brookside', 'Hollyoaks', 'Crossroads',
+  'Family Affairs', 'Take the High Road', 'Doctors',
+
+  /* --- British telly: quiz, panel, sport, factual ----------------------- */
+  'Countdown', 'Blockbusters', 'Bullseye', 'The Krypton Factor', 'Catchphrase',
+  'Family Fortunes', 'Blind Date', 'Gladiators', 'Robot Wars', 'Top Gear',
+  'The Crystal Maze', 'Fifteen to One', 'Mastermind', 'University Challenge',
+  'A Question of Sport', 'Match of the Day', 'Grandstand', 'Ski Sunday', 'Songs of Praise',
+  'Antiques Roadshow', 'Bargain Hunt', 'Homes Under the Hammer', 'The Great British Bake Off',
+  'Strictly Come Dancing', 'The X Factor', 'Pop Idol', 'Big Brother', 'The Apprentice',
+  'Dragons Den', 'Watchdog', 'Crimewatch', 'Panorama', 'Newsround', 'Tomorrow’s World',
+  'Ready Steady Cook', 'Changing Rooms', 'Ground Force', 'Time Team', 'Question of Sport',
+  'Blankety Blank', 'The Generation Game', 'Play Your Cards Right', 'Winner Takes All',
+  '3-2-1', 'Give Us a Clue', 'Through the Keyhole', 'The Chase', 'Pointless', 'Eggheads',
+  'Deal or No Deal', 'Who Wants to Be a Millionaire',
+
+  /* --- British children's TV and cartoons ------------------------------ */
+  'Postman Pat', 'Fireman Sam', 'Thomas the Tank Engine', 'Bagpuss', 'The Clangers',
+  'Danger Mouse', 'Count Duckula', 'SuperTed', 'Bananaman', 'Willo the Wisp', 'Roobarb',
+  'Mr Benn', 'Camberwick Green', 'Trumpton', 'Rainbow', 'Play School', 'Blue Peter',
+  'Tiswas', 'Byker Grove', 'Grange Hill', 'Press Gang', 'The Wombles', 'Paddington',
+  'Rentaghost', 'Knightmare', 'Round the Twist', 'Teletubbies', 'Tweenies', 'Balamory',
+  'In the Night Garden', 'Peppa Pig', 'Bob the Builder', 'Pingu', 'Wallace and Gromit',
+  'Captain Pugwash', 'Ivor the Engine', 'Chorlton and the Wheelies', 'Jamie and the Magic Torch',
+  'Ludwig', 'The Magic Roundabout', 'Noggin the Nog', 'The Trap Door', 'Button Moon',
+  'Fingerbobs', 'Hector’s House', 'The Herbs', 'Jackanory', 'Record Breakers',
+  'Why Don’t You', 'Art Attack', 'Fun House', 'Get Your Own Back', 'ChuckleVision',
+  'The Demon Headmaster', 'The Queen’s Nose', 'Maid Marian and her Merry Men',
+  'Dogtanian and the Three Muskehounds', 'Around the World with Willy Fog',
+  'The Mysterious Cities of Gold', 'Ulysses 31', 'Battle of the Planets',
+
+  /* --- American, but genuinely shown here ------------------------------ */
+  'Friends', 'Cheers', 'Frasier', 'Seinfeld', 'The Fresh Prince of Bel-Air', 'Happy Days',
+  'M*A*S*H', 'Dallas', 'Dynasty', 'Knight Rider', 'The A-Team', 'Baywatch', 'Magnum P.I.',
+  'Hawaii Five-O', 'Star Trek', 'The X-Files', 'Buffy the Vampire Slayer', 'ER', 'Scrubs',
+  'House', 'Lost', '24', 'Prison Break', 'Dexter', 'Breaking Bad', 'Game of Thrones',
+  'The Sopranos', 'Sex and the City', 'Desperate Housewives', 'Gilmore Girls',
+  'Malcolm in the Middle', 'Sabrina the Teenage Witch', 'Saved by the Bell', 'The Waltons',
+  'Little House on the Prairie', 'Bewitched', 'I Dream of Jeannie', 'The Addams Family',
+  'The Munsters', 'Mission Impossible', 'The Twilight Zone', 'Columbo', 'Kojak',
+  'Starsky and Hutch', 'Charlie’s Angels', 'The Dukes of Hazzard', 'The Incredible Hulk',
+  'Airwolf', 'The Fall Guy', 'Quantum Leap', 'MacGyver', 'The Six Million Dollar Man',
+  'Roseanne', 'Home Improvement', 'Married with Children', 'The Golden Girls', 'Taxi',
+
+  /* --- American cartoons that were all over British telly --------------- */
+  'The Simpsons', 'Family Guy', 'South Park', 'Futurama', 'Scooby-Doo', 'Tom and Jerry',
+  'The Flintstones', 'The Jetsons', 'Yogi Bear', 'Top Cat', 'Wacky Races',
+  'Dastardly and Muttley', 'The Pink Panther', 'Looney Tunes', 'Teenage Mutant Ninja Turtles',
+  'Thundercats', 'He-Man and the Masters of the Universe', 'Transformers', 'DuckTales',
+  'Rugrats', 'SpongeBob SquarePants', 'Dexter’s Laboratory', 'Johnny Bravo',
+  'The Powerpuff Girls', 'Ren and Stimpy', 'Animaniacs', 'Pinky and the Brain',
+  'Batman The Animated Series', 'X-Men', 'Pokemon', 'Inspector Gadget',
+  'The Real Ghostbusters', 'Muppet Babies', 'The Muppet Show', 'Sesame Street',
+  'Captain Planet', 'Biker Mice from Mars', 'Sonic the Hedgehog', 'Rocko’s Modern Life',
+  'Hey Arnold', 'Doug', 'The Wacky World of Tex Avery'
+];
