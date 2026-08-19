@@ -6,6 +6,9 @@
 <title>Buzz Night — Music &amp; TV Quiz</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- Written question bank. Local file, no build step, loads off the hard
+     drive as well as off Pages. Missing = only this round breaks. -->
+<script src="questions.js"></script>
 <style>
   :root {
     --bg: #14082b;
@@ -511,6 +514,7 @@
             <option value="faces">Famous faces</option>
             <option value="songs">Name the song (music)</option>
             <option value="tv">TV theme tunes (music)</option>
+            <option value="quickfire">Fastest finger (general knowledge)</option>
             <option value="guess">Closest wins (numbers)</option>
             <option value="years">Year of release (music)</option>
             <option value="themes">Film themes (music)</option>
@@ -669,6 +673,10 @@
   <div id="quizPanel" class="hidden">
     <div id="quizRound"></div>
     <div id="quizProgress" class="muted"></div>
+    <!-- Written questions need the words on screen. Shown as soon as the
+         question arrives and left up while the clock runs — unlike the
+         cover art, which deliberately drops away. -->
+    <div id="quizPrompt" class="hidden" style="font-size:1.15rem;font-weight:600;line-height:1.35;margin:6px 0 12px;text-align:center"></div>
     <div id="quizArtWrap"><img id="quizArt" alt="album cover"></div>
     <div id="quizCountdown"></div>
     <div id="quizOptions"></div>
@@ -2948,11 +2956,82 @@ const Quiz = {
     return vals.reduce((n, i) => n + i, 0) / vals.length / (span.length - 1);
   },
 
+  /* The written bank. Unlike every other round, the decoys are written
+     alongside the question rather than pulled from the pool — "which of
+     these is a true berry" only works because the three wrong options were
+     chosen to be wrong, and a decoy picked at random would often be right.
+
+     Dealt round-robin across categories for the same reason buildGuess is:
+     the bank is lopsided (nineteen weird-but-true, six about words), so a
+     straight pick off the top gives a round of one subject. */
+  buildQuickfire(count) {
+    const bank = (window.QUESTIONS || []);
+    if (bank.length < 4) throw new Error('The question bank did not load — check questions.js sits next to index.html.');
+    this.available = bank.length;
+
+    const byCat = {};
+    Seen.rank('quickfire', bank.map(item => ({ ...item, seenKey: item.id })))
+      .forEach(item => (byCat[item.cat] = byCat[item.cat] || []).push(item));
+
+    const picks = [];
+    const cats = this.shuffle(Object.keys(byCat));
+    const used = {};
+    for (let i = 0; picks.length < count; i++) {
+      const cat = cats[i % cats.length];
+      const item = byCat[cat][used[cat] || 0];
+      used[cat] = (used[cat] || 0) + 1;
+      if (!item) {
+        if (cats.every(c => (used[c] || 0) >= byCat[c].length)) break;   // bank exhausted
+        continue;
+      }
+      const options = this.shuffle([item.a, ...item.w]);
+      picks.push({
+        seenKey: item.id, label: item.id, kind: 'quickfire',
+        prompt: item.q, answer: item.a, options, correct: options.indexOf(item.a)
+      });
+    }
+    return picks;
+  },
+
+  /* Where a category sits on the old-to-new axis. Checks the built-in table
+     first, then the written bank, then falls back to 0.5 — "belongs to
+     everybody", which is the right default for anything general knowledge. */
+  vintageOf(kind) {
+    if (this.GUESS_VINTAGE[kind] != null) return this.GUESS_VINTAGE[kind];
+    const written = (window.CLOSEST || {})[kind];
+    if (written && written.vintage != null) return written.vintage;
+    return 0.5;
+  },
+
   buildGuess(count) {
     const pool = [];
     this.GUESS_KINDS.forEach(k => (FACTS[k.key] || []).forEach(([name, value]) => {
       pool.push({ seenKey: k.key + ':' + name, label: name, prompt: k.q(name), answer: k.conv(value), unit: k.unit });
     }));
+
+    /* The written bank from questions.js, merged in here rather than copied
+       into FACTS. Two shapes, because they genuinely are two shapes:
+
+       CLOSEST categories share one question template and one unit, exactly
+       like the FACTS categories above — "how tall is X, in metres".
+
+       CLOSEST_ONEOFFS can't. A giraffe's neck bones are a count, a whale's
+       tongue is kilograms, the shortest war is minutes; there is no shared
+       wording to template. They all share the single kind 'oneoff' so they
+       take ONE slot in the category rotation below — as nineteen separate
+       kinds they would crowd out every real category. */
+    Object.entries(window.CLOSEST || {}).forEach(([key, cat]) => {
+      (cat.items || []).forEach(([name, value]) => {
+        // conv lets a category store its natural unit and ask in another —
+        // heights are held in metres and asked in feet, same as `buildings`
+        pool.push({ seenKey: key + ':' + name, label: name, prompt: cat.q(name),
+                    answer: cat.conv ? cat.conv(value) : value, unit: cat.unit });
+      });
+    });
+    (window.CLOSEST_ONEOFFS || []).forEach(item => {
+      pool.push({ seenKey: 'oneoff:' + item.q, label: item.q, prompt: item.q, answer: item.a, unit: item.unit });
+    });
+
     if (pool.length < 4) throw new Error('Fact bank is empty.');
     this.available = pool.length;
 
@@ -3001,7 +3080,7 @@ const Quiz = {
            closer to 0.5 than the other's. Neutral categories now go round the
            room in turn; only the ones that genuinely lean modern are matched
            to a person. */
-        const v = this.GUESS_VINTAGE[kind] ?? 0.5;
+        const v = this.vintageOf(kind);
         if (Math.abs(v - 0.5) < 0.1) {
           q.forWhom = [here[picks.length % here.length].name];
         } else {
@@ -3038,6 +3117,7 @@ const Quiz = {
   async buildChunk(decade, count, style, extra, label) {
     const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
     // closest-wins comes from the baked fact bank, not from a decade search
+    if (this.mode === 'quickfire') return this.buildQuickfire(count);
     if (this.mode === 'guess') return this.buildGuess(count);
     if (this.mode === 'tv') return this.toQuestions(await this.buildTv(decade, count), count);
     if (this.mode === 'songs') return await this.buildSongs(decade, count, style, extra);
@@ -3118,6 +3198,9 @@ const Quiz = {
     if (this.mode === 'covers' && !topic) { alert('Pick a decade or a style first (or type something in the Also box).'); return false; }
     const count = c.count;
     this.flashMs = c.flash;
+    // written questions want reading time before the options appear, and
+    // the host's flash slider is set up for cover art, not words
+    if (this.mode === 'quickfire') this.flashMs = 2500;
     this.seconds = c.secs;
     this.startAt = c.startAt || 'skip';
     this.crop = c.crop || 'crop';
@@ -3126,9 +3209,14 @@ const Quiz = {
     btn.disabled = true;
     $('quizStatus').textContent = 'Finding albums and blanking out the text…';
     const decadeLabel = decade ? decade.slice(0, 4) + 's' : '';
+    // Everything that wasn't covers used to fall through to "films", so the
+    // host line read "10 questions from films" on the closest-wins round too.
+    // Only the picture and music rounds actually come from films.
+    const SOURCE = { quickfire: 'the question bank', guess: 'the fact bank' };
     const label = this.mode === 'covers'
       ? ([style, extra, decadeLabel].filter(Boolean).join(', ') || 'that')
-      : ('films' + (decadeLabel ? ', ' + decadeLabel : ''));
+      : SOURCE[this.mode]
+      || ('films' + (decadeLabel ? ', ' + decadeLabel : ''));
     try {
       let qs;
       const plan = this.MIXABLE.includes(this.mode) ? this.eraPlan(count) : null;
@@ -3155,7 +3243,7 @@ const Quiz = {
         qs = await this.buildChunk(decade, count, style, extra, label);
       }
 
-      if (this.mode === 'guess') {
+      if (this.mode === 'quickfire' || this.mode === 'guess') {
         this.questions = qs;
       } else if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) {
         this.questions = qs.filter(q => q.uri);
@@ -3260,9 +3348,12 @@ const Quiz = {
       songs: 'A song plays and four song titles appear on the phones. The classic music round. Decade applies; style narrows it.',
       tv: 'A TV theme tune plays and four shows appear. Show names are checked against TMDB, so what you get is a real programme. Decade filters on when the SHOW aired; style is ignored.',
       years: 'A song plays and four years appear. Decade applies; style narrows it. Remasters are filtered out so the dates are honest.',
+      quickfire: 'A written question appears, then four answers a moment later. Fastest correct answer takes the most points. Decade and flavour are ignored — it reads the question bank in questions.js.',
       faces: 'A face flashes up and four names appear — drawn from the cast of well-known films, so they are people the room will know. Crop into it makes it much harder. Decade applies; style is ignored. Faces from TMDB.'
     };
     $('quizBlurb').textContent = blurbs[m] || blurbs.covers;
+    // quickfire falls out of filmMode already — it reads a written bank, so
+    // neither the flavour box nor the topic box applies to it
     const filmMode = !['covers', 'years', 'songs'].includes(m);
     $('quizStyle').disabled = filmMode;
     $('quizTopic').disabled = filmMode;
@@ -3512,11 +3603,12 @@ const Quiz = {
   // actually being played, so players could not tell what round they were in.
   TITLES: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
-    songs: '🎧 Name the song', tv: '📺 TV theme tunes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces'
+    songs: '🎧 Name the song', tv: '📺 TV theme tunes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces',
+    quickfire: '⚡ Fastest finger'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
-    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face'
+    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question'
   },
   HOWTO: {
     covers: 'A cover flashes up, then four albums. Pick the right one.',
@@ -3526,7 +3618,8 @@ const Quiz = {
     tv: 'Listen to the theme tune, then pick the TV show.',
     guess: 'Type your best guess. Closest to the real number wins it.',
     years: 'Listen, then pick the year it came out.',
-    faces: 'A face flashes up, then four names. Quick!'
+    faces: 'A face flashes up, then four names. Quick!',
+    quickfire: 'Read the question, then four answers appear. Fastest right answer wins it.'
   },
 
   ROUND_NAMES: {
@@ -3536,7 +3629,8 @@ const Quiz = {
     tv: 'TV themes round',
     guess: 'closest wins round',
     years: 'year of release round',
-    faces: 'famous faces round'
+    faces: 'famous faces round',
+    quickfire: 'fastest finger round'
   },
 
   stop() {
@@ -3757,7 +3851,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', buzzer: '🔔 Buzzer round (you judge)'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', buzzer: '🔔 Buzzer round (you judge)'
   },
 
   load() {
@@ -3817,7 +3911,9 @@ const Night = {
     // Closest-wins reads none of it either: it draws on a fact bank, and the
     // era system steers it by category instead. Showing "Closest wins — 2010s"
     // in the running order just implies something the round never does.
-    if (mode === 'tv' || mode === 'guess') decade = '';
+    // Fastest finger reads a written bank, so a decade would be a label
+    // promising a filter the round never applies.
+    if (mode === 'tv' || mode === 'guess' || mode === 'quickfire') decade = '';
     const style = $('quickStyle').value;
     return {
       mode, decade,
@@ -4305,6 +4401,10 @@ const Player = {
     $('quizFeedback').textContent = '';
     $('quizOptions').innerHTML = '';
     $('quizCountdown').textContent = '';
+    // the question goes up straight away and stays up; the options follow
+    const prompt = $('quizPrompt');
+    if (msg.prompt) { prompt.textContent = msg.prompt; prompt.classList.remove('hidden'); }
+    else prompt.classList.add('hidden');
     // flash the cover, then drop it away — the options only appear afterwards
     // so nobody can sit and compare the picture against the answers
     if (msg.img) {
