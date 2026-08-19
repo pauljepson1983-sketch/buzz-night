@@ -28,6 +28,9 @@
   #verdict { margin-top: 12px; font-size: 1.1rem; font-weight: 800; line-height: 1.35 }
   .good { color: #21d07a } .half { color: #ffd83d } .bad { color: #ff6b8a }
   .note { font-size: .8rem; opacity: .65; margin-top: 10px; line-height: 1.4 }
+  #why { margin-top: 14px; font-size: .85rem; line-height: 1.7;
+         background: rgba(0,0,0,.28); border-radius: 10px; padding: 12px }
+  #why:empty { display: none }
   ol { padding-left: 20px; line-height: 1.6; font-size: .9rem }
   code { background: rgba(0,0,0,.35); padding: 1px 5px; border-radius: 5px; font-size: .85em }
 </style>
@@ -49,6 +52,7 @@ players — just this. Open it on the phone you would actually play on.</p>
 
 <div id="heard"></div>
 <div id="verdict"></div>
+<div id="why"></div>
 <p class="note" id="support"></p>
 
 <div class="card" style="margin-top:20px">
@@ -140,6 +144,21 @@ function mark(guesses) {
   else if (gotT)    { v.textContent = '🟡 HALF — got the song, missed the artist.'; v.className = 'half'; }
   else if (gotA)    { v.textContent = '🟡 HALF — got the artist, missed the song.'; v.className = 'half'; }
   else              { v.textContent = '❌ NOTHING — that would be marked wrong.'; v.className = 'bad'; }
+
+  /* Show the actual comparison. "It heard me but not the song" can mean the
+     phone misheard, or that the matching was too strict — and those need
+     opposite fixes. This makes it obvious which. */
+  const best = guesses[0] || '';
+  const hs = squash(best), ts = squash(title), as = squash(artist);
+  $('why').innerHTML =
+    '<b>What it actually compared</b><br>' +
+    'you said → <code>' + (hs || '(nothing)') + '</code><br>' +
+    'song is  → <code>' + ts + '</code>  ' + (gotT ? '✅ matched' : '❌ not found') + '<br>' +
+    'artist is → <code>' + as + '</code>  ' + (gotA ? '✅ matched' : '❌ not found') +
+    (!gotT && hs ? '<br><span style="opacity:.7">closest the song got: ' +
+       Math.min(...Array.from({length: Math.max(1, hs.length - ts.length + 5)},
+         (_, i) => lev(hs.substr(i, ts.length), ts))) +
+       ' letters out (needs ' + (ts.length <= 8 ? 1 : ts.length <= 16 ? 2 : 3) + ' or fewer)</span>' : '');
 }
 
 $('say').onclick = () => {
