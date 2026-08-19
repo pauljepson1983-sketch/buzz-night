@@ -433,6 +433,12 @@
   #bnType { width: 100%; margin-top: 10px; padding: 12px; border-radius: 10px; font-size: 1rem;
             border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.3); color: #fff }
   @media (prefers-reduced-motion: reduce) { #bnMic.listening { animation: none } }
+  /* Per-round era and flavour pickers in the running order. */
+  .night-row { flex-wrap: wrap }
+  .night-opts { flex-basis: 100%; display: flex; gap: 6px; margin-top: 6px; padding-left: 30px }
+  .night-opts select { flex: 1; min-width: 0; font-size: .8rem; padding: 4px 6px;
+                       border-radius: 8px; background: rgba(0,0,0,.3); color: #fff;
+                       border: 1px solid rgba(255,255,255,.2) }
 </style>
 </head>
 <body>
@@ -4969,6 +4975,18 @@ const Night = {
 
   // which modes actually read the style/flavour word
   STYLE_USED_BY: ['covers', 'years', 'songs', 'buzzname'],
+
+  /* Read off the flavour boxes rather than keeping a second copy here to
+     drift out of step. The round-setup box carries the full two dozen; the
+     one at the top of the running order is a short list of favourites, and
+     using that left a per-round picker offering six styles when the game
+     knows twenty-four. Take whichever is longer. */
+  get STYLES() {
+    const lists = ['quizStyle', 'quickStyle']
+      .map(id => $(id) ? [...$(id).options].map(o => o.value).filter(Boolean) : [])
+      .sort((a, b) => b.length - a.length);
+    return lists[0] || [];
+  },
   DECADES: ['1960-1969', '1970-1979', '1980-1989', '1990-1999', '2000-2009', '2010-2019', '2020-2029'],
 
   randomDecade() { return this.DECADES[Math.floor(Math.random() * this.DECADES.length)]; },
@@ -5098,6 +5116,21 @@ const Night = {
   },
   addBuzzer() { this.plan.push({ mode: 'buzzer' }); this.save(); this.render(); },
   remove(i) { this.plan.splice(i, 1); this.save(); this.render(); },
+  /* Change one round's era or flavour without touching the rest. */
+  setField(i, field, value) {
+    const r = this.plan[i];
+    if (!r) return;
+    r[field] = value;
+    // covers searches on the words it is given, so with neither an era nor a
+    // flavour there is nothing to search for and the round cannot build
+    if (r.mode === 'covers' && !r.decade && !r.style && !r.extra) {
+      r.decade = this.randomDecade();
+      $('nightStatus').textContent = 'Album covers needs an era or a flavour to search on, so it has been given one.';
+    }
+    this.save();
+    this.render();
+  },
+
   move(i, d) {
     const j = i + d;
     if (j < 0 || j >= this.plan.length) return;
@@ -5114,14 +5147,39 @@ const Night = {
     if (!this.plan.length) {
       el.innerHTML = '<p class="muted" style="font-size:.85rem">No rounds yet.</p>';
     } else {
+      /* Each round gets its own era and flavour, set here rather than
+         inherited from the boxes at the top the moment it was added. A night
+         can now be britpop for one round and motown for the next without
+         clearing the whole thing and starting over.
+
+         Only shown where the round actually reads them — offering a flavour
+         to the logo round would just imply something that never happens. */
+      const DECADES = [['', 'Any era'], ['1960-1969', '1960s'], ['1970-1979', '1970s'],
+        ['1980-1989', '1980s'], ['1990-1999', '1990s'], ['2000-2009', '2000s'],
+        ['2010-2019', '2010s'], ['2020-2029', '2020s']];
       el.innerHTML = this.plan.map((r, i) => {
         const now = this.running && i === this.idx;
+        const locked = this.running;
+        const usesEra = !this.NO_DECADE.includes(r.mode) && r.mode !== 'buzzer';
+        const usesStyle = this.STYLE_USED_BY.includes(r.mode);
+        const opts = (list, chosen) => list.map(o => {
+          const val = Array.isArray(o) ? o[0] : o, lab = Array.isArray(o) ? o[1] : (o || 'Any style');
+          return '<option value="' + esc(val) + '"' + (val === (chosen || '') ? ' selected' : '') + '>' + esc(lab) + '</option>';
+        }).join('');
+        const styleList = [''].concat(this.STYLES || []);
+        const pickers = (usesEra || usesStyle) && !locked
+          ? '<div class="night-opts">' +
+              (usesEra ? '<select onchange="Night.setField(' + i + ',\'decade\',this.value)">' + opts(DECADES, r.decade) + '</select>' : '') +
+              (usesStyle ? '<select onchange="Night.setField(' + i + ',\'style\',this.value)">' + opts(styleList, r.style) + '</select>' : '') +
+            '</div>'
+          : '';
         return '<div class="night-row' + (now ? ' now' : '') + '">' +
           '<span class="night-n">' + (i + 1) + '</span>' +
           '<span class="night-desc">' + esc(this.describe(r)) + '</span>' +
           '<button class="btn small ghost" onclick="Night.move(' + i + ',-1)">↑</button>' +
           '<button class="btn small ghost" onclick="Night.move(' + i + ',1)">↓</button>' +
           '<button class="btn small ghost" onclick="Night.remove(' + i + ')">✕</button>' +
+          pickers +
           '</div>';
       }).join('');
     }
