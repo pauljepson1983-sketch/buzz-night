@@ -3544,7 +3544,12 @@ const Quiz = {
     // already running — people were still looking down when the recognisable
     // bit played. A three-count gives the room a moment to listen up, and the
     // answer clock only starts once the track is actually playing.
-    const leadIn = audioRound ? 3000 : 0;
+    // The first question of a round follows the 3-2-1-GO count-in, which has
+    // just done this job — running both put roughly six and a half seconds of
+    // apparently nothing between pressing Start Round and any music, which
+    // read as the round having failed to start. Questions two onwards keep
+    // their count, because there the room IS mid-round and needs the warning.
+    const leadIn = audioRound ? (this.idx === 0 ? 0 : 3000) : 0;
     this.endsAt = Date.now() + flash + leadIn + this.seconds * 1000;
     // Film scores open with slow builds — starting at 0:00 meant a round of
     // atmospheric strings nobody could place inside the answer window. Skip
