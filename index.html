@@ -2577,10 +2577,23 @@ const Quiz = {
   /* ---- question building ---- */
   async build(topic, count, label) {
     const { tracks } = await Spot.searchRaw(topic);
+    // Best-known first. Spotify's search ranks on text relevance, so without
+    // this an obscure track can outrank the famous album, the same way the
+    // year-of-release round had to rank on popularity to stop returning
+    // album tracks nobody has heard.
+    const ranked = tracks.slice().sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+
     // one entry per album, and dedupe on name+artist so remasters and
     // re-releases can't appear as two identical options
-    const seen = new Set(), seenArt = new Set(), albums = [];
-    tracks.forEach(t => {
+    const seen = new Set(), seenArt = new Set(), albums = [], spare = [];
+    const perArtist = {};
+    // Same failure the film stills round had, where nine of ten were Spider-
+    // Man: nothing stopped one artist filling the pool, so a britpop search
+    // could come back six-sevenths Oasis and the four options on a question
+    // were drawn from that same lopsided pool. Two per artist is the cap,
+    // matching the faces round's two-cast-members-per-film rule.
+    const MAX_PER_ARTIST = 2;
+    ranked.forEach(t => {
       const al = t.album, artist = (t.artists || []).map(a => a.name).join(', ');
       if (!al || !al.name || !al.images?.length) return;
       const key = (al.name + '|' + artist).toLowerCase().replace(/\s*[\(\[].*$/, '').trim();
@@ -2592,8 +2605,23 @@ const Quiz = {
       seen.add(key); seenArt.add(art);
       // "(2019 Remaster)" and friends just clutter the four options
       const clean = al.name.replace(/\s*[\(\[][^)\]]*(remaster|deluxe|edition|version|expanded|anniversary|reissue|mono|stereo)[^)\]]*[\)\]]\s*$/i, '').trim();
-      albums.push({ label: (clean || al.name) + ' — ' + artist, url: al.images[0].url });
+      const entry = { label: (clean || al.name) + ' — ' + artist, url: al.images[0].url };
+      // cap on the PRIMARY artist, or "Oasis" and "Oasis, Noel Gallagher"
+      // count as two different acts and the cap does nothing
+      const primary = (((t.artists || [])[0] || {}).name || '').toLowerCase();
+      if ((perArtist[primary] || 0) >= MAX_PER_ARTIST) { spare.push(entry); return; }
+      perArtist[primary] = (perArtist[primary] || 0) + 1;
+      albums.push(entry);
     });
+    // A narrow search can genuinely be mostly one artist, so the cap gives
+    // way rather than letting the round fail — but ONLY down to the four
+    // albums a single question needs. Topping up to the full count instead
+    // refilled the pool with the very artist just capped: a britpop search
+    // came back with four Oasis in a ten-question round, which is the
+    // problem this was meant to fix. A short round of varied albums is
+    // better, and the host line already says when it came up short.
+    while (albums.length < 4 && spare.length) albums.push(spare.shift());
+
     if (albums.length < 4) throw new Error('Only found ' + albums.length + ' albums for ' + (label || topic) + ' — too narrow to make a round. Widen the decade or style.');
     this.available = albums.length;
 
