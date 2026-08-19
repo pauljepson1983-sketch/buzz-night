@@ -1042,6 +1042,7 @@ const App = {
     $('clientIdInput').value = store.get('spotify_client_id') || '';
     Spot.updateStatus();
     this.offerResume();
+    this.restoreNight();
     this.showView('hostSetup');
   },
 
@@ -1088,6 +1089,14 @@ const App = {
   },
   // say what the big button will actually do before they press it, and open
   // the setup panel by itself the first time, when Spotify isn't connected yet
+  /* The running order used to be read back only when the room opened. If
+     PeerJS was slow or failed, or the page reloaded mid-night, the host was
+     shown "Nothing planned yet" while a perfectly good night sat in storage —
+     and rebuilding it by hand is the last thing anyone wants mid-party. */
+  restoreNight() {
+    try { if (window.Night && !Night.plan.length) Night.load(); } catch (e) {}
+  },
+
   describeQuickStart() {
     let plan = [];
     try { plan = JSON.parse(store.get('night_plan') || '[]') || []; } catch (e) {}
@@ -1943,7 +1952,8 @@ const Host = {
       $('joinUrl').textContent = url;
       $('waShare').href = 'https://wa.me/?text=' + encodeURIComponent('🎶 Buzz Night quiz is on! Grab your buzzer: ' + url + ' (room code ' + this.roomCode + ')');
       Sound.initPickers();
-      Night.load();
+      Night.load();   // also loaded at startup, so a room that fails to open
+                      // does not leave the host staring at an empty night
       Hall.render();
       Seen.render();
       if (this._afterOpen) { const fn = this._afterOpen; this._afterOpen = null; try { fn(); } catch (e) {} }
@@ -3478,6 +3488,31 @@ const Quiz = {
   },
 
   // resolves when the whole round has finished, so rounds can be chained
+  /* Every delayed step inside a round goes through here.
+
+     Rounds used to book their own setTimeouts and keep no handle, so stopping
+     a round could not cancel them. next() checks `active`, which does protect
+     the round being stopped — but the moment the NEXT round starts, `active`
+     is true again and a timer left over from the dead round fires into it. It
+     moves that round on a question, and if that was the last question it ends
+     the round outright, which hands the running order on to the one after.
+     Press Skip round once mid-round and the rest of the night falls over like
+     dominoes, which is exactly what happened.
+
+     Each round now carries a number. A timer remembers the number it was
+     booked under and does nothing if the round has moved on since. */
+  later(ms, fn) {
+    const run = this.runId;
+    const h = setTimeout(() => { if (this.runId === run && this.active) fn(); }, ms);
+    (this._timers = this._timers || []).push(h);
+    return h;
+  },
+
+  clearTimers() {
+    (this._timers || []).forEach(clearTimeout);
+    this._timers = [];
+  },
+
   runRound(cfg) {
     return new Promise(resolve => {
       this.onFinish = () => { this.onFinish = null; resolve(true); };
@@ -3935,7 +3970,7 @@ const Quiz = {
     } else {
       Sound.say('Nobody had that one. It was ' + q.answer + ', by ' + (q.artist || 'someone'));
     }
-    setTimeout(() => this.next(), 5200);
+    this.later(5200, () => this.next());
   },
 
   buildQuickfire(count) {
@@ -4287,6 +4322,10 @@ const Quiz = {
         this.questions = qs.filter(q => q.img);
         if (!this.questions.length) throw new Error('Could not prepare any ' + noun + 's.');
       }
+      // a new number for this round, so anything still pending from the last
+      // one is ignored rather than fired into this one
+      this.runId = (this.runId || 0) + 1;
+      this.clearTimers();
       this.active = true; this.idx = -1; this.roundGains = {};
       // banked here rather than per question, so a round abandoned halfway
       // still counts as used and won't come straight back next time
@@ -4497,7 +4536,7 @@ const Quiz = {
       (away ? ', ' + away + ' away' : '') + ')</span>';
     if (inCount >= here && here > 0) {
       clearTimeout(this.tick); clearTimeout(this._closing);
-      this._closing = setTimeout(() => this.close(), 250);
+      this._closing = this.later(250, () => this.close());
     }
   },
 
@@ -4510,7 +4549,7 @@ const Quiz = {
     if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
     Host.broadcast({ type: 'quizSkip' });
     $('quizHostView').innerHTML = '<span class="muted">Question skipped.</span>';
-    setTimeout(() => this.next(), 700);
+    this.later(700, () => this.next());
   },
 
   guess(peerId, n, value) {
@@ -4645,7 +4684,7 @@ const Quiz = {
             ' — ' + worst.km.toLocaleString() + ' kilometres out', wv.voice, wv.style), 2400);
         }
       }
-      setTimeout(() => this.next(), 6000);
+      this.later(6000, () => this.next());
       return;
     }
     if (q && q.kind === 'guess') {
@@ -4666,7 +4705,7 @@ const Quiz = {
         const v = Host.voiceFor(board[0].name);
         Sound.say(board[0].name + ' was closest', v.voice, v.style);
       }
-      setTimeout(() => this.next(), 5000);
+      this.later(5000, () => this.next());
       return;
     }
     Object.entries(Host.players).forEach(([id, p]) => {
@@ -4681,11 +4720,15 @@ const Quiz = {
     Host.pushBoard();
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' +
       esc(q.title ? q.answer + ' — ' + q.title : q.answer);
-    setTimeout(() => this.next(), 2600);
+    this.later(2600, () => this.next());
   },
 
   finish() {
     this.active = false;
+    // bump the number first: anything already queued belongs to a round that
+    // no longer exists and must not fire into the next one
+    this.runId = (this.runId || 0) + 1;
+    this.clearTimers();
     clearTimeout(this.tick);
     clearTimeout(this.bnTimer);
     this.bnHolder = null;
@@ -4826,6 +4869,10 @@ const Quiz = {
   stop() {
     if (!this.active) { $('quizStatus').textContent = 'No round running.'; return; }
     this.active = false;
+    // bump the number first: anything already queued belongs to a round that
+    // no longer exists and must not fire into the next one
+    this.runId = (this.runId || 0) + 1;
+    this.clearTimers();
     clearTimeout(this.tick);
     clearTimeout(this.bnTimer);
     this.bnHolder = null;
