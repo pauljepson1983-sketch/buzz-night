@@ -2834,7 +2834,26 @@ const Quiz = {
     }));
     if (pool.length < 4) throw new Error('Fact bank is empty.');
     this.available = pool.length;
-    const picks = Seen.rank('guess', pool).slice(0, Math.min(count, pool.length));
+
+    // Deal across the categories rather than taking the best of one flat list.
+    // Populations are 166 of the 238 facts, so a straight pick gave a round of
+    // "how many people live in" with the occasional year — the opposite of the
+    // variety this round is for.
+    const byKind = {};
+    Seen.rank('guess', pool).forEach(f => {
+      const k = f.seenKey.split(':')[0];
+      (byKind[k] = byKind[k] || []).push(f);
+    });
+    const queues = this.shuffle(Object.values(byKind));
+    const picks = [];
+    for (let round = 0; picks.length < count; round++) {
+      let took = false;
+      for (const qq of queues) {
+        if (picks.length >= count) break;
+        if (qq[round]) { picks.push(qq[round]); took = true; }
+      }
+      if (!took) break;
+    }
     // spread the categories out rather than ten populations in a row
     return this.shuffle(picks).map(f => ({
       kind: 'guess', prompt: f.prompt, answer: f.answer, unit: f.unit,
