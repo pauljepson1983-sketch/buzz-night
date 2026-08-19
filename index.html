@@ -2974,7 +2974,7 @@ const Quiz = {
       .forEach(item => (byCat[item.cat] = byCat[item.cat] || []).push(item));
 
     const picks = [];
-    const cats = this.shuffle(Object.keys(byCat));
+    const cats = this.rotation(Object.keys(byCat));
     const used = {};
     for (let i = 0; picks.length < count; i++) {
       const cat = cats[i % cats.length];
@@ -2996,6 +2996,37 @@ const Quiz = {
   /* Where a category sits on the old-to-new axis. Checks the built-in table
      first, then the written bank, then falls back to 0.5 — "belongs to
      everybody", which is the right default for anything general knowledge. */
+  /* Home advantage.
+
+     Every category otherwise gets exactly one slot per rotation, so Tyneside
+     came up about once in a ten-question round however many local questions
+     existed — competing on equal footing with 'words', which has six. Adding
+     more local material made the local question more varied, not more
+     frequent, which was not what it was written for.
+
+     HOME_SHARE names the share of a round a category should take. Keys are
+     the quickfire category and the closest-to kind. */
+  HOME_SHARE: { local: 0.2, localyear: 0.2 },
+
+  /* Turns those shares into extra slots in the rotation. With n extra slots
+     among the other categories, the weighted one takes n/(others+n) of the
+     round, so n = share x others / (1 - share). At 0.2 with nine other
+     categories that is two slots in eleven — a shade under 2 in 10, and it
+     holds as categories are added rather than drifting the way a fixed
+     "repeat it twice" would. */
+  rotation(keys) {
+    const home = keys.filter(k => this.HOME_SHARE[k]);
+    const others = keys.filter(k => !this.HOME_SHARE[k]);
+    if (!home.length || !others.length) return this.shuffle(keys.slice());
+    const out = others.slice();
+    home.forEach(k => {
+      const share = Math.min(0.9, this.HOME_SHARE[k]);
+      const n = Math.max(1, Math.round(share * others.length / (1 - share)));
+      for (let i = 0; i < n; i++) out.push(k);
+    });
+    return this.shuffle(out);
+  },
+
   vintageOf(kind) {
     if (this.GUESS_VINTAGE[kind] != null) return this.GUESS_VINTAGE[kind];
     const written = (window.CLOSEST || {})[kind];
@@ -3062,7 +3093,7 @@ const Quiz = {
        decides who it is aimed at, not what gets asked.
     */
     const picks = [];
-    const kinds = this.shuffle(Object.keys(byKind));
+    const kinds = this.rotation(Object.keys(byKind));
     const used = {};
     const usingEras = here.length && $('useEras') && $('useEras').checked;
     for (let i = 0; picks.length < count; i++) {
