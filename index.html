@@ -673,7 +673,6 @@
     <p class="muted" style="font-size:.8rem; margin-top:6px">Your eras</p>
     <div id="eraPicker" class="av-row"></div>
     <p class="muted" style="font-size:.75rem" id="eraNote"></p>
-    <button class="btn big green mt" id="readyBtn" onclick="Player.ready()">✓ I'm ready</button>
   </div>
   <div class="card hidden" id="myChip" style="text-align:left">
     <div class="row">
@@ -698,6 +697,9 @@
     </div>
     <button class="btn ghost small" onclick="Player.savePrefs(true)">▶ Hear it on the speaker</button>
   </div>
+  <!-- confirms the whole step, so it belongs after the buzzer choice rather
+       than half way up between the two cards -->
+  <button class="btn big green hidden" id="readyBtn" onclick="Player.ready()">✓ I'm ready</button>
   <div id="finaleBox" class="card hidden"></div>
   <div id="raceBox" class="card hidden"></div>
   <div id="playerBoard" class="card hidden" style="text-align:left"></div>
@@ -4576,6 +4578,8 @@ const Player = {
     const btn = $('buzzBtn'), status = $('playerStatus'), head = $('setupHead');
     if (btn) btn.classList.toggle('hidden', !!on);
     if (status) status.classList.toggle('hidden', !!on);
+    const rb = $('readyBtn');
+    if (rb) rb.classList.toggle('hidden', !on);
     if (head) head.classList.toggle('hidden', !on);
 
     const me = $('myMeCard'), kit = $('myKitCard'), chip = $('myChip');
@@ -4677,6 +4681,9 @@ const Player = {
     const el = $('playerStatus');
     el.textContent = text;
     el.className = cls;
+    // nothing talks over the setup step; a phase message arriving mid-setup
+    // was putting 'buzzers not live yet' back on screen
+    if (this._setupOpen) el.classList.add('hidden');
   },
   vibe(pattern) { if (navigator.vibrate) try { navigator.vibrate(pattern); } catch(e) {} }
 };
