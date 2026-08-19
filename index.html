@@ -2463,14 +2463,52 @@ const Quiz = {
   TMDB_KEY: 'a15859899fcdf54a95d8bd3222030c93',
   TMDB_IMG: 'https://image.tmdb.org/t/p/w780',
 
+  /* Reduces a title to its franchise, so a round cannot fill up with one
+     series. "Spider-Man: No Way Home", "Spider-Man 3" and "Spider-Man" all
+     come out as "spider man". */
+  franchiseKey(title) {
+    return String(title).toLowerCase()
+      .replace(/[’']/g, '')
+      // Subtitles arrive two ways. A colon covers "Spider-Man: No Way Home",
+      // but the big series use "and the": Harry Potter, Indiana Jones and
+      // Percy Jackson all name the franchise before it. Splitting on the
+      // colon alone left six Harry Potters in one 2000s pool.
+      .split(/[:–—]| and the /)[0]
+      .replace(/\b(part\s+)?(i{1,3}|iv|vi{0,3}|ix|x|\d+)\s*$/, '')  // drop sequel numbers
+      .replace(/^(the|a|an)\s+/, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  },
+
+  /* Whole-word containment, so "spider man" also catches "amazing spider
+     man". Short keys are left alone — "up" inside "growing up" would merge
+     films that have nothing to do with each other. */
+  sameFranchise(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const short = a.length <= b.length ? a : b;
+    const long = a.length <= b.length ? b : a;
+    if (short.length < 5) return false;
+    return new RegExp('(^| )' + short.replace(/[.*+?^${}()|[\]\\]/g, '\\  async buildBackdrops(decade, count, label) {') + '( |$)').test(long);
+  },
+
   async buildBackdrops(decade, count, label) {
     const range = decade ? decade.split('-') : null;
+    // Sorted by vote_count, not popularity. Popularity is today's page views,
+    // so it front-loads films that have not been released; vote count is how
+    // many people have actually watched and rated the thing, which is exactly
+    // what "will the room recognise this" means.
+    const today = new Date().toISOString().slice(0, 10);
+    const upTo = range ? range[1] + '-12-31' : today;
     const base = 'https://api.themoviedb.org/3/discover/movie?api_key=' + this.TMDB_KEY +
-      '&sort_by=popularity.desc&vote_count.gte=600&include_adult=false&language=en-GB' +
-      (range ? '&primary_release_date.gte=' + range[0] + '-01-01&primary_release_date.lte=' + range[1] + '-12-31' : '');
+      '&sort_by=vote_count.desc&vote_count.gte=600&include_adult=false&language=en-GB' +
+      '&primary_release_date.lte=' + (upTo < today ? upTo : today) +
+      (range ? '&primary_release_date.gte=' + range[0] + '-01-01' : '');
 
-    const seen = new Set(), films = [];
-    for (let page = 1; page <= 3; page++) {
+    // keys of franchises already taken, so only one film per series gets in
+    const taken = [], films = [];
+    for (let page = 1; page <= 5; page++) {
       let j;
       try {
         const r = await fetch(base + '&page=' + page);
@@ -2479,9 +2517,9 @@ const Quiz = {
       } catch (e) { break; }
       (j.results || []).forEach(m => {
         if (!m.backdrop_path || !m.title) return;
-        const key = m.title.toLowerCase();
-        if (seen.has(key)) return;
-        seen.add(key);
+        const key = this.franchiseKey(m.title);
+        if (!key || taken.some(k => this.sameFranchise(k, key))) return;
+        taken.push(key);
         films.push({ label: m.title, url: this.TMDB_IMG + m.backdrop_path });
       });
       if (films.length >= count + 20) break;
