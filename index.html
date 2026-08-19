@@ -3703,7 +3703,10 @@ const Night = {
     // TV themes come from a handful of compilation albums, so the pool is far
     // too thin to also filter by when the show aired — pinning a decade there
     // mostly produces a round that can't be built. Always Any.
-    if (mode === 'tv') decade = '';
+    // Closest-wins reads none of it either: it draws on a fact bank, and the
+    // era system steers it by category instead. Showing "Closest wins — 2010s"
+    // in the running order just implies something the round never does.
+    if (mode === 'tv' || mode === 'guess') decade = '';
     const style = $('quickStyle').value;
     return {
       mode, decade,
@@ -3711,8 +3714,9 @@ const Night = {
       style: this.STYLE_USED_BY.includes(mode) ? style : '',
       extra: '',
       count: 10,
+      // typing digits takes longer than tapping one of four options
+      secs: mode === 'guess' ? 20 : 10,
       flash: mode === 'faces' ? 2000 : 3000,
-      secs: 10,
       startAt: 'skip',
       crop: 'crop',
       roundLabel: ''
@@ -3747,7 +3751,7 @@ const Night = {
       const r = this.defaultsFor(m);   // resolves "mixed" to its own decade
       // nudge away from repeating a decade already used this night, but never
       // hand TV a decade — its pool is too thin to survive one
-      if (m !== 'tv') {
+      if (m !== 'tv' && m !== 'guess') {
         let guard = 0;
         while (used.includes(r.decade) && guard++ < 8) r.decade = this.randomDecade();
         used.push(r.decade);
@@ -3777,7 +3781,7 @@ const Night = {
       const r = this.defaultsFor(m);
       // same anti-repeat as Surprise me, so "mixed decades" really does range
       // rather than landing on the eighties three times
-      if (decade === 'mixed' && m !== 'tv') {
+      if (decade === 'mixed' && m !== 'tv' && m !== 'guess') {
         let guard = 0;
         while (used.includes(r.decade) && guard++ < 8) r.decade = this.randomDecade();
         used.push(r.decade);
