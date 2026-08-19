@@ -1234,8 +1234,13 @@ const Spot = {
     } else el.textContent = 'Not connected yet.';
   },
 
+  /* Resolves only once Spotify has actually handed over a device id, and
+     throws with something readable when it has not. Returning quietly is what
+     let the panel claim to be connected with no player behind it. */
   async initPlayer() {
-    if (this.player || !(await this.ensureToken())) return;
+    if (this.player && this.deviceId) return this.deviceId;
+    if (this.player) return await this.waitForDevice();
+    if (!(await this.ensureToken())) throw new Error('Spotify is not connected — press Connect Spotify first.');
     await new Promise(res => {
       window.onSpotifyWebPlaybackSDKReady = res;
       const s = document.createElement('script');
@@ -1250,6 +1255,12 @@ const Spot = {
     this.player.addListener('ready', ({device_id}) => {
       this.deviceId = device_id;
       $('nowPlaying').textContent = 'Ready — pick a track';
+    });
+    // Spotify can take the player away again — a laptop sleeping, or the same
+    // account playing somewhere else. Without this the app kept a dead id.
+    this.player.addListener('not_ready', () => {
+      this.deviceId = null;
+      $('nowPlaying').textContent = 'Spotify player went away — press Connect Spotify again.';
     });
     this.player.addListener('player_state_changed', st => {
       if (!st) return;
@@ -1283,7 +1294,9 @@ const Spot = {
     this.player.addListener('initialization_error', e => alert('Spotify player error: ' + e.message));
     this.player.addListener('authentication_error', e => alert('Spotify auth error — reconnect Spotify. ' + e.message));
     this.player.addListener('account_error', e => alert('Spotify says this account can’t stream here (Premium needed).'));
-    await this.player.connect();
+    const joined = await this.player.connect();
+    if (!joined) throw new Error('Spotify would not accept the player — check it is Premium and try again.');
+    return await this.waitForDevice();
     this.pollTimer = setInterval(async () => {
       const st = await this.player.getCurrentState();
       if (st && !this.seeking) {
@@ -1292,8 +1305,27 @@ const Spot = {
     }, 1000);
   },
 
+  /* The device id arrives on an event, not from connect(), so anything that
+     wants to play has to wait for it rather than assume it is there. */
+  waitForDevice(ms = 9000) {
+    return new Promise((resolve, reject) => {
+      if (this.deviceId) return resolve(this.deviceId);
+      const started = Date.now();
+      const tick = setInterval(() => {
+        if (this.deviceId) { clearInterval(tick); resolve(this.deviceId); }
+        else if (Date.now() - started > ms) {
+          clearInterval(tick);
+          reject(new Error('Spotify player never came online. It needs Premium, and some browsers block it — try Chrome on the laptop.'));
+        }
+      }, 250);
+    });
+  },
+
   async playUri(uri, positionMs = 0) {
-    if (!this.deviceId) { alert('Spotify player not ready yet — wait a second and try again.'); return; }
+    // Logging into Spotify AFTER opening the room used to leave the player
+    // unstarted forever, because it was only ever kicked off by creating the
+    // room. Anything that wants to play now starts it if it has to.
+    if (!this.deviceId) await this.initPlayer();
     await this.api('/me/player/play?device_id=' + this.deviceId, {
       method: 'PUT', body: JSON.stringify({ uris: [uri], position_ms: positionMs })
     });
@@ -1860,7 +1892,15 @@ const Host = {
         Spot.initPlayer().then(() => {
           $('spotifyOffline').classList.add('hidden');
           $('spotifyPanel').classList.remove('hidden');
-        }).catch(()=>{});
+        }).catch(e => {
+          // swallowing this is what let the panel show as connected with no
+          // player behind it, so a music round then did nothing at all
+          $('spotifyOffline').classList.remove('hidden');
+          $('spotifyPanel').classList.add('hidden');
+          const n = $('nowPlaying');
+          if (n) n.textContent = String(e && e.message || e);
+          console.warn('Spotify player did not start', e);
+        });
       }
       setInterval(() => this.pingAll(), 4000);
     });
