@@ -2795,14 +2795,24 @@ const Quiz = {
     // one person, one era is just a normal round
     if (eras.length === 1 && here.length === 1) return null;
 
-    const totalClaims = eras.reduce((n, e) => n + claims[e].length, 0);
-    const plan = eras.map(e => ({ decade: e, who: claims[e], count: 1 }))
-                     .sort((a, b) => b.who.length - a.who.length);
+    // More eras claimed than questions available: keep the most widely
+    // claimed, otherwise the guaranteed-one-each rule overshoots the round
+    // length and builds more questions than the host asked for.
+    let plan = eras.map(e => ({ decade: e, who: claims[e], count: 1 }))
+                   .sort((a, b) => b.who.length - a.who.length)
+                   .slice(0, count);
+    const totalClaims = plan.reduce((n, x) => n + x.who.length, 0) || 1;
     const left = Math.max(0, count - plan.length);
-    plan.forEach(slot => { slot.count += Math.round(left * (claims[slot.decade].length / totalClaims)); });
+    plan.forEach(slot => { slot.count += Math.floor(left * (slot.who.length / totalClaims)); });
+
+    // hand out and claw back round-robin, so rounding never lands entirely on
+    // one person — an even split was coming out four questions to six
     let assigned = plan.reduce((n, x) => n + x.count, 0);
-    for (let i = 0; assigned < count && i < plan.length * 6; i++) { plan[i % plan.length].count++; assigned++; }
-    while (assigned > count) { const t = plan.find(x => x.count > 1); if (!t) break; t.count--; assigned--; }
+    for (let i = 0; assigned < count; i = (i + 1) % plan.length) { plan[i].count++; assigned++; }
+    for (let i = 0; assigned > count; i = (i + 1) % plan.length) {
+      if (plan[i].count > 1) { plan[i].count--; assigned--; }
+      else if (plan.every(x => x.count <= 1)) break;
+    }
     return plan;
   },
 
