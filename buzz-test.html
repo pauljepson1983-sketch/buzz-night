@@ -39,19 +39,51 @@
   .note { font-size: .8rem; opacity: .65; margin-top: 10px; line-height: 1.45 }
   code { background: rgba(0,0,0,.35); padding: 1px 5px; border-radius: 5px; font-size: .85em }
   .ok { color: #21d07a } .no { color: #ff6b8a }
+  /* Era and flavour, asked before the songs are found rather than fixed in
+     the code, so a night can be 90s britpop one round and motown the next. */
+  #pick { display: flex; gap: 10px; margin: 12px 0 }
+  #pick label { flex: 1; font-size: .8rem; opacity: .8 }
+  #pick select { width: 100%; margin-top: 4px; padding: 8px; border-radius: 10px;
+                 background: rgba(0,0,0,.3); color: #fff; font-size: .95rem;
+                 border: 1px solid rgba(255,255,255,.2) }
 </style>
 </head>
 <body>
 
 <h1>Buzz test — name that tune</h1>
 <p class="sub">The whole round on one page, using your own Spotify: a song plays, you buzz to
-stop it, then you say what it is. No room, nobody else, nothing to set up —
-it borrows the Spotify login from the main game, so if you are connected
+stop it, then you say what it is. No room, nobody else, nothing to set up.
+It borrows the Spotify login from the main game, so if you are connected
 there you are connected here.</p>
 
 <div id="spot">Checking Spotify…</div>
 
 <div id="status">—</div>
+
+<div id="pick">
+  <label>Era
+    <select id="era">
+      <option value="">Any era</option>
+      <option value="1960-1969">1960s</option>
+      <option value="1970-1979">1970s</option>
+      <option value="1980-1989">1980s</option>
+      <option value="1990-1999" selected>1990s</option>
+      <option value="2000-2009">2000s</option>
+      <option value="2010-2019">2010s</option>
+      <option value="2020-2029">2020s</option>
+    </select>
+  </label>
+  <label>Flavour
+    <select id="flavour">
+      <option value="">Anything</option>
+      <option>pop</option><option>rock</option><option>britpop</option>
+      <option>indie</option><option>dance</option><option>motown</option>
+      <option>soul</option><option>disco</option><option>hip hop</option>
+      <option>country</option><option>metal</option><option>reggae</option>
+      <option>christmas</option>
+    </select>
+  </label>
+</div>
 
 <button id="play" disabled>▶ Play a song</button>
 <button id="buzz" disabled>BUZZ</button>
@@ -68,9 +100,9 @@ there you are connected here.</p>
   <b style="font-size:.95rem">What to try</b>
   <p class="note" style="opacity:.85">Play it, buzz as soon as you know it, then say
   <b>the song and the artist</b>. Both scores double, one of the two scores half.
-  Try it sloppily too — <i>"erm, is it Wonderwall by Oasis?"</i> should still score.</p>
+  Try it sloppily too: <i>"erm, is it Wonderwall by Oasis?"</i> should still score.</p>
   <p class="note">If it marks you wrong, the grey box shows exactly what your phone heard and
-  how close it got — that separates the phone mishearing you from my marking
+  how close it got. That separates the phone mishearing you from my marking
   being too strict, which need opposite fixes.</p>
 </div>
 
@@ -203,9 +235,20 @@ let songs = [], idx = 0, buzzed = false;
 async function loadSongs() {
   $('status').textContent = 'Finding songs…';
   const found = [], seen = new Set();
-  for (const q of ['year:1990-1999 britpop', 'year:1980-1989 pop', 'year:2000-2009 rock']) {
+
+  /* Build the search from what was chosen rather than a fixed list. Three
+     goes at it, because one search of ten tracks leaves too few once the
+     duplicates and the unplayable ones are dropped, and Spotify hands back a
+     different slice each time you offset it. */
+  const era = $('era').value, flavour = $('flavour').value;
+  const base = (era ? 'year:' + era + ' ' : '') + (flavour || '');
+  const term = base.trim() || 'year:1990-1999';
+  const queries = [term, term, term];
+  let offset = 0;
+  for (const q of queries) {
+    offset += 10;
     try {
-      const d = await S.api('/search?type=track&limit=10&q=' + encodeURIComponent(q));
+      const d = await S.api('/search?type=track&limit=10&offset=' + (offset - 10) + '&q=' + encodeURIComponent(q));
       for (const t of (d.tracks && d.tracks.items) || []) {
         if (!t.uri || seen.has(t.name)) continue;
         seen.add(t.name);
@@ -213,7 +256,7 @@ async function loadSongs() {
       }
     } catch (e) { $('status').textContent = 'Song search failed: ' + e.message; return; }
   }
-  if (!found.length) { $('status').textContent = 'Spotify returned no songs.'; return; }
+  if (!found.length) { $('status').textContent = 'Spotify found nothing for that era and flavour. Try a wider one.'; return; }
   for (let i = found.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [found[i],found[j]]=[found[j],found[i]]; }
   songs = found;
   $('play').disabled = false;
@@ -252,25 +295,28 @@ $('buzz').onclick = async () => {
   buzzed = true;
   $('buzz').disabled = true; $('buzz').textContent = 'Buzzed!';
   $('status').textContent = 'Stopping the music…';
+
+  /* Pause through the player itself, not the web API. The API call is a
+     request to Spotify's servers which then reaches this device, and asking
+     it afterwards whether the music stopped gives a stale answer — measured
+     live: it still reported "playing" after the sound had gone. The player
+     object is right here in the page and stops immediately. */
+  try { if (S.player) await S.player.pause(); } catch (e) {}
   try { await S.api('/me/player/pause?device_id=' + S.deviceId, { method: 'PUT' }); } catch (e) {}
 
-  /* Do NOT open the microphone yet. Pausing Spotify is a request over the
-     network, so sound carries on out of the speakers for a moment after the
-     button is pressed — and the recogniser happily transcribes it. A live
-     test caught exactly this: it heard "I just can't look it's killing me
-     and", which is the lyric of the song that was playing, not a word the
-     player said. In a room with the music up this would happen every time.
-
-     So wait until the player really has stopped, then give the speakers a
-     moment, and only then listen. */
-  for (let i = 0; i < 12; i++) {
+  /* Only now open the microphone. Sound carries on out of the speakers for a
+     moment after the button is pressed, and the recogniser transcribes it
+     happily — a live test heard "I just can't look it's killing me and",
+     which is the lyric of the song that was playing rather than anything the
+     player said. In a room with the music up that would happen every time. */
+  for (let i = 0; i < 14; i++) {
     try {
-      const st = await S.api('/me/player');
-      if (!st || st.is_playing === false) break;
+      const st = S.player ? await S.player.getCurrentState() : null;
+      if (!st || st.paused) break;
     } catch (e) { break; }
-    await new Promise(r => setTimeout(r, 150));
+    await new Promise(r => setTimeout(r, 100));
   }
-  await new Promise(r => setTimeout(r, 250));
+  await new Promise(r => setTimeout(r, 350));   // let the speakers fall silent
 
   $('status').textContent = 'Music stopped — say the song and the artist';
   $('say').style.display = 'block';
@@ -342,6 +388,9 @@ $('next').onclick = () => { if (!songs.length) return; idx = (idx + 1) % songs.l
 (async () => {
   const ready = await startSpotify();
   if (ready) await loadSongs();
+  // changing either one starts the search again, so you can hear what a
+  // choice actually gives you before using it on a real night
+  $('era').onchange = $('flavour').onchange = () => { idx = 0; reset(); loadSongs(); };
   else $('status').textContent = 'Sort the Spotify line above first, then reload this page.';
   reset();
 })();
