@@ -142,6 +142,33 @@
   .night-n { min-width: 1.6rem; font-weight: 800; color: var(--gold); }
   .night-desc { flex: 1; font-size: .9rem; }
 
+  /* ---- avatars + era chips ---- */
+  .av-big { width: 58px; height: 58px; border-radius: 50%; background: var(--panel2); display: flex;
+            align-items: center; justify-content: center; font-size: 2rem; overflow: hidden; flex: none; }
+  .av-big img { width: 100%; height: 100%; object-fit: cover; }
+  .av-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .av-chip { font-size: 1.3rem; line-height: 1; padding: 6px 8px; border-radius: 10px; border: 2px solid transparent;
+             background: var(--panel2); cursor: pointer; }
+  .av-chip.on { border-color: var(--gold); }
+  .era-chip { font-size: .95rem; font-weight: 800; padding: 9px 12px; border-radius: 10px; border: 2px solid transparent;
+              background: var(--panel2); color: var(--text); cursor: pointer; }
+  .era-chip.on { border-color: var(--green); background: rgba(6,214,160,.18); }
+
+  /* ---- the racing post ---- */
+  #raceBox { text-align: left; }
+  .race-track { position: relative; height: 44px; margin: 6px 0 2px; border-radius: 10px;
+                background: linear-gradient(90deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); overflow: hidden; }
+  .race-track::after { content: ''; position: absolute; right: 6px; top: 0; bottom: 0; width: 8px;
+                       background: repeating-linear-gradient(45deg,#fff 0 4px,#222 4px 8px); opacity: .55; border-radius: 2px; }
+  .runner { position: absolute; top: 5px; display: flex; align-items: center; gap: 6px;
+            transition: left 1.4s cubic-bezier(.22,.9,.28,1); }
+  .runner .av { width: 34px; height: 34px; border-radius: 50%; background: var(--panel2); display: flex;
+                align-items: center; justify-content: center; font-size: 1.2rem; overflow: hidden; border: 2px solid rgba(255,255,255,.25); }
+  .runner .av img { width: 100%; height: 100%; object-fit: cover; }
+  .runner.me .av { border-color: var(--gold); box-shadow: 0 0 12px rgba(255,209,102,.7); }
+  .runner .tag { font-size: .75rem; font-weight: 800; white-space: nowrap; text-shadow: 0 2px 6px #000; }
+  .race-name { font-size: .8rem; font-weight: 700; color: var(--muted); }
+
   /* ---- leaderboard on the phones ---- */
   .lb-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 10px; }
   .lb-row.me { background: rgba(255,209,102,.16); outline: 2px solid var(--gold); }
@@ -436,6 +463,9 @@
         <label class="muted mb" style="display:block; font-size:.85rem">
           <input type="checkbox" id="nightPause" checked> Wait for me before each round starts
         </label>
+        <label class="muted mb" style="display:block; font-size:.85rem">
+          <input type="checkbox" id="useEras" checked> Use players' own eras (mixes each round so everyone gets questions they know)
+        </label>
         <div class="row">
           <button class="btn big green" id="nightGoBtn" onclick="Night.start()">▶ Start the night</button>
           <button class="btn big green hidden" id="nightNextBtn" onclick="Night.go()">▶ Start this round</button>
@@ -608,6 +638,21 @@
     <div id="quizFeedback"></div>
   </div>
   <button id="buzzBtn" disabled>BUZZ</button>
+  <div class="card hidden" id="myMeCard" style="text-align:left">
+    <h2 style="font-size:1rem">🙋 You</h2>
+    <p class="muted" style="font-size:.8rem">Pick a face, and tick the eras you actually know. The quiz uses these to make sure some questions land for you.</p>
+    <div class="row mb">
+      <div id="avatarPreview" class="av-big">🙂</div>
+      <div class="grow">
+        <div id="avatarPicker" class="av-row"></div>
+        <button class="btn ghost small mt" id="selfieBtn" onclick="Player.selfie()">📷 Use a selfie instead</button>
+        <input type="file" id="selfieFile" accept="image/*" capture="user" class="hidden" onchange="Player.selfiePicked(this.files[0]); this.value=''">
+      </div>
+    </div>
+    <p class="muted" style="font-size:.8rem; margin-top:6px">Your eras</p>
+    <div id="eraPicker" class="av-row"></div>
+    <p class="muted" style="font-size:.75rem" id="eraNote"></p>
+  </div>
   <div class="card hidden" id="myKitCard" style="text-align:left">
     <h2 style="font-size:1rem">🔊 Your buzzer</h2>
     <p class="muted" style="font-size:.8rem">Plays on the host's speaker when you buzz in.</p>
@@ -626,6 +671,7 @@
     <button class="btn ghost small" onclick="Player.savePrefs(true)">▶ Hear it on the speaker</button>
   </div>
   <div id="finaleBox" class="card hidden"></div>
+  <div id="raceBox" class="card hidden"></div>
   <div id="playerBoard" class="card hidden" style="text-align:left"></div>
 </div>
 
@@ -1621,6 +1667,10 @@ const Host = {
       if (msg.buzzer !== undefined) p.buzzer = msg.buzzer || null;
       if (msg.voice !== undefined) p.voice = msg.voice || null;
       if (msg.style !== undefined) p.style = msg.style || null;
+      if (msg.avatar !== undefined) p.avatar = msg.avatar || null;
+      if (msg.photo !== undefined) p.photo = msg.photo || null;
+      if (msg.eras !== undefined) p.eras = Array.isArray(msg.eras) ? msg.eras : [];
+      this.renderScores();
       if (msg.test) { Sound.buzz(p.buzzer); setTimeout(() => Sound.say(p.name + ' buzzed first!', p.voice, p.style), 700); }
       this.saveGame();
       return;
@@ -1947,7 +1997,7 @@ const Host = {
       return Object.values(teams).sort((a, b) => b.score - a.score);
     }
     return Object.values(this.players)
-      .map(p => ({ name: p.name, score: p.score, avg: this.avgFor(p) }))
+      .map(p => ({ name: p.name, score: p.score, avg: this.avgFor(p), avatar: p.avatar || null, photo: p.photo || null }))
       .sort((a, b) => b.score - a.score);
   },
 
@@ -2053,7 +2103,8 @@ const Host = {
         gap: i === 0 ? 0 : rows[i - 1].score - r.score,
         chasing: i === 0 ? null : rows[i - 1].name,
         lead: i === 0 && rows[1] ? r.score - rows[1].score : 0,
-        avg: r.avg == null ? null : r.avg
+        avg: r.avg == null ? null : r.avg,
+        avatar: r.avatar || null, photo: r.photo || null
       };
     });
     this.prevBoard = {};
@@ -2087,7 +2138,8 @@ const Host = {
       // backgrounded phone, which looks identical to "here" without this
       const state = !p.online ? '<span class="tag grey">offline</span>'
                   : !this.isPresent(p) ? '<span class="tag grey">away</span>' : '';
-      tr.innerHTML = `<td>${esc(p.name)} ${state}</td>
+      const face = p.photo ? '<img src="'+p.photo+'" style="width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle">' : (p.avatar || '');
+      tr.innerHTML = `<td>${face} ${esc(p.name)} ${state}</td>
         <td class="${this.teamMode ? '' : 'hidden'}"><button class="btn small ghost" onclick="Host.cycleTeam('${id}')">${p.team || '—'}</button></td>
         <td><b>${p.score}</b></td><td class="muted">${avg}</td>
         <td><button class="btn small ghost" onclick="Host.adjust('${id}')">±</button></td>`;
@@ -2712,6 +2764,48 @@ const Quiz = {
     });
   },
 
+  // rounds whose source can be pointed at a decade
+  MIXABLE: ['covers', 'backdrops', 'themes', 'faces', 'years', 'songs'],
+
+  async buildChunk(decade, count, style, extra, label) {
+    const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
+    if (this.mode === 'tv') return this.toQuestions(await this.buildTv(decade, count), count);
+    if (this.mode === 'songs') return await this.buildSongs(decade, count, style, extra);
+    if (this.mode === 'faces') return this.toQuestions(await this.buildFaces(decade, count), count);
+    if (this.mode === 'years') return await this.buildYears(decade, count, style, extra);
+    if (this.mode === 'covers') return await this.build(topic, count, label);
+    if (this.mode === 'backdrops') return this.toQuestions(await this.buildBackdrops(decade, count, label), count);
+    const films = await this.buildFilms(decade, count, label, this.mode === 'themes');
+    return this.toQuestions(films, count);
+  },
+
+  /* Share the questions out across the eras people actually claimed, so a room
+     with a nineteen year old and a grandparent isn't ten minutes of silence
+     for one of them. Shares are proportional to how many claim an era, with
+     every claimed era guaranteed at least one question. */
+  eraPlan(count) {
+    const box = $('useEras');
+    if (!box || !box.checked) return null;
+    const here = Object.values(Host.players).filter(p => Host.isPresent(p) && Array.isArray(p.eras) && p.eras.length);
+    if (!here.length) return null;
+    const claims = {};
+    here.forEach(p => p.eras.forEach(e => { (claims[e] = claims[e] || []).push(p.name); }));
+    const eras = Object.keys(claims);
+    if (!eras.length) return null;
+    // one person, one era is just a normal round
+    if (eras.length === 1 && here.length === 1) return null;
+
+    const totalClaims = eras.reduce((n, e) => n + claims[e].length, 0);
+    const plan = eras.map(e => ({ decade: e, who: claims[e], count: 1 }))
+                     .sort((a, b) => b.who.length - a.who.length);
+    const left = Math.max(0, count - plan.length);
+    plan.forEach(slot => { slot.count += Math.round(left * (claims[slot.decade].length / totalClaims)); });
+    let assigned = plan.reduce((n, x) => n + x.count, 0);
+    for (let i = 0; assigned < count && i < plan.length * 6; i++) { plan[i % plan.length].count++; assigned++; }
+    while (assigned > count) { const t = plan.find(x => x.count > 1); if (!t) break; t.count--; assigned--; }
+    return plan;
+  },
+
   async start(cfg) {
     if (!Host.peer) { alert('Create the room first.'); return false; }
     // Genre goes in as a plain word, not Spotify's genre: filter. Tested both:
@@ -2739,22 +2833,28 @@ const Quiz = {
       : ('films' + (decadeLabel ? ', ' + decadeLabel : ''));
     try {
       let qs;
-      if (this.mode === 'tv') {
-        qs = this.toQuestions(await this.buildTv(decade, count), count);
-      } else if (this.mode === 'songs') {
-        qs = await this.buildSongs(decade, count, style, extra);
-      } else if (this.mode === 'faces') {
-        qs = this.toQuestions(await this.buildFaces(decade, count), count);
-      } else if (this.mode === 'years') {
-        qs = await this.buildYears(decade, count, style, extra);
-      } else if (this.mode === 'covers') {
-        qs = await this.build(topic, count, label);
-      } else if (this.mode === 'backdrops') {
-        qs = this.toQuestions(await this.buildBackdrops(decade, count, label), count);
+      const plan = this.MIXABLE.includes(this.mode) ? this.eraPlan(count) : null;
+      if (plan) {
+        // Build a slice per era and pool them, so a room spanning thirty years
+        // still gets questions each person has a chance at. Each question
+        // remembers whose era it came from.
+        qs = [];
+        for (const slot of plan) {
+          $('quizStatus').textContent = 'Building the ' + slot.decade.slice(2, 4) + 's for ' + slot.who.join(' & ') + '…';
+          try {
+            const part = await this.buildChunk(slot.decade, slot.count, style, extra, label);
+            part.slice(0, slot.count).forEach(q => { q.forWhom = slot.who; qs.push(q); });
+          } catch (e) { /* a thin era just contributes fewer questions */ }
+        }
+        // drop any duplicate answers that came from overlapping eras
+        const seenA = new Set();
+        qs = this.shuffle(qs.filter(q => {
+          const k = String(q.answer).toLowerCase() + '|' + String(q.title || '').toLowerCase();
+          if (seenA.has(k)) return false; seenA.add(k); return true;
+        }));
+        if (qs.length < 4) qs = await this.buildChunk(decade, count, style, extra, label);
       } else {
-        // film themes need something playable; poster details only need art
-        const films = await this.buildFilms(decade, count, label, this.mode === 'themes');
-        qs = this.toQuestions(films, count);
+        qs = await this.buildChunk(decade, count, style, extra, label);
       }
 
       if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) {
@@ -2834,12 +2934,21 @@ const Quiz = {
     }
     Host.broadcast({
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
+      forWhom: q.forWhom || null, era: q.era || null,
       title: this.TITLES[this.mode] || 'Quiz round',
       noun: this.NOUNS[this.mode] || 'Question',
       roundLabel: this.roundLabel || '',
       img: q.img || null, options: q.options, flashMs: flash, seconds: this.seconds,
       listen: audioRound, leadIn
     });
+    if (q.forWhom && q.forWhom.length) {
+      // a small social moment: say whose era this one is, but only when it
+      // belongs to one or two people rather than the whole room
+      const everyone = Object.values(Host.players).filter(x => Host.isPresent(x)).length;
+      if (q.forWhom.length <= 2 && q.forWhom.length < everyone) {
+        setTimeout(() => Sound.say('This one is for ' + q.forWhom.join(' and ')), 150);
+      }
+    }
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
       esc(q.answer) + ' <span class="muted">(waiting for answers…)</span>';
     clearTimeout(this.tick);
@@ -3770,7 +3879,8 @@ const Player = {
     $('quizPanel').classList.remove('hidden');
     $('buzzBtn').classList.add('hidden');
     $('quizRound').textContent = (msg.roundLabel ? msg.roundLabel + ' · ' : '') + (msg.title || 'Quiz round');
-    $('quizProgress').textContent = (msg.noun || 'Question') + ' ' + msg.n + ' of ' + msg.total;
+    $('quizProgress').innerHTML = esc((msg.noun || 'Question') + ' ' + msg.n + ' of ' + msg.total) +
+      (msg.forWhom && msg.forWhom.length ? ' <span style="color:var(--gold)">· ' + esc(msg.forWhom.join(' & ')) + '’s era</span>' : '');
     $('quizFeedback').textContent = '';
     $('quizOptions').innerHTML = '';
     $('quizCountdown').textContent = '';
@@ -3852,6 +3962,7 @@ const Player = {
     $('buzzBtn').classList.add('hidden');
     $('quizPanel').classList.add('hidden');
     $('myKitCard').classList.add('hidden');
+    $('myMeCard').classList.add('hidden');
     el.classList.remove('hidden');
     this.setStatus('');
 
@@ -3911,7 +4022,42 @@ const Player = {
     }
   },
 
+  /* The racing post. A list tells you the score; a race shows you the gap.
+     Runners are placed by score as a fraction of the leader's, and CSS
+     transitions carry them from wherever they were, so the movement between
+     rounds is the point rather than the final position. */
+  renderRace(msg) {
+    const box = $('raceBox');
+    const rows = msg.rows || [];
+    if (!rows.length) { box.classList.add('hidden'); return; }
+    const mine = (msg.teamMode && this.team) ? ('team ' + this.team).toLowerCase() : (this.name || '').toLowerCase();
+    const top = Math.max(1, ...rows.map(r => r.score));
+    const previous = this._racePos || {};
+    box.innerHTML = '<h2 style="font-size:1rem">🏇 The race</h2>' + rows.map(r => {
+      const isMe = r.name.toLowerCase() === mine;
+      const face = r.photo ? '<img src="' + r.photo + '" alt="">' : esc(r.avatar || '🙂');
+      // start from last round's spot so the browser animates the move
+      const from = previous[r.name.toLowerCase()];
+      const pct = Math.max(0, Math.min(88, (r.score / top) * 88));
+      return '<div class="race-name">' + esc(r.name) + '</div>' +
+        '<div class="race-track"><div class="runner' + (isMe ? ' me' : '') + '" style="left:' +
+        (from == null ? pct : from) + '%"><div class="av">' + face + '</div>' +
+        '<span class="tag">' + r.score + '</span></div></div>';
+    }).join('');
+    box.classList.remove('hidden');
+    // next frame: move them to their real positions so the transition runs
+    const targets = {};
+    rows.forEach(r => { targets[r.name.toLowerCase()] = Math.max(0, Math.min(88, (r.score / top) * 88)); });
+    requestAnimationFrame(() => {
+      [...box.querySelectorAll('.runner')].forEach((el, i) => {
+        el.style.left = targets[rows[i].name.toLowerCase()] + '%';
+      });
+    });
+    this._racePos = targets;
+  },
+
   renderBoard(msg) {
+    this.renderRace(msg);
     const el = $('playerBoard');
     // in team mode the rows are teams, so match on this player's team
     const mine = (msg.teamMode && this.team) ? ('team ' + this.team).toLowerCase() : (this.name || '').toLowerCase();
@@ -3963,6 +4109,81 @@ const Player = {
     fill($('myVoice'), (msg.voices || []).map(v => [v.uri, v.label]), msg.voice, 'Same as host');
     fill($('myStyle'), msg.styles, msg.style, 'Normal');
     $('myKitCard').classList.remove('hidden');
+    this.initMe();
+  },
+
+  AVATARS: ['🙂','😎','🦊','🐼','🐸','🦁','🐙','🦄','👾','🤖','🎃','👻','🍕','⚡','🌟','🎸','🏆','💀'],
+  ERAS: [['1960-1969','60s'],['1970-1979','70s'],['1980-1989','80s'],['1990-1999','90s'],
+         ['2000-2009','00s'],['2010-2019','10s'],['2020-2029','20s']],
+
+  // Eras are self-declared rather than worked out from a birth year: it is one
+  // tap, it asks for no personal data, and people know what they actually
+  // listened to better than a date of birth implies.
+  initMe() {
+    this.avatar = store.get('my_avatar') || this.AVATARS[Math.floor(Math.random() * this.AVATARS.length)];
+    try { this.eras = JSON.parse(store.get('my_eras') || '[]') || []; } catch (e) { this.eras = []; }
+
+    const ap = $('avatarPicker');
+    ap.innerHTML = '';
+    this.AVATARS.forEach(a => {
+      const b = document.createElement('button');
+      b.className = 'av-chip' + (a === this.avatar ? ' on' : '');
+      b.textContent = a;
+      b.onclick = () => { this.avatar = a; store.set('my_avatar', a); store.set('my_photo', ''); this.paintMe(); this.savePrefs(); };
+      ap.appendChild(b);
+    });
+
+    const ep = $('eraPicker');
+    ep.innerHTML = '';
+    this.ERAS.forEach(([val, label]) => {
+      const b = document.createElement('button');
+      b.className = 'era-chip' + (this.eras.includes(val) ? ' on' : '');
+      b.textContent = label;
+      b.onclick = () => {
+        this.eras = this.eras.includes(val) ? this.eras.filter(x => x !== val) : this.eras.concat([val]);
+        store.set('my_eras', JSON.stringify(this.eras));
+        this.paintMe(); this.savePrefs();
+      };
+      ep.appendChild(b);
+    });
+    this.paintMe();
+    $('myMeCard').classList.remove('hidden');
+  },
+
+  paintMe() {
+    const photo = store.get('my_photo');
+    $('avatarPreview').innerHTML = photo ? '<img src="' + photo + '" alt="">' : esc(this.avatar || '🙂');
+    [...$('avatarPicker').children].forEach(b => b.classList.toggle('on', !photo && b.textContent === this.avatar));
+    [...$('eraPicker').children].forEach((b, i) => b.classList.toggle('on', this.eras.includes(this.ERAS[i][0])));
+    $('eraNote').textContent = this.eras.length
+      ? 'The quiz will make sure some questions come from the ' + this.eras.map(e => e.slice(2, 4) + 's').join(', ') + '.'
+      : 'Nothing ticked — you will get whatever the host picked.';
+  },
+
+  selfie() { $('selfieFile').click(); },
+
+  // Shrunk hard before it goes anywhere: it only ever needs to be a small
+  // circle on a leaderboard, and it travels over the same link as everything
+  // else. Stays on the host laptop, never uploaded.
+  selfiePicked(file) {
+    if (!file) return;
+    const fr = new FileReader();
+    fr.onload = () => {
+      const im = new Image();
+      im.onload = () => {
+        const S = 96, c = document.createElement('canvas');
+        c.width = c.height = S;
+        const cx = c.getContext('2d');
+        const side = Math.min(im.width, im.height);
+        cx.drawImage(im, (im.width - side) / 2, (im.height - side) / 2, side, side, 0, 0, S, S);
+        const data = c.toDataURL('image/jpeg', 0.7);
+        store.set('my_photo', data);
+        this.paintMe();
+        this.savePrefs();
+      };
+      im.src = fr.result;
+    };
+    fr.readAsDataURL(file);
   },
 
   savePrefs(test) {
@@ -3972,6 +4193,9 @@ const Player = {
       buzzer: $('myBuzzer').value || null,
       voice: $('myVoice').value || null,
       style: $('myStyle').value || null,
+      avatar: this.avatar || null,
+      photo: store.get('my_photo') || null,
+      eras: this.eras || [],
       test: !!test
     });
     if (test) this.setStatus('🔊 Playing on the host speaker…');
@@ -3983,6 +4207,7 @@ const Player = {
     $('stealTimer').classList.add('hidden');
     $('revealBox').classList.add('hidden');
     $('playerBoard').classList.add('hidden');
+    $('raceBox').classList.add('hidden');
   },
   setBuzz(on) {
     this.canBuzz = on;
