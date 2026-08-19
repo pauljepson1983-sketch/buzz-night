@@ -3233,14 +3233,9 @@ const Quiz = {
       img: q.img || null, options: q.options, flashMs: flash, seconds: this.seconds,
       listen: audioRound, leadIn
     });
-    if (q.forWhom && q.forWhom.length) {
-      // a small social moment: say whose era this one is, but only when it
-      // belongs to one or two people rather than the whole room
-      const everyone = Object.values(Host.players).filter(x => Host.isPresent(x)).length;
-      if (q.forWhom.length <= 2 && q.forWhom.length < everyone) {
-        setTimeout(() => Sound.say('This one is for ' + q.forWhom.join(' and ')), 150);
-      }
-    }
+    // No "this one's for Paul" announcement — it singled people out and read
+    // as the game telling everyone whose turn it was to know something.
+    // Targeting still happens quietly behind the scenes.
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
       esc(q.answer) + ' <span class="muted">(waiting for answers…)</span>';
     clearTimeout(this.tick);
@@ -4297,8 +4292,7 @@ const Player = {
     $('quizPanel').classList.remove('hidden');
     $('buzzBtn').classList.add('hidden');
     $('quizRound').textContent = (msg.roundLabel ? msg.roundLabel + ' · ' : '') + (msg.title || 'Quiz round');
-    $('quizProgress').innerHTML = esc((msg.noun || 'Question') + ' ' + msg.n + ' of ' + msg.total) +
-      (msg.forWhom && msg.forWhom.length ? ' <span style="color:var(--gold)">· ' + esc(msg.forWhom.join(' & ')) + '’s era</span>' : '');
+    $('quizProgress').textContent = (msg.noun || 'Question') + ' ' + msg.n + ' of ' + msg.total;
     $('quizFeedback').textContent = '';
     $('quizOptions').innerHTML = '';
     $('quizCountdown').textContent = '';
