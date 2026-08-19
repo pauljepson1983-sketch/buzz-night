@@ -472,9 +472,14 @@
           </div>
           <div class="row">
             <span class="muted" style="font-size:.8rem">or add one at a time:</span>
+            <button class="btn ghost small" onclick="Night.quickAdd('quickfire')">⚡ Fastest finger</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('logos')">🏷️ Logos</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('guess')">🎯 Closest wins</button>
             <button class="btn ghost small" onclick="Night.quickAdd('faces')">⭐ Faces</button>
-            <button class="btn ghost small" onclick="Night.quickAdd('years')">📅 Years</button>
             <button class="btn ghost small" onclick="Night.quickAdd('backdrops')">🎬 Stills</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('songs')">🎧 Songs</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('years')">📅 Years</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('tv')">📺 TV themes</button>
             <button class="btn ghost small" onclick="Night.quickAdd('covers')">🖼️ Covers</button>
             <button class="btn ghost small" onclick="Night.quickAdd('themes')">🎵 Themes</button>
             <button class="btn ghost small" onclick="Night.addBuzzer()">🔔 Buzzer</button>
@@ -4074,7 +4079,7 @@ const Night = {
     // in the running order just implies something the round never does.
     // Fastest finger reads a written bank, so a decade would be a label
     // promising a filter the round never applies.
-    if (mode === 'tv' || mode === 'guess' || mode === 'quickfire' || mode === 'logos') decade = '';
+    if (this.NO_DECADE.includes(mode)) decade = '';
     const style = $('quickStyle').value;
     return {
       mode, decade,
@@ -4090,6 +4095,11 @@ const Night = {
       roundLabel: ''
     };
   },
+
+  /* Rounds that read a written bank or their own list rather than a decade
+     search. Naming them once stops the next round added from being forgotten
+     in three separate places, which is exactly what happened here. */
+  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos'],
 
   quickAdd(mode) {
     this.plan.push(this.defaultsFor(mode));
@@ -4110,7 +4120,8 @@ const Night = {
     // handing out nights that were mostly pictures, which is not the game.
     // Guarantee the music rounds and let picture rounds fill the rest.
     const music = Quiz.shuffle(['songs', 'years', 'themes', 'tv']);
-    const pics = Quiz.shuffle(['faces', 'backdrops', 'covers']);
+    // the non-music half now includes the rounds that need no Spotify at all
+    const pics = Quiz.shuffle(['faces', 'backdrops', 'covers', 'logos', 'quickfire', 'guess']);
     const size = 4 + Math.floor(Math.random() * 2); // 4 or 5
     const wantMusic = Math.max(2, size - 2);        // never fewer than two
     const pool = Quiz.shuffle(music.slice(0, wantMusic).concat(pics.slice(0, size - wantMusic)));
@@ -4119,7 +4130,7 @@ const Night = {
       const r = this.defaultsFor(m);   // resolves "mixed" to its own decade
       // nudge away from repeating a decade already used this night, but never
       // hand TV a decade — its pool is too thin to survive one
-      if (m !== 'tv' && m !== 'guess') {
+      if (!this.NO_DECADE.includes(m)) {
         let guard = 0;
         while (used.includes(r.decade) && guard++ < 8) r.decade = this.randomDecade();
         used.push(r.decade);
@@ -4140,7 +4151,7 @@ const Night = {
     // when there is one — otherwise the round would fail to build.
     const decade = $('quickDecade').value, style = $('quickStyle').value;
     // music-led, same as Surprise me — it's a music quiz
-    const order = ['songs', 'tv', 'years', 'faces', 'themes'];
+    const order = ['songs', 'tv', 'years', 'faces', 'logos', 'themes', 'quickfire', 'guess'];
     if (decade || style) order.push('covers');
     order.push('backdrops');
     const chosen = order.slice(0, size);
@@ -4149,7 +4160,7 @@ const Night = {
       const r = this.defaultsFor(m);
       // same anti-repeat as Surprise me, so "mixed decades" really does range
       // rather than landing on the eighties three times
-      if (decade === 'mixed' && m !== 'tv' && m !== 'guess') {
+      if (decade === 'mixed' && !this.NO_DECADE.includes(m)) {
         let guard = 0;
         while (used.includes(r.decade) && guard++ < 8) r.decade = this.randomDecade();
         used.push(r.decade);
