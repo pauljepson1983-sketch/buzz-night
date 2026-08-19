@@ -388,10 +388,11 @@ $('next').onclick = () => { if (!songs.length) return; idx = (idx + 1) % songs.l
 (async () => {
   const ready = await startSpotify();
   if (ready) await loadSongs();
+  else $('status').textContent = 'Sort the Spotify line above first, then reload this page.';
+
   // changing either one starts the search again, so you can hear what a
   // choice actually gives you before using it on a real night
   $('era').onchange = $('flavour').onchange = () => { idx = 0; reset(); loadSongs(); };
-  else $('status').textContent = 'Sort the Spotify line above first, then reload this page.';
   reset();
 })();
 </script>
