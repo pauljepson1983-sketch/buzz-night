@@ -636,6 +636,10 @@
   <h1>BUZZ <span class="z">NIGHT</span></h1>
   <p class="muted"><span id="pName"></span> · <span id="pScore">0 pts</span> <span id="pTeam"></span></p>
   <div id="playerStatus">Connecting…</div>
+  <div id="setupHead" class="hidden">
+    <h2 style="margin-bottom:2px">Set yourself up</h2>
+    <p class="muted" style="font-size:.85rem">Two quick things, then you're in.</p>
+  </div>
   <div id="stealTimer" class="hidden"></div>
   <div id="revealBox" class="reveal-box hidden"></div>
   <div id="roundCard" class="hidden"></div>
@@ -4565,6 +4569,15 @@ const Player = {
     // mid-game would let someone steer the questions towards themselves, and
     // swapping face or buzzer part-way through just confuses the room.
     if (this._locked) on = false;
+
+    // Setting up is a step of its own, not something to skim past under a
+    // live buzzer: while it's open the buzzer and status are out of the way,
+    // so the screen is only ever asking one thing at a time.
+    const btn = $('buzzBtn'), status = $('playerStatus'), head = $('setupHead');
+    if (btn) btn.classList.toggle('hidden', !!on);
+    if (status) status.classList.toggle('hidden', !!on);
+    if (head) head.classList.toggle('hidden', !on);
+
     const me = $('myMeCard'), kit = $('myKitCard'), chip = $('myChip');
     if (me) me.classList.toggle('hidden', !on);
     if (kit) kit.classList.toggle('hidden', !on);
