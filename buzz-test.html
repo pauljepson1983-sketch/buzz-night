@@ -251,7 +251,27 @@ $('buzz').onclick = async () => {
   if (buzzed) return;
   buzzed = true;
   $('buzz').disabled = true; $('buzz').textContent = 'Buzzed!';
+  $('status').textContent = 'Stopping the music…';
   try { await S.api('/me/player/pause?device_id=' + S.deviceId, { method: 'PUT' }); } catch (e) {}
+
+  /* Do NOT open the microphone yet. Pausing Spotify is a request over the
+     network, so sound carries on out of the speakers for a moment after the
+     button is pressed — and the recogniser happily transcribes it. A live
+     test caught exactly this: it heard "I just can't look it's killing me
+     and", which is the lyric of the song that was playing, not a word the
+     player said. In a room with the music up this would happen every time.
+
+     So wait until the player really has stopped, then give the speakers a
+     moment, and only then listen. */
+  for (let i = 0; i < 12; i++) {
+    try {
+      const st = await S.api('/me/player');
+      if (!st || st.is_playing === false) break;
+    } catch (e) { break; }
+    await new Promise(r => setTimeout(r, 150));
+  }
+  await new Promise(r => setTimeout(r, 250));
+
   $('status').textContent = 'Music stopped — say the song and the artist';
   $('say').style.display = 'block';
   listen();
