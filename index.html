@@ -280,6 +280,20 @@
   @media (prefers-reduced-motion: reduce) {
     #bigCount b { animation: none; opacity: 1 }
   }
+  /* Where-is-it round. The map is the whole interface, so it gets the room. */
+  #placeBox { margin-top: 10px }
+  #placeAsk { font-size: 1.15rem; font-weight: 700; text-align: center; margin-bottom: 4px }
+  #placeWhere { font-size: .85rem; text-align: center; opacity: .75; margin-bottom: 8px }
+  #placeWrap { position: relative; width: 100%; border-radius: 12px; overflow: hidden;
+               background: #0d0722; touch-action: manipulation; cursor: crosshair }
+  #placeWrap img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none }
+  .pin { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+         border-radius: 50%; border: 3px solid #fff; box-sizing: border-box; pointer-events: none }
+  .pin.mine   { background: #ffd83d }
+  .pin.truth  { background: #21d07a; width: 30px; height: 30px; margin: -15px 0 0 -15px }
+  .pin.other  { background: rgba(255,255,255,.5); width: 18px; height: 18px; margin: -9px 0 0 -9px; border-width: 2px }
+  .pin.locked { box-shadow: 0 0 0 4px rgba(255,216,61,.35) }
+  #placeHint { font-size: .85rem; text-align: center; margin-top: 8px; min-height: 1.2em }
 </style>
 </head>
 <body>
@@ -493,6 +507,7 @@
             <span class="muted" style="font-size:.8rem">or add one at a time:</span>
             <button class="btn ghost small" onclick="Night.quickAdd('quickfire')">⚡ Fastest finger</button>
             <button class="btn ghost small" onclick="Night.quickAdd('logos')">🏷️ Logos</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('places')">🌍 Where is it?</button>
             <button class="btn ghost small" onclick="Night.quickAdd('guess')">🎯 Closest wins</button>
             <button class="btn ghost small" onclick="Night.quickAdd('faces')">⭐ Faces</button>
             <button class="btn ghost small" onclick="Night.quickAdd('backdrops')">🎬 Stills</button>
@@ -538,6 +553,7 @@
             <option value="faces">Famous faces</option>
             <option value="songs">Name the song (music)</option>
             <option value="tv">TV theme tunes (music)</option>
+            <option value="places">Where is it? (maps)</option>
             <option value="logos">Logos</option>
             <option value="quickfire">Fastest finger (general knowledge)</option>
             <option value="guess">Closest wins (numbers)</option>
@@ -705,6 +721,13 @@
     <div id="quizArtWrap"><img id="quizArt" alt="album cover"></div>
     <div id="quizCountdown"></div>
     <div id="quizOptions"></div>
+    <div id="placeBox" class="hidden">
+      <div id="placeAsk"></div>
+      <div id="placeWhere"></div>
+      <div id="placeWrap"><img id="placeMap" alt=""></div>
+      <div id="placeHint"></div>
+      <button class="btn green" id="placeLock" style="width:100%;margin-top:10px">Lock it in</button>
+    </div>
     <div id="guessBox" class="hidden">
       <p id="guessPrompt" style="font-size:1.15rem; font-weight:800; margin:10px 0"></p>
       <input type="number" id="guessInput" inputmode="numeric" placeholder="Your guess"
@@ -1841,6 +1864,10 @@ const Host = {
     }
     if (msg.type === 'quizA') {
       Quiz.answer(conn.peer, msg.n, msg.choice);
+      return;
+    }
+    if (msg.type === 'quizP') {
+      Quiz.place(conn.peer, msg.n, msg.x, msg.y);
       return;
     }
     if (msg.type === 'quizG') {
@@ -3168,6 +3195,86 @@ const Quiz = {
     return this.toQuestions(kept, count);
   },
 
+  /* Latitude and longitude to a percentage across a map image.
+
+     The formulas are Wikipedia's own, from Module:Location map/data, so a
+     pin lands exactly where the encyclopaedia would put it. Checked against
+     known cities before any of these shipped: LA left and New York right on
+     the States, Lisbon far west and Moscow east on Europe, Gateshead dead
+     centre of Tyne and Wear. */
+  DEG: Math.PI / 180,
+
+  mapXY(m, lat, lon) {
+    const R = this.DEG;
+    if (m.proj === 'usa') {
+      return {
+        x: 50 + 124.03149777329222 * ((1.9694462586094064 - lat * R) * Math.sin(0.6010514667026994 * (lon + 96) * R)),
+        y: 50 + 1.6155950752393982 * 124.03149777329222 *
+             (0.02613325650382181 - (1.3236744353715044 - (1.9694462586094064 - lat * R) * Math.cos(0.6010514667026994 * (lon + 96) * R)))
+      };
+    }
+    if (m.proj === 'europe') {
+      const k = Math.pow((1 + Math.sin(lat*R)*Math.sin(52*R) + Math.cos(lat*R)*Math.cos(52*R)*Math.cos((lon-10)*R)) * 0.5, -0.5);
+      return {
+        x: 131.579 * (Math.cos(lat*R) * Math.sin((lon-10)*R)) * k + 36.388,
+        y: 55.11 - 153.610 * (Math.cos(52*R)*Math.sin(lat*R) - Math.sin(52*R)*Math.cos(lat*R)*Math.cos((lon-10)*R)) * k
+      };
+    }
+    return { x: (lon - m.w) / (m.e - m.w) * 100, y: (m.n - lat) / (m.n - m.s) * 100 };
+  },
+
+  // only the flat maps can be read backwards, which is why the real distance
+  // in kilometres is reported for those and left off the others
+  mapLatLon(m, x, y) {
+    if (m.proj !== 'flat') return null;
+    return { lat: m.n - (y / 100) * (m.n - m.s), lon: m.w + (x / 100) * (m.e - m.w) };
+  },
+
+  kmBetween(a, b) {
+    const R = this.DEG, E = 6371;
+    const dLat = (b.lat - a.lat) * R, dLon = (b.lon - a.lon) * R;
+    const s = Math.sin(dLat/2)**2 + Math.cos(a.lat*R) * Math.cos(b.lat*R) * Math.sin(dLon/2)**2;
+    return Math.round(2 * E * Math.asin(Math.min(1, Math.sqrt(s))));
+  },
+
+  async buildPlaces(count) {
+    const bank = (window.PLACES || []), maps = (window.MAPS || {});
+    if (bank.length < 4) throw new Error('The place list did not load — check questions.js sits next to index.html.');
+    this.available = bank.length;
+    const picks = Seen.rank('places', bank.map(p => ({ ...p, seenKey: p.name, label: p.name }))).slice(0, count);
+
+    // one request for every map this round needs
+    $('quizStatus').textContent = 'Fetching maps…';
+    const need = [...new Set(picks.map(p => p.map))].filter(k => maps[k]);
+    const titles = need.map(k => 'File:' + maps[k].file);
+    const urlFor = {};
+    try {
+      const r = await fetch('https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*' +
+        '&prop=imageinfo&iiprop=url&iiurlwidth=1200&titles=' + encodeURIComponent(titles.join('|')));
+      const j = await r.json();
+      Object.values(((j.query || {}).pages) || {}).forEach(p => {
+        if (p.imageinfo) urlFor[p.title.replace('File:', '')] = p.imageinfo[0].thumburl;
+      });
+    } catch (e) { throw new Error('Could not reach the map library.'); }
+
+    const out = [];
+    picks.forEach(p => {
+      const m = maps[p.map];
+      const url = m && urlFor[m.file];
+      if (!url) return;
+      const at = this.mapXY(m, p.lat, p.lon);
+      // a place that falls outside its own map would be unanswerable
+      if (!(at.x >= 0 && at.x <= 100 && at.y >= 0 && at.y <= 100)) return;
+      out.push({
+        kind: 'place', seenKey: p.name, label: p.name, answer: p.name, title: p.name,
+        prompt: 'Where is ' + p.name + '?', mapUrl: url, mapName: m.name, mapKey: p.map,
+        tx: at.x, ty: at.y, lat: p.lat, lon: p.lon
+      });
+    });
+    if (out.length < 1) throw new Error('No maps came back — try again in a moment.');
+    return out;
+  },
+
   buildQuickfire(count) {
     const bank = (window.QUESTIONS || []);
     if (bank.length < 4) throw new Error('The question bank did not load — check questions.js sits next to index.html.');
@@ -3352,6 +3459,7 @@ const Quiz = {
   async buildChunk(decade, count, style, extra, label) {
     const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
     // closest-wins comes from the baked fact bank, not from a decade search
+    if (this.mode === 'places') return await this.buildPlaces(count);
     if (this.mode === 'logos') return await this.buildLogos(count);
     if (this.mode === 'quickfire') return this.buildQuickfire(count);
     if (this.mode === 'guess') return this.buildGuess(count);
@@ -3448,7 +3556,7 @@ const Quiz = {
     // Everything that wasn't covers used to fall through to "films", so the
     // host line read "10 questions from films" on the closest-wins round too.
     // Only the picture and music rounds actually come from films.
-    const SOURCE = { quickfire: 'the question bank', guess: 'the fact bank', logos: 'the logo list' };
+    const SOURCE = { quickfire: 'the question bank', guess: 'the fact bank', logos: 'the logo list', places: 'the map list' };
     const label = this.mode === 'covers'
       ? ([style, extra, decadeLabel].filter(Boolean).join(', ') || 'that')
       : SOURCE[this.mode]
@@ -3479,7 +3587,9 @@ const Quiz = {
         qs = await this.buildChunk(decade, count, style, extra, label);
       }
 
-      if (this.mode === 'quickfire' || this.mode === 'guess') {
+      if (this.mode === 'places') {
+        this.questions = qs;
+      } else if (this.mode === 'quickfire' || this.mode === 'guess') {
         this.questions = qs;
       } else if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) {
         this.questions = qs.filter(q => q.uri);
@@ -3601,6 +3711,7 @@ const Quiz = {
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
       forWhom: q.forWhom || null, era: q.era || null,
       kind: q.kind || null, prompt: q.prompt || null, unit: q.unit || null,
+      mapUrl: q.mapUrl || null, mapName: q.mapName || null,
       title: this.TITLES[this.mode] || 'Quiz round',
       noun: this.NOUNS[this.mode] || 'Question',
       roundLabel: this.roundLabel || '',
@@ -3625,6 +3736,7 @@ const Quiz = {
       songs: 'A song plays and four song titles appear on the phones. The classic music round. Decade applies; style narrows it.',
       tv: 'A TV theme tune plays and four shows appear. Show names are checked against TMDB, so what you get is a real programme. Decade filters on when the SHOW aired; style is ignored.',
       years: 'A song plays and four years appear. Decade applies; style narrows it. Remasters are filtered out so the dates are honest.',
+      places: 'A place is named and a map appears on every phone — the world, a country, or Tyne and Wear. Tap to drop a pin, move it as much as you like, then lock it in. Closest pin wins, scored like Closest wins. Decade and flavour are ignored; maps and places live in questions.js.',
       logos: 'A logo flashes up on every phone, then four brand names. Symbol marks only — a logo with the name written in it would give the answer away. Decade and flavour are ignored; the brand list is in questions.js.',
       quickfire: 'A written question appears, then four answers a moment later. Fastest correct answer takes the most points. Decade and flavour are ignored — it reads the question bank in questions.js.',
       faces: 'A face flashes up and four names appear — drawn from the cast of well-known films, so they are people the room will know. Crop into it makes it much harder. Decade applies; style is ignored. Faces from TMDB.'
@@ -3716,6 +3828,48 @@ const Quiz = {
   /* Closest takes it, but second and third still score, and anyone within a
      tenth of the answer gets a bonus. Winner-takes-all leaves most of the room
      on nothing, which is exactly when people stop playing. */
+  place(peerId, n, x, y) {
+    if (!this.active || n !== this.idx + 1 || this.answers[peerId]) return;
+    if (!isFinite(x) || !isFinite(y)) return;
+    this.answers[peerId] = { x: +x, y: +y };
+    Host.renderScores();
+    this.checkAllIn();
+  },
+
+  /* Ranked on distance across the picture rather than in kilometres.
+     Everyone is looking at the same map, so the order is identical — and it
+     works for the conic and azimuthal maps too, where turning a pin back
+     into a latitude is horrible. */
+  scorePlaces() {
+    const q = this.questions[this.idx];
+    const m = (window.MAPS || {})[q.mapKey] || {};
+    const entries = Object.entries(this.answers)
+      .map(([id, a]) => ({ id, x: a.x, y: a.y, off: Math.hypot(a.x - q.tx, a.y - q.ty) }))
+      .sort((a, b) => a.off - b.off);
+    const AWARD = [25, 15, 10];
+    entries.forEach((e, i) => {
+      const p = Host.players[e.id];
+      if (!p) return;
+      let pts = i < AWARD.length ? AWARD[i] : 0;
+      // a pin within a twentieth of the map is a good pin wherever it placed
+      if (e.off <= 5) pts += 10;
+      p.score += pts;
+      p.stats = p.stats || Host.blankStats();
+      p.stats.answered++;
+      if (i === 0) p.stats.correct++;
+      p.stats.bestSingle = Math.max(p.stats.bestSingle || 0, pts);
+      p.stats.byMode.places = (p.stats.byMode.places || 0) + pts;
+      this.gains[e.id] = pts;
+      this.roundGains[e.id] = (this.roundGains[e.id] || 0) + pts;
+      e.pts = pts;
+      const here = this.mapLatLon(m, e.x, e.y);
+      e.km = here ? this.kmBetween(here, { lat: q.lat, lon: q.lon }) : null;
+    });
+    Host.renderScores();
+    Host.saveGame();
+    return entries;
+  },
+
   scoreGuesses() {
     const q = this.questions[this.idx];
     const truth = q.answer;
@@ -3757,6 +3911,22 @@ const Quiz = {
 
     // Closest-wins is scored on distance, not a right answer, so it needs its
     // own path here rather than the multiple-choice one below.
+    if (q && q.kind === 'place') {
+      const ranked = this.scorePlaces();
+      const pins = ranked.map(e => ({ name: (Host.players[e.id] || {}).name || '?', x: e.x, y: e.y, pts: e.pts, km: e.km }));
+      Object.entries(Host.players).forEach(([id, pl]) => {
+        Host.sendTo(id, { type: 'placeResult', tx: q.tx, ty: q.ty, name: q.answer,
+          pins, mine: this.answers[id] || null, gained: this.gains[id] || 0, score: pl.score });
+      });
+      Host.pushBoard();
+      const best = pins[0];
+      $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' +
+        esc(q.answer) + (best ? ' — closest: ' + esc(best.name) + (best.km != null ? ' (' + best.km.toLocaleString() + 'km out)' : '')
+                              : ' — nobody placed a pin');
+      if (best) { const v = Host.voiceFor(best.name); Sound.say(best.name + ' was closest', v.voice, v.style); }
+      setTimeout(() => this.next(), 6000);
+      return;
+    }
     if (q && q.kind === 'guess') {
       const ranked = this.scoreGuesses();
       const board = ranked.map(e => ({ name: (Host.players[e.id] || {}).name || '?', value: e.value, pts: e.pts }));
@@ -3890,11 +4060,11 @@ const Quiz = {
   TITLES: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
     songs: '🎧 Name the song', tv: '📺 TV theme tunes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces',
-    quickfire: '⚡ Fastest finger', logos: '🏷️ Logos'
+    quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
-    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question', logos: 'Logo'
+    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question', logos: 'Logo', places: 'Place'
   },
   HOWTO: {
     covers: 'A cover flashes up, then four albums. Pick the right one.',
@@ -3906,7 +4076,8 @@ const Quiz = {
     years: 'Listen, then pick the year it came out.',
     faces: 'A face flashes up, then four names. Quick!',
     quickfire: 'Read the question, then four answers appear. Fastest right answer wins it.',
-    logos: 'A logo flashes up, then four brands. Pick the right one.'
+    logos: 'A logo flashes up, then four brands. Pick the right one.',
+    places: 'Tap the map to drop a pin. Move it as often as you like, then lock it in. Closest wins.'
   },
 
   ROUND_NAMES: {
@@ -3918,7 +4089,8 @@ const Quiz = {
     years: 'year of release round',
     faces: 'famous faces round',
     quickfire: 'fastest finger round',
-    logos: 'logo round'
+    logos: 'logo round',
+    places: 'where is it round'
   },
 
   stop() {
@@ -4142,7 +4314,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', buzzer: '🔔 Buzzer round (you judge)'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzer: '🔔 Buzzer round (you judge)'
   },
 
   load() {
@@ -4213,7 +4385,7 @@ const Night = {
       extra: '',
       count: 10,
       // typing digits takes longer than tapping one of four options
-      secs: mode === 'guess' ? 20 : 10,
+      secs: mode === 'guess' ? 20 : mode === 'places' ? 25 : 10,
       flash: mode === 'faces' ? 2000 : 3000,
       startAt: 'skip',
       crop: 'crop',
@@ -4224,7 +4396,7 @@ const Night = {
   /* Rounds that read a written bank or their own list rather than a decade
      search. Naming them once stops the next round added from being forgotten
      in three separate places, which is exactly what happened here. */
-  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos'],
+  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos', 'places'],
 
   quickAdd(mode) {
     this.plan.push(this.defaultsFor(mode));
@@ -4600,6 +4772,7 @@ const Player = {
         // its last question stayed on screen through the following round
         $('quizPrompt').classList.add('hidden');
         $('quizPrompt').textContent = '';
+        $('placeBox').classList.add('hidden');
         $('quizFeedback').textContent = '';
         $('quizCountdown').textContent = '';
         $('quizRound').textContent = (msg.roundLabel ? msg.roundLabel + ' · ' : '') + (msg.title || 'Quiz round');
@@ -4607,6 +4780,7 @@ const Player = {
         this.setStatus('');
         break;
 
+      case 'placeResult': this.placeResult(msg); break;
       case 'guessResult': this.guessResult(msg); break;
       case 'countIn': showCount(msg.text, msg.go); break;
       case 'countInEnd': hideCount(); break;
@@ -4757,6 +4931,7 @@ const Player = {
 
   quizQuestion(msg) {
     this.setPlaying(true);
+    if (msg.kind === 'place') return this.placeQuestion(msg);
     if (msg.kind === 'guess') return this.guessQuestion(msg);
     $('roundCard').classList.add('hidden');
     clearInterval(this._quizTimer);
@@ -4832,6 +5007,109 @@ const Player = {
     } else {
       setTimeout(showOptions, msg.flashMs);
     }
+  },
+
+  /* Tap anywhere to drop the pin, tap again to move it, and nothing counts
+     until Lock it in is pressed. This round does not score speed, so there is
+     no cost to taking your time over it. */
+  placeQuestion(msg) {
+    this.setPlaying(true);
+    clearInterval(this._quizTimer);
+    this._quizN = msg.n; this._quizAnswered = false; this._pin = null;
+    this.setStatus('');
+    $('quizPanel').classList.remove('hidden');
+    $('buzzBtn').classList.add('hidden');
+    $('quizArtWrap').classList.remove('showing');
+    $('quizPrompt').classList.add('hidden');
+    $('quizOptions').innerHTML = '';
+    $('quizFeedback').textContent = '';
+    $('guessBox').classList.add('hidden');
+    $('placeBox').classList.remove('hidden');
+    $('quizRound').textContent = (msg.roundLabel ? msg.roundLabel + ' · ' : '') + (msg.title || 'Where is it?');
+    $('quizProgress').textContent = (msg.noun || 'Place') + ' ' + msg.n + ' of ' + msg.total;
+    $('placeAsk').textContent = msg.prompt || '';
+    $('placeWhere').textContent = msg.mapName ? 'on a map of ' + msg.mapName : '';
+    $('placeHint').textContent = 'Tap the map to place your pin';
+    const wrap = $('placeWrap');
+    [...wrap.querySelectorAll('.pin')].forEach(p => p.remove());
+    $('placeMap').src = msg.mapUrl || '';
+    const lock = $('placeLock');
+    lock.disabled = true;
+    lock.textContent = 'Lock it in';
+    lock.classList.remove('hidden');
+    this.vibe([40]);
+
+    wrap.onclick = ev => {
+      if (this._quizAnswered) return;
+      const r = $('placeMap').getBoundingClientRect();
+      // tapping before the map has arrived did nothing at all and said
+      // nothing either, which looks exactly like a broken round
+      if (!r.width || !r.height) { $('placeHint').textContent = 'Map still loading — try again in a second'; return; }
+      const x = Math.max(0, Math.min(100, (ev.clientX - r.left) / r.width * 100));
+      const y = Math.max(0, Math.min(100, (ev.clientY - r.top) / r.height * 100));
+      this._pin = { x, y };
+      let el = wrap.querySelector('.pin.mine');
+      if (!el) { el = document.createElement('div'); el.className = 'pin mine'; wrap.appendChild(el); }
+      el.style.left = x + '%'; el.style.top = y + '%';
+      lock.disabled = false;
+      $('placeHint').textContent = 'Move it as much as you like, then lock it in';
+      this.vibe([20]);
+    };
+
+    lock.onclick = () => {
+      if (this._quizAnswered || !this._pin) return;
+      this._quizAnswered = true;
+      this.conn.send({ type: 'quizP', n: this._quizN, x: this._pin.x, y: this._pin.y });
+      lock.disabled = true;
+      lock.textContent = 'Locked in';
+      const el = wrap.querySelector('.pin.mine');
+      if (el) el.classList.add('locked');
+      $('placeHint').textContent = 'Locked in — waiting for everyone else…';
+      this.vibe([60, 40, 60]);
+    };
+
+    let left = msg.seconds;
+    const cd = $('quizCountdown');
+    cd.textContent = left; cd.classList.remove('hurry');
+    this._quizTimer = setInterval(() => {
+      left--;
+      cd.textContent = left > 0 ? left : '⏱';
+      if (left <= 3) cd.classList.add('hurry');
+      if (left <= 0) {
+        clearInterval(this._quizTimer);
+        // an unlocked pin still counts when the clock runs out — better than
+        // losing someone's answer because they were still deciding
+        if (!this._quizAnswered && this._pin) lock.onclick();
+        else if (!this._quizAnswered) $('placeHint').textContent = 'No pin placed';
+        lock.disabled = true;
+      }
+    }, 1000);
+  },
+
+  placeResult(msg) {
+    clearInterval(this._quizTimer);
+    const wrap = $('placeWrap');
+    [...wrap.querySelectorAll('.pin.other, .pin.truth')].forEach(p => p.remove());
+    (msg.pins || []).forEach(p => {
+      const mine = p.name && this.name && p.name.toLowerCase() === this.name.toLowerCase();
+      if (mine) return;
+      const el = document.createElement('div');
+      el.className = 'pin other';
+      el.style.left = p.x + '%'; el.style.top = p.y + '%';
+      wrap.appendChild(el);
+    });
+    const truth = document.createElement('div');
+    truth.className = 'pin truth';
+    truth.style.left = msg.tx + '%'; truth.style.top = msg.ty + '%';
+    wrap.appendChild(truth);
+    const me = (msg.pins || []).find(p => p.name && this.name && p.name.toLowerCase() === this.name.toLowerCase());
+    $('placeHint').textContent = me
+      ? (me.km != null ? 'You were ' + me.km.toLocaleString() + 'km out' + (msg.gained ? ' — ' + msg.gained + ' points' : '')
+                       : (msg.gained ? msg.gained + ' points' : 'No points this time'))
+      : 'No pin placed';
+    $('pScore').textContent = (msg.score || 0) + ' pts';
+    $('placeLock').classList.add('hidden');
+    wrap.onclick = null;
   },
 
   guessQuestion(msg) {

@@ -767,3 +767,149 @@ window.LOGOS = [
   { name: 'Waitrose',        domain: 'waitrose.com' },
   { name: 'Greggs',          domain: 'greggs.co.uk' }
 ];
+
+
+/* ======================================================================
+   MAPS & PLACES — for the "where is it?" round.
+
+   After Where Is Kazakhstan? on Richard Osman's House of Games: a place is
+   named, everyone drops a pin, closest wins.
+
+   Each map states how latitude and longitude become a position on its
+   image. Three kinds, every one checked against known cities before use:
+
+     flat   plate carrée — x and y are straight lines from the bounds. The
+            simple case, and the only one where a pin can be turned back
+            into a real distance in kilometres.
+     usa    the conic projection Wikipedia uses for its states map.
+     europe Lambert azimuthal, centred on 52N 10E.
+
+   The formulas are Wikipedia's own, taken from Module:Location map/data,
+   so a pin lands exactly where the encyclopaedia would put it.
+
+   WHY NOT JUST CROP THE WORLD MAP: tried, and it fails on resolution.
+   Wikimedia caps that image at 1920px, which leaves Europe at 288x203 and
+   Tyne and Wear at 3x2 pixels. Every scale needs its own image.
+
+   SCORING runs in image space rather than kilometres. Everyone answering a
+   question sees the same map, so ranking by distance across the picture
+   gives the same order as ranking by real distance — and it works for the
+   awkward projections too, where turning a pin back into a lat/long is
+   horrible. Flat maps also report a real distance, because "340km out"
+   reads better than a percentage.
+   ====================================================================== */
+window.MAPS = {
+  world:   { name: 'the world',         file: 'World map with nations.svg',                            proj: 'flat', n: 90,    s: -90,   w: -180,  e: 180 },
+  uk:      { name: 'the UK',            file: 'United Kingdom adm location map.svg',                   proj: 'flat', n: 61,    s: 49,    w: -11,   e: 2.2 },
+  tyne:    { name: 'Tyne and Wear',     file: 'Tyne and Wear UK location map.svg',                     proj: 'flat', n: 55.09, s: 54.78, w: -1.9,  e: -1.3 },
+  france:  { name: 'France',            file: 'France location map-Regions and departements-2016.svg', proj: 'flat', n: 51.5,  s: 41,    w: -5.8,  e: 10 },
+  germany: { name: 'Germany',           file: 'Germany adm location map.svg',                          proj: 'flat', n: 55.1,  s: 47.2,  w: 5.5,   e: 15.5 },
+  italy:   { name: 'Italy',             file: 'Italy provincial location map 2016.svg',                proj: 'flat', n: 47.4,  s: 35.3,  w: 6.2,   e: 19 },
+  india:   { name: 'India',             file: 'India location map.svg',                                proj: 'flat', n: 37.5,  s: 5,     w: 67,    e: 99 },
+  aus:     { name: 'Australia',         file: 'Australia location map.svg',                            proj: 'flat', n: -9,    s: -44.5, w: 111.5, e: 155 },
+  brazil:  { name: 'Brazil',            file: 'Brazil location map.svg',                               proj: 'flat', n: 6,     s: -34,   w: -74.5, e: -32 },
+  usa:     { name: 'the United States', file: 'Usa edcp location map.svg',                             proj: 'usa' },
+  europe:  { name: 'Europe',            file: 'Europe location map.svg',                               proj: 'europe' }
+};
+
+/* name, latitude, longitude, which map. Add freely — a place only needs a
+   map whose bounds contain it. */
+window.PLACES = [
+  /* --- the world ----------------------------------------------------- */
+  { name: 'Kazakhstan',     lat: 48.00,  lon: 66.90,   map: 'world' },
+  { name: 'Peru',           lat: -9.20,  lon: -75.00,  map: 'world' },
+  { name: 'Mongolia',       lat: 46.90,  lon: 103.80,  map: 'world' },
+  { name: 'Madagascar',     lat: -18.77, lon: 46.87,   map: 'world' },
+  { name: 'Iceland',        lat: 64.96,  lon: -19.02,  map: 'world' },
+  { name: 'Nepal',          lat: 28.40,  lon: 84.10,   map: 'world' },
+  { name: 'Cuba',           lat: 21.50,  lon: -77.80,  map: 'world' },
+  { name: 'New Zealand',    lat: -40.90, lon: 174.90,  map: 'world' },
+  { name: 'Vietnam',        lat: 14.10,  lon: 108.30,  map: 'world' },
+  { name: 'Morocco',        lat: 31.80,  lon: -7.10,   map: 'world' },
+  { name: 'Kenya',          lat: 0.02,   lon: 37.90,   map: 'world' },
+  { name: 'Chile',          lat: -35.70, lon: -71.50,  map: 'world' },
+  { name: 'Tokyo',          lat: 35.68,  lon: 139.69,  map: 'world' },
+  { name: 'Rio de Janeiro', lat: -22.91, lon: -43.17,  map: 'world' },
+  { name: 'Cape Town',      lat: -33.92, lon: 18.42,   map: 'world' },
+  { name: 'Reykjavik',      lat: 64.15,  lon: -21.94,  map: 'world' },
+  { name: 'Istanbul',       lat: 41.01,  lon: 28.98,   map: 'world' },
+  { name: 'Machu Picchu',   lat: -13.16, lon: -72.55,  map: 'world' },
+  { name: 'Mount Everest',  lat: 27.99,  lon: 86.93,   map: 'world' },
+  { name: 'Easter Island',  lat: -27.11, lon: -109.35, map: 'world' },
+  { name: 'Angkor Wat',     lat: 13.41,  lon: 103.87,  map: 'world' },
+  { name: 'Petra',          lat: 30.33,  lon: 35.44,   map: 'world' },
+
+  /* --- Europe -------------------------------------------------------- */
+  { name: 'the Eiffel Tower',     lat: 48.858, lon: 2.294,  map: 'europe' },
+  { name: 'the Colosseum',        lat: 41.890, lon: 12.492, map: 'europe' },
+  { name: 'the Sagrada Familia',  lat: 41.404, lon: 2.174,  map: 'europe' },
+  { name: 'the Acropolis',        lat: 37.971, lon: 23.726, map: 'europe' },
+  { name: 'the Brandenburg Gate', lat: 52.516, lon: 13.377, map: 'europe' },
+  { name: 'Amsterdam',            lat: 52.37,  lon: 4.90,   map: 'europe' },
+  { name: 'Prague',               lat: 50.08,  lon: 14.44,  map: 'europe' },
+  { name: 'Copenhagen',           lat: 55.68,  lon: 12.57,  map: 'europe' },
+  { name: 'Dublin',               lat: 53.35,  lon: -6.26,  map: 'europe' },
+  { name: 'Oslo',                 lat: 59.91,  lon: 10.75,  map: 'europe' },
+  { name: 'Lisbon',               lat: 38.72,  lon: -9.14,  map: 'europe' },
+  { name: 'Vienna',               lat: 48.21,  lon: 16.37,  map: 'europe' },
+
+  /* --- the UK --------------------------------------------------------- */
+  { name: 'Carlisle',       lat: 54.89,  lon: -2.94,  map: 'uk' },
+  { name: 'Norwich',        lat: 52.63,  lon: 1.30,   map: 'uk' },
+  { name: 'Aberystwyth',    lat: 52.41,  lon: -4.08,  map: 'uk' },
+  { name: 'Plymouth',       lat: 50.37,  lon: -4.14,  map: 'uk' },
+  { name: 'Inverness',      lat: 57.48,  lon: -4.22,  map: 'uk' },
+  { name: 'Belfast',        lat: 54.60,  lon: -5.93,  map: 'uk' },
+  { name: 'Blackpool',      lat: 53.82,  lon: -3.05,  map: 'uk' },
+  { name: 'Cardiff',        lat: 51.48,  lon: -3.18,  map: 'uk' },
+  { name: 'York',           lat: 53.96,  lon: -1.08,  map: 'uk' },
+  { name: 'Brighton',       lat: 50.82,  lon: -0.14,  map: 'uk' },
+  { name: 'Skegness',       lat: 53.14,  lon: 0.34,   map: 'uk' },
+  { name: 'Fort William',   lat: 56.82,  lon: -5.11,  map: 'uk' },
+  { name: 'Stonehenge',     lat: 51.179, lon: -1.826, map: 'uk' },
+  { name: 'John o Groats',  lat: 58.64,  lon: -3.07,  map: 'uk' },
+
+  /* --- Tyne and Wear — the brutal one --------------------------------- */
+  { name: 'Gateshead',              lat: 54.95,  lon: -1.60,  map: 'tyne' },
+  { name: 'Whitley Bay',            lat: 55.04,  lon: -1.45,  map: 'tyne' },
+  { name: 'Sunderland',             lat: 54.90,  lon: -1.38,  map: 'tyne' },
+  { name: 'Tynemouth',              lat: 55.02,  lon: -1.42,  map: 'tyne' },
+  { name: 'South Shields',          lat: 54.99,  lon: -1.43,  map: 'tyne' },
+  { name: 'Blaydon',                lat: 54.96,  lon: -1.71,  map: 'tyne' },
+  { name: 'Jarrow',                 lat: 54.98,  lon: -1.49,  map: 'tyne' },
+  { name: 'Wallsend',               lat: 54.99,  lon: -1.53,  map: 'tyne' },
+  { name: 'Washington',             lat: 54.90,  lon: -1.52,  map: 'tyne' },
+  { name: 'the Angel of the North', lat: 54.914, lon: -1.589, map: 'tyne' },
+
+  /* --- the United States ---------------------------------------------- */
+  { name: 'Chicago',                lat: 41.88,  lon: -87.63,   map: 'usa' },
+  { name: 'New Orleans',            lat: 29.95,  lon: -90.07,   map: 'usa' },
+  { name: 'Seattle',                lat: 47.61,  lon: -122.33,  map: 'usa' },
+  { name: 'Las Vegas',              lat: 36.17,  lon: -115.14,  map: 'usa' },
+  { name: 'Denver',                 lat: 39.74,  lon: -104.99,  map: 'usa' },
+  { name: 'Miami',                  lat: 25.76,  lon: -80.19,   map: 'usa' },
+  { name: 'Mount Rushmore',         lat: 43.879, lon: -103.459, map: 'usa' },
+  { name: 'the Grand Canyon',       lat: 36.06,  lon: -112.14,  map: 'usa' },
+  { name: 'the Golden Gate Bridge', lat: 37.82,  lon: -122.48,  map: 'usa' },
+  { name: 'Yellowstone',            lat: 44.43,  lon: -110.59,  map: 'usa' },
+
+  /* --- single countries ------------------------------------------------ */
+  { name: 'Mont Saint-Michel',         lat: 48.636,  lon: -1.511,  map: 'france' },
+  { name: 'Nice',                      lat: 43.70,   lon: 7.27,    map: 'france' },
+  { name: 'Bordeaux',                  lat: 44.84,   lon: -0.58,   map: 'france' },
+  { name: 'Mont Blanc',                lat: 45.83,   lon: 6.86,    map: 'france' },
+  { name: 'Venice',                    lat: 45.44,   lon: 12.32,   map: 'italy' },
+  { name: 'Pompeii',                   lat: 40.75,   lon: 14.49,   map: 'italy' },
+  { name: 'Mount Etna',                lat: 37.75,   lon: 14.99,   map: 'italy' },
+  { name: 'the Leaning Tower of Pisa', lat: 43.723,  lon: 10.396,  map: 'italy' },
+  { name: 'Munich',                    lat: 48.14,   lon: 11.58,   map: 'germany' },
+  { name: 'Hamburg',                   lat: 53.55,   lon: 9.99,    map: 'germany' },
+  { name: 'the Taj Mahal',             lat: 27.175,  lon: 78.042,  map: 'india' },
+  { name: 'Mumbai',                    lat: 19.08,   lon: 72.88,   map: 'india' },
+  { name: 'the Sydney Opera House',    lat: -33.857, lon: 151.215, map: 'aus' },
+  { name: 'Uluru',                     lat: -25.345, lon: 131.036, map: 'aus' },
+  { name: 'Perth',                     lat: -31.95,  lon: 115.86,  map: 'aus' },
+  { name: 'the Great Barrier Reef',    lat: -18.29,  lon: 147.70,  map: 'aus' },
+  { name: 'Christ the Redeemer',       lat: -22.952, lon: -43.211, map: 'brazil' },
+  { name: 'Brasilia',                  lat: -15.79,  lon: -47.88,  map: 'brazil' }
+];
