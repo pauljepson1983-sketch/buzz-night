@@ -182,7 +182,27 @@ window.QUESTIONS = [
   { id:'loc-013', cat:'local', diff:'hard',   q:'Which Sunderland-born inventor demonstrated an early electric light bulb?', a:'Joseph Swan', w:['Thomas Edison','Michael Faraday','Humphry Davy'] },
   { id:'loc-014', cat:'local', diff:'medium', q:'Which seaside town is home to the Spanish City dome?', a:'Whitley Bay', w:['Tynemouth','South Shields','Cullercoats'] },
   { id:'loc-015', cat:'local', diff:'medium', q:'Which city were the Jarrow marchers heading for?', a:'London', w:['Edinburgh','Manchester','Birmingham'] },
-  { id:'loc-016', cat:'local', diff:'medium', q:'What is Newcastle’s covered Victorian market called?', a:'The Grainger Market', w:['The Bigg Market','The Quayside Market','Eldon Market'] }
+  { id:'loc-016', cat:'local', diff:'medium', q:'What is Newcastle’s covered Victorian market called?', a:'The Grainger Market', w:['The Bigg Market','The Quayside Market','Eldon Market'] },
+  { id:'loc-017', cat:'local', diff:'medium', q:'The man on top of Grey’s Monument gave his name to what?', a:'A type of tea', w:['A bridge','A biscuit','A breed of dog'] },
+  { id:'loc-018', cat:'local', diff:'medium', q:'Someone from Newcastle is a Geordie. What is someone from Sunderland?', a:'A Mackem', w:['A Smoggie','A Sand Dancer','A Monkey Hanger'] },
+  { id:'loc-019', cat:'local', diff:'easy',   q:'What is a stottie?', a:'A round flat loaf', w:['A meat pie','A sponge cake','A milky pudding'] },
+  { id:'loc-020', cat:'local', diff:'easy',   q:'Which North East club are nicknamed the Black Cats?', a:'Sunderland', w:['Newcastle United','Middlesbrough','Hartlepool United'] },
+  { id:'loc-021', cat:'local', diff:'medium', q:'Which band had a hit with “Fog on the Tyne”?', a:'Lindisfarne', w:['The Animals','Dire Straits','Prefab Sprout'] },
+  { id:'loc-022', cat:'local', diff:'medium', q:'Which Newcastle band recorded “House of the Rising Sun”?', a:'The Animals', w:['Lindisfarne','The Shadows','The Kinks'] },
+  { id:'loc-023', cat:'local', diff:'medium', q:'Where does the Great North Run finish?', a:'South Shields', w:['Newcastle','Sunderland','Tynemouth'] },
+  { id:'loc-024', cat:'local', diff:'medium', q:'Which Northumberland castle stood in for Hogwarts on film?', a:'Alnwick Castle', w:['Bamburgh Castle','Warkworth Castle','Dunstanburgh Castle'] },
+  { id:'loc-025', cat:'local', diff:'hard',   q:'Whose Northumberland home was the first house lit by hydroelectric power?', a:'Lord Armstrong', w:['Lord Leverhulme','George Hudson','The Duke of Northumberland'] },
+  { id:'loc-026', cat:'local', diff:'hard',   q:'Which Roman fort stood at Wallsend?', a:'Segedunum', w:['Arbeia','Vindolanda','Housesteads'] },
+  { id:'loc-027', cat:'local', diff:'medium', q:'Which novelist, famous for her North East sagas, was born in South Shields?', a:'Catherine Cookson', w:['Barbara Taylor Bradford','Jilly Cooper','Maeve Binchy'] },
+  { id:'loc-028', cat:'local', diff:'easy',   q:'Which river flows through Durham?', a:'The Wear', w:['The Tyne','The Tees','The Coquet'] },
+  { id:'loc-029', cat:'local', diff:'easy',   q:'What colour is the Tyne Bridge painted?', a:'Green', w:['Blue','Red','Grey'] },
+  { id:'loc-030', cat:'local', diff:'medium', q:'Which Northumberland island is cut off by the tide twice a day?', a:'Holy Island', w:['Coquet Island','The Farne Islands','Brownsman Island'] },
+  { id:'loc-031', cat:'local', diff:'easy',   q:'Finish the saying: carrying coals to…', a:'Newcastle', w:['Sunderland','Durham','Middlesbrough'] },
+  { id:'loc-032', cat:'local', diff:'hard',   q:'Newcastle Brown Ale is known locally by which nickname?', a:'The Dog', w:['The Cat','The Horse','The Bird'] },
+  { id:'loc-033', cat:'local', diff:'hard',   q:'Newcastle is named after a castle built in which century?', a:'The 11th', w:['The 9th','The 13th','The 15th'] },
+  { id:'loc-034', cat:'local', diff:'medium', q:'Which sweeping Newcastle street is often voted one of England’s finest?', a:'Grey Street', w:['Northumberland Street','Pilgrim Street','Dean Street'] },
+  { id:'loc-035', cat:'local', diff:'hard',   q:'Which creatures appear on Newcastle United’s club crest?', a:'Seahorses', w:['Magpies','Lions','Dragons'] },
+  { id:'loc-036', cat:'local', diff:'hard',   q:'Which travelling fair is held on Newcastle’s Town Moor?', a:'The Hoppings', w:['The Goose Fair','St Giles Fair','Barnet Fair'] }
 
 ];
 
@@ -433,14 +453,25 @@ window.CLOSEST = {
     q: n => 'What year did ' + n + '?',
     unit: '', vintage: 0.5,
     items: [
+      ['Newcastle’s Theatre Royal open on Grey Street', 1837],
+      ['Grey’s Monument go up', 1838],
       ['the High Level Bridge open', 1849],
+      ['Newcastle Central Station open', 1850],
       ['the Swing Bridge open', 1876],
+      ['the Hoppings first come to the Town Moor', 1882],
       ['Newcastle United form', 1892],
       ['the Tyne Bridge open', 1928],
       ['the Jarrow March set off', 1936],
+      ['Newcastle University split from Durham', 1963],
+      ['the Tyne Tunnel open to cars', 1967],
       ['the Tyne and Wear Metro open', 1980],
+      ['the Great North Run first take place', 1981],
+      ['the Queen Elizabeth II Metro Bridge open', 1981],
+      ['the current Redheugh Bridge open', 1983],
       ['the Metrocentre open', 1986],
       ['Durham Cathedral become a World Heritage Site', 1986],
+      ['Byker Grove first air', 1989],
+      ['Gateshead hold the National Garden Festival', 1990],
       ['the Stadium of Light open', 1997],
       ['the Angel of the North go up', 1998],
       ['the Gateshead Millennium Bridge open', 2001],
@@ -491,5 +522,7 @@ window.CLOSEST_ONEOFFS = [
   /* two on the doorstep — the wingspan one always surprises people, because
      the Angel is far wider than it is tall */
   { q: 'How many bridges cross the Tyne between Newcastle and Gateshead?', a: 7, unit: '' },
-  { q: 'How wide is the Angel of the North from wingtip to wingtip, in feet?', a: 177, unit: 'feet' }
+  { q: 'How wide is the Angel of the North from wingtip to wingtip, in feet?', a: 177, unit: 'feet' },
+  { q: 'How many steps are inside Grey’s Monument?', a: 164, unit: 'steps' },
+  { q: 'Roughly how many miles is the Great North Run?', a: 13, unit: 'miles' }
 ];
