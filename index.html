@@ -3117,8 +3117,11 @@ const Quiz = {
     const here = Host.presentCount();
     const inCount = Object.keys(this.answers).length;
     const away = Object.values(Host.players).filter(p => p.online && !Host.isPresent(p)).length;
-    $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' +
-      esc(q.title ? q.answer + ' — ' + q.title : q.answer) +
+    // a bare number tells the host nothing on a closest-wins round
+    const shown = q.kind === 'guess'
+      ? esc(q.title || '') + ': ' + Number(q.answer).toLocaleString() + ' ' + esc(q.unit || '')
+      : esc(q.title ? q.answer + ' — ' + q.title : q.answer);
+    $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — answer: ' + shown +
       ' <span class="muted">(' + inCount + ' of ' + here + ' answered' +
       (away ? ', ' + away + ' away' : '') + ')</span>';
     if (inCount >= here && here > 0) {
@@ -3184,6 +3187,30 @@ const Quiz = {
     // stop the theme before the answer goes up, or it plays over the reveal
     if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
     const q = this.questions[this.idx];
+
+    // Closest-wins is scored on distance, not a right answer, so it needs its
+    // own path here rather than the multiple-choice one below.
+    if (q && q.kind === 'guess') {
+      const ranked = this.scoreGuesses();
+      const board = ranked.map(e => ({ name: (Host.players[e.id] || {}).name || '?', value: e.value, pts: e.pts }));
+      Object.entries(Host.players).forEach(([id, pl]) => {
+        Host.sendTo(id, {
+          type: 'guessResult', truth: q.answer, unit: q.unit, label: q.title,
+          mine: (this.answers[id] || {}).value, board, score: pl.score, gained: this.gains[id] || 0
+        });
+      });
+      Host.pushBoard();
+      $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' +
+        esc(q.title) + ': <b>' + q.answer.toLocaleString() + ' ' + esc(q.unit) + '</b>' +
+        (board.length ? ' — closest: ' + esc(board[0].name) + ' with ' + board[0].value.toLocaleString()
+                      : ' — nobody guessed');
+      if (board.length) {
+        const v = Host.voiceFor(board[0].name);
+        Sound.say(board[0].name + ' was closest', v.voice, v.style);
+      }
+      setTimeout(() => this.next(), 5000);
+      return;
+    }
     Object.entries(Host.players).forEach(([id, p]) => {
       const a = this.answers[id];
       Host.sendTo(id, {
