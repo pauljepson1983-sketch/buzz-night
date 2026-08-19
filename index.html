@@ -2986,12 +2986,20 @@ const Quiz = {
         continue;
       }
       if (usingEras) {
-        // whoever's era sits closest to this category gets it
+        /* Most categories are general knowledge and belong to nobody, so
+           handing them to whoever's era happens to sit nearest the middle gave
+           one player all eight questions in testing — their average simply lay
+           closer to 0.5 than the other's. Neutral categories now go round the
+           room in turn; only the ones that genuinely lean modern are matched
+           to a person. */
         const v = this.GUESS_VINTAGE[kind] ?? 0.5;
-        const best = here.slice().sort((a, b) => Math.abs(a.pos - v) - Math.abs(b.pos - v));
-        // rotate among equally-suited players so one person isn't handed everything
-        const tied = best.filter(x => Math.abs(Math.abs(x.pos - v) - Math.abs(best[0].pos - v)) < 0.06);
-        q.forWhom = [tied[picks.length % tied.length].name];
+        if (Math.abs(v - 0.5) < 0.1) {
+          q.forWhom = [here[picks.length % here.length].name];
+        } else {
+          const best = here.slice().sort((x, y) => Math.abs(x.pos - v) - Math.abs(y.pos - v));
+          const tied = best.filter(x => Math.abs(Math.abs(x.pos - v) - Math.abs(best[0].pos - v)) < 0.06);
+          q.forWhom = [tied[picks.length % tied.length].name];
+        }
       }
       picks.push(q);
     }
