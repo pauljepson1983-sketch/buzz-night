@@ -2836,6 +2836,8 @@ const Quiz = {
 
   async buildChunk(decade, count, style, extra, label) {
     const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
+    // closest-wins comes from the baked fact bank, not from a decade search
+    if (this.mode === 'guess') return this.buildGuess(count);
     if (this.mode === 'tv') return this.toQuestions(await this.buildTv(decade, count), count);
     if (this.mode === 'songs') return await this.buildSongs(decade, count, style, extra);
     if (this.mode === 'faces') return this.toQuestions(await this.buildFaces(decade, count), count);
