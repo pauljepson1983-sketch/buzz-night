@@ -403,6 +403,19 @@
         </details>
       </div>
 
+      <div class="card hidden" id="afterNight">
+        <h2 id="afterHead">That’s the night</h2>
+        <p class="muted" style="font-size:.85rem">Everyone’s scores are saved. What next?</p>
+        <div class="row">
+          <button class="btn big green" onclick="Night.playAgain()">▶ Another round — keep the scores</button>
+        </div>
+        <div class="row mt">
+          <button class="btn small" onclick="Night.freshScores()">↺ New game — scores back to zero</button>
+          <button class="btn ghost small" onclick="Night.differentRounds()">🎲 Different rounds</button>
+          <button class="btn ghost small" onclick="$('afterNight').classList.add('hidden')">Dismiss</button>
+        </div>
+      </div>
+
       <details class="fold" id="hallCard">
         <summary>🏅 All-time records</summary>
         <div class="fold-body">
@@ -3997,6 +4010,37 @@ const Night = {
     this.render();
   },
 
+  /* What happens when the music stops. Same scores and same people, a clean
+     slate, or a different set of rounds — spelled out rather than leaving the
+     host on a dead screen wondering what to press. */
+  showAfter() {
+    const box = $('afterNight');
+    if (!box) return;
+    const top = Host.boardRows()[0];
+    $('afterHead').textContent = top ? '🏆 ' + top.name + ' won with ' + top.score : 'That’s the night';
+    box.classList.remove('hidden');
+    box.scrollIntoView({ block: 'center' });
+  },
+
+  playAgain() {                       // same people, scores carry on
+    $('afterNight').classList.add('hidden');
+    Seen.newNight();
+    $('nightStatus').textContent = 'Same players, scores carried over — press start when you’re ready.';
+    Host.broadcast({ type: 'info', text: 'Another round coming up…' });
+  },
+
+  freshScores() {                     // same people, back to zero
+    $('afterNight').classList.add('hidden');
+    Host.resetScores();
+    Seen.newNight();
+    $('nightStatus').textContent = 'Scores cleared — press start for a new game.';
+  },
+
+  differentRounds() {
+    $('afterNight').classList.add('hidden');
+    this.surprise();
+  },
+
   done() {
     this.running = false;
     $('nightNextBtn').classList.add('hidden');
@@ -4005,6 +4049,9 @@ const Night = {
     $('nightStatus').textContent = 'That is the whole running order — rolling the final scores.';
     this.render();
     Host.finale();
+    // The night simply stopped before, leaving the host on a dead screen with
+    // no obvious way to play on, start over or pack up.
+    setTimeout(() => this.showAfter(), 14000);
   }
 };
 
