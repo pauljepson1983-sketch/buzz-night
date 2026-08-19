@@ -2235,17 +2235,48 @@ const Host = {
       cands.push({ label: (Quiz.TITLES[m] || m).replace(/^\S+\s/, '') + ' specialist', emoji: '🎖️', ranked: [{ name: x.name, detail: x.pts + ' points there' }] });
     });
 
+    cands.push(best('All-rounder', '🌍', p => Object.keys(p.stats.byMode || {}).length,
+      v => 'scored in ' + v + ' different rounds'));
+    cands.push(best('Steady scorer', '🧱', p => p.stats.correct, v => v + ' right in total'));
+
     // last resort so a keen but unlucky player still gets named
     cands.push(best('Never gave up', '🎪', p => p.stats.answered, v => v + ' questions attempted'));
 
-    const taken = new Set(), out = [];
-    cands.filter(Boolean).forEach(a => {
+    /* First pass hands each person a different title, which is the whole
+       point of the ranked lists — the quietest player still gets named.
+
+       But one-award-per-person also means a two-player night ends with
+       exactly two awards, which is a thin finale. So a second pass gives out
+       the titles nobody claimed, this time allowing a repeat: with a big
+       room the first pass will have used most of them and little changes,
+       while a small room gets a proper ending. */
+    const list = cands.filter(Boolean);
+    const taken = new Set(), claimed = new Set(), out = [];
+
+    list.forEach((a, i) => {
       const pick = a.ranked.find(r => !taken.has(r.name));
       if (!pick) return;
       taken.add(pick.name);
+      claimed.add(i);
       out.push({ label: a.label, emoji: a.emoji, name: pick.name, detail: pick.detail });
     });
-    return out.slice(0, 8);
+
+    const CAP = 10;
+    // Taking a.ranked[0] here handed the top scorer eight of the ten in a
+    // two-player game, which is the pile-on the ranked lists exist to avoid.
+    // The remaining titles go to whoever is holding the fewest so far, and
+    // only then on merit, so a small room ends up roughly even.
+    const tally = {};
+    out.forEach(a => { tally[a.name] = (tally[a.name] || 0) + 1; });
+    list.forEach((a, i) => {
+      if (claimed.has(i) || out.length >= CAP) return;
+      const pick = a.ranked.slice().sort((x, y) => (tally[x.name] || 0) - (tally[y.name] || 0))[0];
+      if (!pick) return;
+      tally[pick.name] = (tally[pick.name] || 0) + 1;
+      out.push({ label: a.label, emoji: a.emoji, name: pick.name, detail: pick.detail });
+    });
+
+    return out.slice(0, CAP);
   },
 
   // a player's own announcer settings, so the finale calls their name in the
@@ -2744,7 +2775,10 @@ const Quiz = {
         // billing — Shawshank gave Tim Robbins and Morgan Freeman, but also
         // Bob Gunton and William Sadler, who no party guest is going to name.
         (credits.cast || []).filter(p => p.profile_path).slice(0, 2).forEach(p => {
-          if (!people.has(p.id)) people.set(p.id, { label: p.name, url: this.TMDB_IMG + p.profile_path });
+          // group carries TMDB's gender so the decoys can be matched to it —
+          // one woman against three men gives the answer away without anyone
+          // needing to recognise a face
+          if (!people.has(p.id)) people.set(p.id, { label: p.name, url: this.TMDB_IMG + p.profile_path, group: p.gender });
         });
         if (people.size >= count + 14) break;
       }
@@ -2991,7 +3025,13 @@ const Quiz = {
     // still drawn from the whole pool — only the ANSWER needs to be new.
     const picks = Seen.rank(this.mode, items.slice()).slice(0, Math.min(count, items.length));
     return picks.map(target => {
-      const decoys = this.shuffle(items.filter(a => a.label !== target.label)).slice(0, 3);
+      const others = items.filter(a => a.label !== target.label);
+      /* Where an item carries a group — faces use TMDB's gender — draw the
+         three decoys from that same group, so the four options cannot be
+         narrowed without actually knowing the answer. Falls back to the whole
+         pool when there are not enough, because a thin round beats none. */
+      const matched = target.group != null ? others.filter(a => a.group === target.group) : [];
+      const decoys = this.shuffle(matched.length >= 3 ? matched : others).slice(0, 3);
       const options = this.shuffle([target, ...decoys].map(a => a.label));
       return { url: target.url, uri: target.uri, dur: target.dur || 0, answer: target.label, seenKey: target.label, options, correct: options.indexOf(target.label) };
     });
@@ -4551,6 +4591,10 @@ const Player = {
         $('buzzBtn').classList.add('hidden');
         $('quizPanel').classList.remove('hidden');
         $('quizOptions').innerHTML = '';
+        // the written-question panel belongs to Fastest finger; without this
+        // its last question stayed on screen through the following round
+        $('quizPrompt').classList.add('hidden');
+        $('quizPrompt').textContent = '';
         $('quizFeedback').textContent = '';
         $('quizCountdown').textContent = '';
         $('quizRound').textContent = (msg.roundLabel ? msg.roundLabel + ' · ' : '') + (msg.title || 'Quiz round');
@@ -4788,6 +4832,10 @@ const Player = {
   guessQuestion(msg) {
     this.setPlaying(true);
     clearInterval(this._quizTimer);
+    // this path never used the written-question panel, so it also never
+    // cleared it, and a Fastest finger question stayed up through the round
+    $('quizPrompt').classList.add('hidden');
+    $('quizPrompt').textContent = '';
     this._quizN = msg.n; this._quizAnswered = false;
     this.setStatus('');
     $('quizPanel').classList.remove('hidden');
