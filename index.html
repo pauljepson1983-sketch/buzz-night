@@ -3099,6 +3099,10 @@ const Quiz = {
   // score doesn't land in a quiet middle section, and never past 55% of the
   // track so there's always some left to run.
   startOffset(dur) {
+    /* Buzz and name it plays from the top. Skipping in exists because a ten
+       second clip of a slow intro is unguessable — but here the whole track
+       runs until somebody buzzes, and the intro is part of the fun. */
+    if (this.mode === 'buzzname' && !this._bnForceOffset) return 0;
     const how = this.startAt || 'skip';
     if (how === 'start' || !dur) return 0;
     if (how === 'random') return Math.round(dur * (0.15 + Math.random() * 0.4));
@@ -4303,6 +4307,30 @@ const Quiz = {
     // atmospheric strings nobody could place inside the answer window. Skip
     // into the track so the main theme is playing when the clock starts.
     if (audioRound && q.uri) this.playTrack(q, leadIn);
+
+    /* Buzz and name it runs itself from here. Everything below — the answer
+       clock and close() — belongs to rounds where everyone answers at once;
+       here the song plays until somebody buzzes.
+
+       Clearing bnHolder and bnLocked per song is what was missing: they were
+       set on the first buzz and never reset, so from song two onwards every
+       buzz was turned away as "someone already has it". */
+    if (this.mode === 'buzzname') {
+      this.bnHolder = null;
+      this.bnLocked = [];
+      this.bnBuzzedAt = 0;
+      this.bnPlayedAt = Date.now() + leadIn;
+      clearTimeout(this.tick);
+      clearTimeout(this.bnTimer);
+      /* The whole song plays — the buzz is what stops it, not a clock. A
+         thirty second cap meant tracks were cut off mid-verse while nobody
+         had buzzed yet, which is the opposite of how this round should feel.
+         The backstop is whatever is left of the track, so a round still moves
+         on if a song is left running to the end. */
+      const left = Math.max(20000, (q.dur || 0) - this.startOffset(q.dur));
+      this.tick = setTimeout(() => this.bnReveal(null, null, 0, 0), leadIn + left + 1500);
+      return;
+    }
     Host.broadcast({
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
       forWhom: q.forWhom || null, era: q.era || null,
@@ -4505,6 +4533,9 @@ const Quiz = {
 
   close() {
     if (!this.active) return;
+    // this round reveals itself from bnReveal; close() is for rounds where
+    // everyone answers the same question at once
+    if (this.mode === 'buzzname') return;
     // stop the theme before the answer goes up, or it plays over the reveal
     if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) Spot.pause();
     const q = this.questions[this.idx];
@@ -4587,6 +4618,8 @@ const Quiz = {
   finish() {
     this.active = false;
     clearTimeout(this.tick);
+    clearTimeout(this.bnTimer);
+    this.bnHolder = null;
     clearTimeout(this._countTimer);
     hideCount();
     Host.broadcast({ type: 'countInEnd' });
@@ -4722,6 +4755,8 @@ const Quiz = {
     if (!this.active) { $('quizStatus').textContent = 'No round running.'; return; }
     this.active = false;
     clearTimeout(this.tick);
+    clearTimeout(this.bnTimer);
+    this.bnHolder = null;
     clearTimeout(this._countTimer);
     hideCount();
     Host.broadcast({ type: 'countInEnd' });
@@ -5022,7 +5057,9 @@ const Night = {
       extra: '',
       count: 10,
       // typing digits takes longer than tapping one of four options
-      secs: mode === 'guess' ? 20 : mode === 'places' ? 25 : 10,
+      // buzzname is not a race against a clock — the song plays until
+      // someone buzzes, so this is only the backstop
+      secs: mode === 'guess' ? 20 : mode === 'places' ? 25 : mode === 'buzzname' ? 30 : 10,
       flash: mode === 'faces' ? 2000 : 3000,
       startAt: 'skip',
       crop: 'crop',
