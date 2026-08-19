@@ -636,6 +636,16 @@
   <h1>BUZZ <span class="z">NIGHT</span></h1>
   <p class="muted"><span id="pName"></span> · <span id="pScore">0 pts</span> <span id="pTeam"></span></p>
   <div id="playerStatus">Connecting…</div>
+  <div class="card hidden" id="welcomeBack" style="text-align:left">
+    <h2 style="font-size:1.1rem">Welcome back</h2>
+    <p class="muted" style="font-size:.85rem">We remembered how you were set up last time.</p>
+    <div class="row mb" style="align-items:center">
+      <div id="wbFace" class="av-big"></div>
+      <div class="grow" id="wbText" style="font-size:.95rem"></div>
+    </div>
+    <button class="btn big green" onclick="Player.carryOn()">✓ Carry on as I am</button>
+    <button class="btn ghost mt" onclick="Player.startFresh()">Change my setup</button>
+  </div>
   <div id="setupHead" class="hidden">
     <h2 style="margin-bottom:2px">Set yourself up</h2>
     <p class="muted" style="font-size:.85rem">Two quick things, then you're in.</p>
@@ -4493,10 +4503,11 @@ const Player = {
     // A returning player skips the setup step — but skipping it must still
     // tell the host they are set, or they sit on "setting up…" for ever
     // having never pressed anything.
+    // Ask a returning player rather than deciding for them. Nothing is sent
+    // as "ready" until they say so.
     const done = this.setupDone();
-    this.savePrefs(false, done);
-    this.showSetup(!done);
-    if (done) this.setStatus('✅ You’re all set — waiting for the host', 'good');
+    this.savePrefs(false, false);
+    this.showStage(done ? 'welcome' : 'setup');
   },
 
   AVATARS: ['🙂','😎','🦊','🐼','🐸','🦁','🐙','🦄','👾','🤖','🎃','👻','🍕','⚡','🌟','🎸','🏆','💀'],
@@ -4559,26 +4570,41 @@ const Player = {
   ready() {
     store.set(this.readyKey(), '1');
     this.savePrefs(false, true);   // let the host know, not just this phone
-    this.showSetup(false);
+    this.showStage('play');
     this.setStatus('✅ You’re all set — waiting for the host', 'good');
   },
 
-  /* Three stages and no more: enter the room, set yourself up, then buzz.
-     Stage three carries nothing but the buzzer — no summary line, no Change
-     link — so there is nothing to fiddle with or knock while playing. Your
-     choices are fixed once you say you're ready; rejoin if you need them back. */
-  showSetup(on) {
-    if (this._locked) on = false;
-    const btn = $('buzzBtn'), status = $('playerStatus'), head = $('setupHead'), rb = $('readyBtn');
-    const me = $('myMeCard'), kit = $('myKitCard');
-    if (me) me.classList.toggle('hidden', !on);
-    if (kit) kit.classList.toggle('hidden', !on);
-    if (head) head.classList.toggle('hidden', !on);
-    if (rb) rb.classList.toggle('hidden', !on);
-    if (btn) btn.classList.toggle('hidden', !!on);
-    if (status) status.classList.toggle('hidden', !!on);
-    this._setupOpen = !!on;
+  /* Three stages: enter the room, set yourself up, then buzz. Stage three
+     carries nothing but the buzzer — no summary line, no Change link — so
+     there is nothing to knock mid-round.
+
+     A returning player used to skip stage two silently, which is wrong: they
+     never chose to. They get asked instead. */
+  showStage(stage) {          // 'setup' | 'welcome' | 'play'
+    if (this._locked) stage = 'play';
+    const set = stage === 'setup', wel = stage === 'welcome', play = stage === 'play';
+    const tog = (id, show) => { const el = $(id); if (el) el.classList.toggle('hidden', !show); };
+    tog('myMeCard', set); tog('myKitCard', set); tog('setupHead', set); tog('readyBtn', set);
+    tog('welcomeBack', wel);
+    tog('buzzBtn', play); tog('playerStatus', play);
+    this._setupOpen = set || wel;
+    if (wel) {
+      const photo = store.get('my_photo');
+      $('wbFace').innerHTML = photo ? '<img src="' + photo + '" alt="">' : esc(this.avatar || '🙂');
+      const eras = (this.eras || []).map(e => e.slice(2, 4) + 's').join(', ') || 'no eras picked';
+      $('wbText').innerHTML = '<b>' + esc(this.name || '') + '</b><br><span class="muted">' + esc(eras) + '</span>';
+    }
   },
+
+  carryOn() {
+    this.savePrefs(false, true);
+    this.showStage('play');
+    this.setStatus('✅ You’re all set — waiting for the host', 'good');
+  },
+  startFresh() { this.showStage('setup'); },
+
+  // kept so older call sites still work
+  showSetup(on) { this.showStage(on ? 'setup' : 'play'); },
 
   selfie() { $('selfieFile').click(); },
 
@@ -4634,7 +4660,7 @@ const Player = {
       // Never reopen the pickers once play has started — but a routine phase
       // message arrives the moment you join, and that was slamming the setup
       // step shut before anyone could use it.
-      this.showSetup(this._locked ? false : !this.setupDone());
+      this.showStage(this._locked ? 'play' : (this._setupOpen ? (this.setupDone() ? 'welcome' : 'setup') : 'play'));
     }
     this._playing = !!on;
   },
