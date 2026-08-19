@@ -2912,10 +2912,22 @@ const Quiz = {
      players who ticked the earlier eras, and company foundings and modern
      towers at the ones who ticked the later ones. Populations and areas sit in
      the middle because they belong to nobody in particular. */
+  /* Where each category sits on an old-to-new axis, 0 being deep history and
+     1 being the last few years.
+
+     History is deliberately NOT at the old end. 1066 and the Mona Lisa are
+     things everyone is taught at school, not an older person's specialist
+     subject, and steering them away from younger players was both wrong and
+     patronising. Monarchs, paintings and landmarks are general knowledge and
+     sit in the middle with geography, so everybody gets them.
+
+     Only things that genuinely belong to living memory lean: a teenager is
+     more likely to have a feel for when SpaceX started or how tall a new
+     tower is than for when Ford was founded. */
   GUESS_VINTAGE: {
-    monarchs: 0.00, paintings: 0.08, monuments: 0.25,
+    monarchs: 0.5, paintings: 0.5, monuments: 0.5,
     countrypop: 0.5, citypop: 0.5, ukcities: 0.5, area: 0.5,
-    buildings: 0.85, companies: 0.9
+    buildings: 0.75, companies: 0.8
   },
 
   // a player's position on that same axis, from the eras they ticked
