@@ -3668,8 +3668,29 @@ const Quiz = {
   BN_HALF: 12,
   BN_SPEED: 10,          // on top, for buzzing early
 
+  /* Every failure to start a track used to be swallowed, so "no music" and
+     "Spotify has logged you out" looked identical from the sofa. Now it says
+     which, on the host screen, in words rather than a status code. */
+  playTrack(q, delayMs) {
+    setTimeout(async () => {
+      try {
+        await Spot.playUri(q.uri, this.startOffset(q.dur));
+        this.bnPlayedAt = Date.now();
+      } catch (e) {
+        const m = String((e && e.message) || e);
+        const why = /401|token|expired/i.test(m) ? 'Spotify has logged out — reconnect it on the host screen.'
+                  : /403|premium/i.test(m)       ? 'Spotify needs Premium to play tracks.'
+                  : /404|device|NO_ACTIVE/i.test(m) ? 'No active Spotify player — press play once in Spotify, then try again.'
+                  : 'Spotify would not start the track: ' + m;
+        $('quizStatus').textContent = '⚠ ' + why;
+        console.warn('playUri failed', e);
+      }
+    }, delayMs || 0);
+  },
+
   async buildBuzzName(decade, count, style, extra) {
     const songs = await this.collectSongs(decade, count, style, extra);
+    this.available = songs.length;
     return songs.map(s => ({
       uri: s.uri, dur: s.dur || 0, label: s.label,
       answer: s.title || s.label, artist: s.artist || '',
@@ -3743,8 +3764,7 @@ const Quiz = {
     $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' +
       esc(p.name) + ' said "' + esc(mark.heard || '—') + '" — wrong. Back on for a steal.';
     Sound.say(p.name + ' ' + Host.quip('miles').replace(/ — .*$/, ''));
-    if (q.uri) setTimeout(() => Spot.playUri(q.uri, this.startOffset(q.dur)).catch(() => {}), 1200);
-    this.bnPlayedAt = Date.now() + 1200;
+    if (q.uri) this.playTrack(q, 1200);
     // whatever is left of the clock, with a floor so a steal is winnable
     this.tick = setTimeout(() => this.bnReveal(null, null, 0, 0), Math.max(9000, this.seconds * 1000));
   },
@@ -4207,9 +4227,7 @@ const Quiz = {
     // Film scores open with slow builds — starting at 0:00 meant a round of
     // atmospheric strings nobody could place inside the answer window. Skip
     // into the track so the main theme is playing when the clock starts.
-    if (audioRound && q.uri) {
-      setTimeout(() => Spot.playUri(q.uri, this.startOffset(q.dur)).catch(() => {}), leadIn);
-    }
+    if (audioRound && q.uri) this.playTrack(q, leadIn);
     Host.broadcast({
       type: 'quizQ', n: this.idx + 1, total: this.questions.length,
       forWhom: q.forWhom || null, era: q.era || null,
@@ -4248,9 +4266,12 @@ const Quiz = {
     $('quizBlurb').textContent = blurbs[m] || blurbs.covers;
     // quickfire falls out of filmMode already — it reads a written bank, so
     // neither the flavour box nor the topic box applies to it
-    const filmMode = !['covers', 'years', 'songs'].includes(m);
-    $('quizStyle').disabled = filmMode;
-    $('quizTopic').disabled = filmMode;
+    /* Whether the flavour box applies is already stated in one place —
+       Night.STYLE_USED_BY — but this was testing its own hardcoded list, so
+       any round added to that list still came up greyed out. */
+    const usesStyle = Night.STYLE_USED_BY.includes(m);
+    $('quizStyle').disabled = !usesStyle;
+    $('quizTopic').disabled = !usesStyle;
     const audioRound = ['themes', 'years', 'songs', 'tv'].includes(m);
     $('quizFlash').disabled = audioRound;
     $('quizStart').disabled = !audioRound;
