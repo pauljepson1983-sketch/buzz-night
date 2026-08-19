@@ -695,3 +695,77 @@ window.CLOSEST_ONEOFFS = [
   { q: 'How many steps are inside Grey’s Monument?', a: 164, unit: 'steps' },
   { q: 'Roughly how many miles is the Great North Run?', a: 13, unit: 'miles' }
 ];
+
+
+/* ======================================================================
+   LOGOS — for the logo round.
+
+   The same trap the album covers round has: most logos have the brand
+   name written into them, so a Coca-Cola or FedEx logo hands over the
+   answer before anyone has thought. Album art is fixed by redacting the
+   text on a canvas, but a wordmark IS the logo — blank it and there is
+   nothing left. So the list below is curated to SYMBOL marks only: the
+   swoosh, the arches, the crocodile, the prancing horse.
+
+   Four ways of sourcing these automatically were tested and rejected:
+     - Clearbit's logo API is dead, every request 404s
+     - Wikipedia's lead article image is often a PHOTOGRAPH. Nike returns
+       a picture of its campus, Shell an office block, Starbucks a
+       building
+     - filtering Wikipedia's file list for names containing "logo" hit
+       11 brands out of 30, and half of those were wordmarks anyway
+     - favicons load for every brand but the sizes are all over the place:
+       McDonald's comes back 48px and BMW 16px, which is useless blown up
+       on a phone
+
+   So the brands are hand-picked and the icon is fetched at a requested
+   256px, with buildLogos() MEASURING each one and dropping anything too
+   small to look right. A blurry logo never reaches a phone.
+
+     name    what the phones show as the answer
+     domain  where the icon comes from
+
+   PAUL: these were picked without being able to see them. If any turns
+   out to be the brand's NAME written out rather than its symbol, it is a
+   free point — tell me and it comes out.
+   ====================================================================== */
+window.LOGOS = [
+  { name: 'Nike',            domain: 'nike.com' },
+  { name: 'Apple',           domain: 'apple.com' },
+  { name: 'Shell',           domain: 'shell.com' },
+  { name: 'Audi',            domain: 'audi.com' },
+  { name: 'Starbucks',       domain: 'starbucks.com' },
+  { name: 'Ferrari',         domain: 'ferrari.com' },
+  { name: 'Lamborghini',     domain: 'lamborghini.com' },
+  { name: 'Puma',            domain: 'puma.com' },
+  { name: 'Lacoste',         domain: 'lacoste.com' },
+  { name: 'Chanel',          domain: 'chanel.com' },
+  { name: 'Gucci',           domain: 'gucci.com' },
+  { name: 'Ralph Lauren',    domain: 'ralphlauren.com' },
+  { name: 'Volkswagen',      domain: 'volkswagen.com' },
+  { name: 'Honda',           domain: 'honda.com' },
+  { name: 'PlayStation',     domain: 'playstation.com' },
+  { name: 'Xbox',            domain: 'xbox.com' },
+  { name: 'Firefox',         domain: 'firefox.com' },
+  { name: 'Google Chrome',   domain: 'chrome.com' },
+  { name: 'YouTube',         domain: 'youtube.com' },
+  { name: 'Instagram',       domain: 'instagram.com' },
+  { name: 'Snapchat',        domain: 'snapchat.com' },
+  { name: 'Pinterest',       domain: 'pinterest.com' },
+  { name: 'Reddit',          domain: 'reddit.com' },
+  { name: 'Airbnb',          domain: 'airbnb.com' },
+  { name: 'Mastercard',      domain: 'mastercard.com' },
+  { name: 'PayPal',          domain: 'paypal.com' },
+  { name: 'Target',          domain: 'target.com' },
+  { name: 'Penguin Books',   domain: 'penguin.co.uk' },
+  { name: 'Vimeo',           domain: 'vimeo.com' },
+  { name: 'Deliveroo',       domain: 'deliveroo.co.uk' },
+  { name: 'Just Eat',        domain: 'just-eat.co.uk' },
+  { name: 'Monzo',           domain: 'monzo.com' },
+  { name: 'Nationwide',      domain: 'nationwide.co.uk' },
+  { name: 'John Lewis',      domain: 'johnlewis.com' },
+  { name: 'Waitrose',        domain: 'waitrose.com' },
+  { name: 'Greggs',          domain: 'greggs.co.uk' },
+  { name: 'Boots',           domain: 'boots.com' },
+  { name: 'Aldi',            domain: 'aldi.co.uk' }
+];

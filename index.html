@@ -514,6 +514,7 @@
             <option value="faces">Famous faces</option>
             <option value="songs">Name the song (music)</option>
             <option value="tv">TV theme tunes (music)</option>
+            <option value="logos">Logos</option>
             <option value="quickfire">Fastest finger (general knowledge)</option>
             <option value="guess">Closest wins (numbers)</option>
             <option value="years">Year of release (music)</option>
@@ -3045,6 +3046,45 @@ const Quiz = {
      Dealt round-robin across categories for the same reason buildGuess is:
      the bank is lopsided (nineteen weird-but-true, six about words), so a
      straight pick off the top gives a round of one subject. */
+  /* Loads an icon and reports how wide it really came back. The requested
+     size is only a hint — a site that ships a 16px favicon gets a 16px
+     favicon however big you ask, and blown up on a phone that is a smear. */
+  iconWidth(url) {
+    return new Promise(resolve => {
+      const im = new Image();
+      const done = setTimeout(() => resolve(0), 6000);
+      im.onload = () => { clearTimeout(done); resolve(im.naturalWidth || 0); };
+      im.onerror = () => { clearTimeout(done); resolve(0); };
+      im.src = url;
+    });
+  },
+
+  /* The logo round. Brands come from questions.js, curated to symbol marks
+     because a wordmark IS the answer written down — see the note there for
+     the four automatic sources that were tried and rejected.
+
+     Nothing is redacted: a symbol has no text to hide, which is what makes
+     this round possible at all where album covers needed a canvas pass. */
+  MIN_LOGO_PX: 64,
+
+  async buildLogos(count) {
+    const bank = (window.LOGOS || []);
+    if (bank.length < 4) throw new Error('The logo list did not load — check questions.js sits next to index.html.');
+    this.available = bank.length;
+    // a few more than needed, because some will be dropped for being too small
+    const picks = Seen.rank('logos', bank.map(b => ({ ...b, seenKey: b.name, label: b.name })))
+      .slice(0, count + 12);
+    $('quizStatus').textContent = 'Fetching logos…';
+    const sized = await Promise.all(picks.map(async b => {
+      const url = 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(b.domain) + '&sz=256';
+      const w = await this.iconWidth(url);
+      return w >= this.MIN_LOGO_PX ? { label: b.name, seenKey: b.name, url } : null;
+    }));
+    const kept = sized.filter(Boolean);
+    if (kept.length < 4) throw new Error('Only ' + kept.length + ' logos came back big enough to use.');
+    return this.toQuestions(kept, count);
+  },
+
   buildQuickfire(count) {
     const bank = (window.QUESTIONS || []);
     if (bank.length < 4) throw new Error('The question bank did not load — check questions.js sits next to index.html.');
@@ -3229,6 +3269,7 @@ const Quiz = {
   async buildChunk(decade, count, style, extra, label) {
     const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
     // closest-wins comes from the baked fact bank, not from a decade search
+    if (this.mode === 'logos') return await this.buildLogos(count);
     if (this.mode === 'quickfire') return this.buildQuickfire(count);
     if (this.mode === 'guess') return this.buildGuess(count);
     if (this.mode === 'tv') return this.toQuestions(await this.buildTv(decade, count), count);
@@ -3324,7 +3365,7 @@ const Quiz = {
     // Everything that wasn't covers used to fall through to "films", so the
     // host line read "10 questions from films" on the closest-wins round too.
     // Only the picture and music rounds actually come from films.
-    const SOURCE = { quickfire: 'the question bank', guess: 'the fact bank' };
+    const SOURCE = { quickfire: 'the question bank', guess: 'the fact bank', logos: 'the logo list' };
     const label = this.mode === 'covers'
       ? ([style, extra, decadeLabel].filter(Boolean).join(', ') || 'that')
       : SOURCE[this.mode]
@@ -3360,6 +3401,11 @@ const Quiz = {
       } else if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) {
         this.questions = qs.filter(q => q.uri);
         if (!this.questions.length) throw new Error('Could not find playable tracks for that.');
+      } else if (this.mode === 'logos') {
+        // a symbol carries no text, so there is nothing to redact — the URL
+        // goes straight out, same as film stills
+        qs.forEach(q => { q.img = q.url; });
+        this.questions = qs;
       } else if (this.mode === 'backdrops') {
         // stills carry no lettering, so they go straight out as URLs — no
         // redaction pass and nothing to re-encode
@@ -3460,6 +3506,7 @@ const Quiz = {
       songs: 'A song plays and four song titles appear on the phones. The classic music round. Decade applies; style narrows it.',
       tv: 'A TV theme tune plays and four shows appear. Show names are checked against TMDB, so what you get is a real programme. Decade filters on when the SHOW aired; style is ignored.',
       years: 'A song plays and four years appear. Decade applies; style narrows it. Remasters are filtered out so the dates are honest.',
+      logos: 'A logo flashes up on every phone, then four brand names. Symbol marks only — a logo with the name written in it would give the answer away. Decade and flavour are ignored; the brand list is in questions.js.',
       quickfire: 'A written question appears, then four answers a moment later. Fastest correct answer takes the most points. Decade and flavour are ignored — it reads the question bank in questions.js.',
       faces: 'A face flashes up and four names appear — drawn from the cast of well-known films, so they are people the room will know. Crop into it makes it much harder. Decade applies; style is ignored. Faces from TMDB.'
     };
@@ -3716,11 +3763,11 @@ const Quiz = {
   TITLES: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
     songs: '🎧 Name the song', tv: '📺 TV theme tunes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces',
-    quickfire: '⚡ Fastest finger'
+    quickfire: '⚡ Fastest finger', logos: '🏷️ Logos'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
-    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question'
+    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question', logos: 'Logo'
   },
   HOWTO: {
     covers: 'A cover flashes up, then four albums. Pick the right one.',
@@ -3731,7 +3778,8 @@ const Quiz = {
     guess: 'Type your best guess. Closest to the real number wins it.',
     years: 'Listen, then pick the year it came out.',
     faces: 'A face flashes up, then four names. Quick!',
-    quickfire: 'Read the question, then four answers appear. Fastest right answer wins it.'
+    quickfire: 'Read the question, then four answers appear. Fastest right answer wins it.',
+    logos: 'A logo flashes up, then four brands. Pick the right one.'
   },
 
   ROUND_NAMES: {
@@ -3742,7 +3790,8 @@ const Quiz = {
     guess: 'closest wins round',
     years: 'year of release round',
     faces: 'famous faces round',
-    quickfire: 'fastest finger round'
+    quickfire: 'fastest finger round',
+    logos: 'logo round'
   },
 
   stop() {
@@ -3963,7 +4012,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', buzzer: '🔔 Buzzer round (you judge)'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', buzzer: '🔔 Buzzer round (you judge)'
   },
 
   load() {
@@ -4025,7 +4074,7 @@ const Night = {
     // in the running order just implies something the round never does.
     // Fastest finger reads a written bank, so a decade would be a label
     // promising a filter the round never applies.
-    if (mode === 'tv' || mode === 'guess' || mode === 'quickfire') decade = '';
+    if (mode === 'tv' || mode === 'guess' || mode === 'quickfire' || mode === 'logos') decade = '';
     const style = $('quickStyle').value;
     return {
       mode, decade,
