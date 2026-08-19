@@ -3816,6 +3816,12 @@ const Quiz = {
       how = ' (that search was empty, so anything goes)';
     }
     this.bnWidened = how;
+    /* collectSongs deliberately gathers several times what was asked for,
+       because the multiple-choice rounds need three wrong options behind
+       every right one. This round has no options, so one song is one
+       question, and handing it the whole pile turned a three song round into
+       a twenty-four song one. */
+    songs = songs.slice(0, Math.max(2, count));
     this.available = songs.length;
     return songs.map(s => ({
       uri: s.uri, dur: s.dur || 0, label: s.label,
