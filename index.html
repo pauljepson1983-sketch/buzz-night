@@ -70,6 +70,7 @@
   .tag.cyan { background: var(--cyan); color: #1a0f35; }
   .tag.pink { background: var(--pink); color: #fff; }
   .tag.grey { background: #4a3a78; color: var(--text); }
+  .tag.green { background: var(--green); color: #10202a; }
   .muted { color: var(--muted); }
   .center { text-align: center; }
   .mt { margin-top: 12px; }
@@ -604,7 +605,7 @@
       </div>
       <div class="card">
         <div class="row">
-          <h2 class="grow">🏆 Leaderboard</h2>
+          <h2 class="grow">🏆 Leaderboard <span id="readyCount" class="muted" style="font-size:.8rem"></span></h2>
           <label class="muted" style="font-size:.85rem"><input type="checkbox" id="teamToggle" onchange="App.toggleTeams(this.checked)"> Team mode</label>
         </div>
         <table id="scoreTable"><thead><tr><th>Player</th><th id="teamCol" class="hidden">Team</th><th>Score</th><th>Avg reaction</th><th></th></tr></thead><tbody></tbody></table>
@@ -1720,6 +1721,17 @@ const Host = {
       if (msg.avatar !== undefined) p.avatar = msg.avatar || null;
       if (msg.photo !== undefined) p.photo = msg.photo || null;
       if (msg.eras !== undefined) p.eras = Array.isArray(msg.eras) ? msg.eras : [];
+      if (msg.ready) {
+        // the host was starting rounds with no idea whether people had
+        // finished picking a face and their eras
+        p.ready = true;
+        const banner = $('phaseBanner');
+        banner.className = 'phase-banner armed';
+        banner.textContent = '✅ ' + p.name + ' is ready';
+        Sound.say(p.name + ' is ready');
+        clearTimeout(this._readyMsg);
+        this._readyMsg = setTimeout(() => this.setPhase(this.phase), 3500);
+      }
       this.renderScores();
       if (msg.test) { Sound.buzz(p.buzzer); setTimeout(() => Sound.say(p.name + ' buzzed first!', p.voice, p.style), 700); }
       this.saveGame();
@@ -2182,6 +2194,13 @@ const Host = {
   },
 
   renderScores() {
+    const hdr = $('readyCount');
+    if (hdr) {
+      const all = Object.values(this.players).filter(x => this.isPresent(x));
+      const rdy = all.filter(x => x.ready).length;
+      hdr.textContent = all.length ? rdy + ' of ' + all.length + ' ready' : '';
+      hdr.className = (all.length && rdy === all.length) ? 'tag green' : 'muted';
+    }
     const tbody = $('scoreTable').querySelector('tbody');
     tbody.innerHTML = '';
     const entries = Object.entries(this.players).sort((a, b) => b[1].score - a[1].score);
@@ -2191,7 +2210,9 @@ const Host = {
       // "away" means still connected but gone quiet — a sleeping or
       // backgrounded phone, which looks identical to "here" without this
       const state = !p.online ? '<span class="tag grey">offline</span>'
-                  : !this.isPresent(p) ? '<span class="tag grey">away</span>' : '';
+                  : !this.isPresent(p) ? '<span class="tag grey">away</span>'
+                  : p.ready ? '<span class="tag green">ready</span>'
+                  : '<span class="tag grey">setting up…</span>';
       const face = p.photo ? '<img src="'+p.photo+'" style="width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle">' : (p.avatar || '');
       tr.innerHTML = `<td>${face} ${esc(p.name)} ${state}</td>
         <td class="${this.teamMode ? '' : 'hidden'}"><button class="btn small ghost" onclick="Host.cycleTeam('${id}')">${p.team || '—'}</button></td>
@@ -4533,8 +4554,9 @@ const Player = {
 
   ready() {
     store.set(this.readyKey(), '1');
-    this.savePrefs();
+    this.savePrefs(false, true);   // let the host know, not just this phone
     this.showSetup(false);
+    this.setStatus('✅ You’re all set — waiting for the host', 'good');
   },
   editMe() { this.showSetup(true); },
 
@@ -4587,7 +4609,7 @@ const Player = {
     fr.readAsDataURL(file);
   },
 
-  savePrefs(test) {
+  savePrefs(test, ready) {
     if (this._setupOpen === false) this.showSetup(false);  // refresh the summary line
     if (!this.conn) return;
     this.conn.send({
@@ -4598,6 +4620,7 @@ const Player = {
       avatar: this.avatar || null,
       photo: store.get('my_photo') || null,
       eras: this.eras || [],
+      ready: ready ? true : undefined,
       test: !!test
     });
     if (test) this.setStatus('🔊 Playing on the host speaker…');
