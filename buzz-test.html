@@ -302,7 +302,11 @@ $('buzz').onclick = async () => {
      live: it still reported "playing" after the sound had gone. The player
      object is right here in the page and stops immediately. */
   try { if (S.player) await S.player.pause(); } catch (e) {}
-  try { await S.api('/me/player/pause?device_id=' + S.deviceId, { method: 'PUT' }); } catch (e) {}
+  /* Tell Spotify's servers as well, so anything else showing the account
+     agrees the music has stopped, but do not wait on it. Measured live, that
+     round trip took two seconds on its own, which is two seconds of silence
+     between the buzz and being able to speak. */
+  S.api('/me/player/pause?device_id=' + S.deviceId, { method: 'PUT' }).catch(() => {});
 
   /* Only now open the microphone. Sound carries on out of the speakers for a
      moment after the button is pressed, and the recogniser transcribes it
@@ -316,7 +320,7 @@ $('buzz').onclick = async () => {
     } catch (e) { break; }
     await new Promise(r => setTimeout(r, 100));
   }
-  await new Promise(r => setTimeout(r, 350));   // let the speakers fall silent
+  await new Promise(r => setTimeout(r, 250));   // let the speakers fall silent
 
   $('status').textContent = 'Music stopped — say the song and the artist';
   $('say').style.display = 'block';
