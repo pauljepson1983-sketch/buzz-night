@@ -415,6 +415,24 @@
   .boat .face img { width: 100%; height: 100%; object-fit: cover }
   .boat .nm { font-size: .72rem; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.9) }
   @media (prefers-reduced-motion: reduce) { .boat { transition: none } }
+  /* Buzz and name it. The buzzer has to be the biggest thing on the screen —
+     it is a race, and hunting for a small button loses it. */
+  #bnBox { margin-top: 10px; text-align: center }
+  #bnBuzz { width: 100%; padding: 30px 12px; font-size: 1.6rem; font-weight: 800;
+            border-radius: 16px; border: none; color: #2b0016;
+            background: linear-gradient(180deg,#ff5fae,#e11d74); box-shadow: 0 6px 0 #8d0f47 }
+  #bnBuzz:active { transform: translateY(3px); box-shadow: 0 3px 0 #8d0f47 }
+  #bnBuzz:disabled { filter: grayscale(.7) brightness(.7); box-shadow: 0 3px 0 #4a1030 }
+  #bnMic { width: 100%; padding: 26px 12px; font-size: 1.3rem; font-weight: 800;
+           border-radius: 16px; border: none; color: #06331d;
+           background: linear-gradient(180deg,#5ce6a2,#16a86a); box-shadow: 0 6px 0 #0b6b43 }
+  #bnMic.listening { animation: bnPulse 1s ease-in-out infinite }
+  @keyframes bnPulse { 50% { filter: brightness(1.25) } }
+  #bnSaid { margin-top: 10px; font-size: 1rem; min-height: 1.3em; font-weight: 700 }
+  #bnNote { margin-top: 8px; font-size: .85rem; opacity: .8 }
+  #bnType { width: 100%; margin-top: 10px; padding: 12px; border-radius: 10px; font-size: 1rem;
+            border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.3); color: #fff }
+  @media (prefers-reduced-motion: reduce) { #bnMic.listening { animation: none } }
 </style>
 </head>
 <body>
@@ -629,6 +647,7 @@
             <button class="btn ghost small" onclick="Night.quickAdd('quickfire')">⚡ Fastest finger</button>
             <button class="btn ghost small" onclick="Night.quickAdd('logos')">🏷️ Logos</button>
             <button class="btn ghost small" onclick="Night.quickAdd('places')">🌍 Where is it?</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('buzzname')">🎤 Buzz and name it</button>
             <button class="btn ghost small" onclick="Night.quickAdd('guess')">🎯 Closest wins</button>
             <button class="btn ghost small" onclick="Night.quickAdd('faces')">⭐ Faces</button>
             <button class="btn ghost small" onclick="Night.quickAdd('backdrops')">🎬 Stills</button>
@@ -674,6 +693,7 @@
             <option value="faces">Famous faces</option>
             <option value="songs">Name the song (music)</option>
             <option value="tv">TV theme tunes (music)</option>
+            <option value="buzzname">Buzz and name it (music)</option>
             <option value="places">Where is it? (maps)</option>
             <option value="logos">Logos</option>
             <option value="quickfire">Fastest finger (general knowledge)</option>
@@ -842,6 +862,13 @@
     <div id="quizArtWrap"><img id="quizArt" alt="album cover"></div>
     <div id="quizCountdown"></div>
     <div id="quizOptions"></div>
+    <div id="bnBox" class="hidden">
+      <button id="bnBuzz">BUZZ</button>
+      <button id="bnMic" class="hidden">🎤 Say it</button>
+      <div id="bnSaid"></div>
+      <input id="bnType" class="hidden" placeholder="Type the song and artist" autocomplete="off">
+      <div id="bnNote"></div>
+    </div>
     <div id="placeBox" class="hidden">
       <div id="placeAsk"></div>
       <div id="placeWhere"></div>
@@ -2015,6 +2042,8 @@ const Host = {
       Quiz.answer(conn.peer, msg.n, msg.choice);
       return;
     }
+    if (msg.type === 'bnBuzz') { Quiz.bnBuzz(conn.peer, msg.n); return; }
+    if (msg.type === 'bnSay')  { Quiz.bnSaid(conn.peer, msg.n, msg.guesses || ['']); return; }
     if (msg.type === 'quizP') {
       Quiz.place(conn.peer, msg.n, msg.x, msg.y);
       return;
@@ -3568,6 +3597,183 @@ const Quiz = {
     return out;
   },
 
+  /* ---- marking a spoken answer -----------------------------------------
+
+     squash() throws away everything that varies between how a title is
+     written and how it is heard: brackets, remaster suffixes, punctuation,
+     leading "the", and ALL spaces. Speech engines break words up their own
+     way, so "wonder wall" and "Wonderwall" have to land on the same string.
+  --------------------------------------------------------------------- */
+  squash(s) {
+    return String(s || '').toLowerCase()
+      .replace(/\(.*?\)|\[.*?\]/g, ' ')
+      .replace(/\s*-\s*(remaster|remastered|live|mono|stereo|radio edit|single version|version).*$/i, '')
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\b(the|a|an|by|its|it|feat|featuring|and)\b/g, ' ')
+      .replace(/\s+/g, '').trim();
+  },
+
+  lev(a, b) {
+    const m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, i) => i);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      prev = cur;
+    }
+    return prev[n];
+  },
+
+  /* Is the target somewhere in what they said? They will not say it cleanly —
+     "is it oasis, wonderwall I think" has to count — so this looks for the
+     target anywhere inside, allowing for a few wrong letters. */
+  heardIn(said, target) {
+    const h = this.squash(said), tg = this.squash(target);
+    if (!tg || tg.length < 2 || !h) return false;
+    if (h.includes(tg)) return true;
+    const tol = tg.length <= 8 ? 1 : tg.length <= 16 ? 2 : 3;
+    for (let i = 0; i + tg.length - tol <= h.length; i++) {
+      for (const len of [tg.length - tol, tg.length, tg.length + tol]) {
+        if (len > 0 && this.lev(h.substr(i, len), tg) <= tol) return true;
+      }
+    }
+    return false;
+  },
+
+  /* Marks every alternative the phone offered, not just the first. Speech
+     recognition returns several guesses and the right one is often second. */
+  markSpoken(guesses, title, artist) {
+    const list = Array.isArray(guesses) ? guesses : [guesses];
+    let gotTitle = false, gotArtist = false, best = '';
+    for (const g of list) {
+      const tt = this.heardIn(g, title), aa = this.heardIn(g, artist);
+      if ((tt ? 1 : 0) + (aa ? 1 : 0) > (gotTitle ? 1 : 0) + (gotArtist ? 1 : 0)) best = g;
+      gotTitle = gotTitle || tt;
+      gotArtist = gotArtist || aa;
+    }
+    return { title: gotTitle, artist: gotArtist, heard: best || list[0] || '' };
+  },
+
+  /* ---- buzz and name it -------------------------------------------------
+     Song and artist, spoken. Both = full marks, one of the two = half,
+     because someone who knows the tune but not the singer should still buzz.
+  --------------------------------------------------------------------- */
+  BN_SAY_MS: 12000,      // how long you get to say it once you have buzzed
+  BN_BOTH: 25,
+  BN_HALF: 12,
+  BN_SPEED: 10,          // on top, for buzzing early
+
+  async buildBuzzName(decade, count, style, extra) {
+    const songs = await this.collectSongs(decade, count, style, extra);
+    return songs.map(s => ({
+      uri: s.uri, dur: s.dur || 0, label: s.label,
+      answer: s.title || s.label, artist: s.artist || '',
+      kind: 'buzzname', seenKey: s.seenKey || s.label
+    }));
+  },
+
+  /* A buzz during this round. First one only — everyone else is told to wait
+     rather than left wondering whether their tap registered. */
+  bnBuzz(peerId, n) {
+    if (!this.active || this.mode !== 'buzzname') return;
+    if (n !== this.idx + 1 || this.bnHolder || (this.bnLocked || []).includes(peerId)) return;
+    const p = Host.players[peerId];
+    if (!p) return;
+    this.bnHolder = peerId;
+    clearTimeout(this.tick);
+    Spot.pause();
+    Sound.buzz(p.buzzer);
+    // how quickly they went, for the speed bonus
+    this.bnBuzzedAt = Date.now();
+    const q = this.questions[this.idx];
+    Host.sendTo(peerId, { type: 'bnYours', n: n, seconds: Math.round(this.BN_SAY_MS / 1000) });
+    Object.keys(Host.players).forEach(id => {
+      if (id !== peerId) Host.sendTo(id, { type: 'bnWaiting', who: p.name });
+    });
+    $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' +
+      esc(p.name) + ' buzzed. Answer: <b>' + esc(q.answer) + '</b> by <b>' + esc(q.artist || '?') + '</b>';
+    const v = Host.voiceFor(p.name);
+    Sound.say(p.name, v.voice, v.style);
+    // if they say nothing at all, treat it as a miss so the round moves on
+    this.bnTimer = setTimeout(() => this.bnSaid(peerId, n, ['']), this.BN_SAY_MS + 900);
+  },
+
+  /* What they said, marked. */
+  bnSaid(peerId, n, guesses) {
+    if (!this.active || this.mode !== 'buzzname') return;
+    if (n !== this.idx + 1 || this.bnHolder !== peerId) return;
+    clearTimeout(this.bnTimer);
+    const q = this.questions[this.idx];
+    const p = Host.players[peerId];
+    const mark = this.markSpoken(guesses, q.answer, q.artist);
+    const got = (mark.title ? 1 : 0) + (mark.artist ? 1 : 0);
+
+    if (got) {
+      const held = Math.max(0, this.bnBuzzedAt - this.bnPlayedAt) / 1000;
+      // quick on the buzzer is worth something, but knowing it matters more
+      const speed = Math.round(this.BN_SPEED * Math.max(0, 1 - held / Math.max(4, this.seconds)));
+      const pts = (got === 2 ? this.BN_BOTH : this.BN_HALF) + speed;
+      p.score += pts;
+      p.stats = p.stats || Host.blankStats();
+      p.stats.answered++; p.stats.correct++;
+      p.stats.bestSingle = Math.max(p.stats.bestSingle || 0, pts);
+      p.stats.byMode.buzzname = (p.stats.byMode.buzzname || 0) + pts;
+      this.gains[peerId] = pts;
+      this.roundGains[peerId] = (this.roundGains[peerId] || 0) + pts;
+      this.bnReveal(mark, peerId, pts, got);
+      return;
+    }
+
+    // wrong: they are out of this song, and it goes back on for a steal
+    p.stats = p.stats || Host.blankStats();
+    p.stats.answered++;
+    this.bnLocked = (this.bnLocked || []).concat(peerId);
+    this.bnHolder = null;
+    Host.sendTo(peerId, { type: 'bnWrong', heard: mark.heard });
+    const stillIn = Object.keys(Host.players).filter(id => !this.bnLocked.includes(id));
+    if (!stillIn.length) { this.bnReveal(mark, null, 0, 0); return; }
+    Object.keys(Host.players).forEach(id => {
+      if (!this.bnLocked.includes(id)) Host.sendTo(id, { type: 'bnSteal', who: p.name, heard: mark.heard });
+    });
+    $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — ' +
+      esc(p.name) + ' said "' + esc(mark.heard || '—') + '" — wrong. Back on for a steal.';
+    Sound.say(p.name + ' ' + Host.quip('miles').replace(/ — .*$/, ''));
+    if (q.uri) setTimeout(() => Spot.playUri(q.uri, this.startOffset(q.dur)).catch(() => {}), 1200);
+    this.bnPlayedAt = Date.now() + 1200;
+    // whatever is left of the clock, with a floor so a steal is winnable
+    this.tick = setTimeout(() => this.bnReveal(null, null, 0, 0), Math.max(9000, this.seconds * 1000));
+  },
+
+  bnReveal(mark, winnerId, pts, got) {
+    clearTimeout(this.tick); clearTimeout(this.bnTimer);
+    Spot.pause();
+    const q = this.questions[this.idx];
+    const name = winnerId ? (Host.players[winnerId] || {}).name : null;
+    Object.keys(Host.players).forEach(id => {
+      Host.sendTo(id, {
+        type: 'bnResult', title: q.answer, artist: q.artist,
+        winner: name, mine: id === winnerId, gained: this.gains[id] || 0,
+        got: got, heard: mark ? mark.heard : '', score: (Host.players[id] || {}).score || 0
+      });
+    });
+    Host.pushBoard();
+    $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — <b>' +
+      esc(q.answer) + '</b> by <b>' + esc(q.artist || '?') + '</b>' +
+      (name ? ' — ' + esc(name) + ' got ' + (got === 2 ? 'both' : 'half') + ', +' + pts : ' — nobody got it');
+    if (name) {
+      const v = Host.voiceFor(name);
+      Sound.say(name + (got === 2 ? ', song and artist. ' + Host.quip('close') : ', half marks'), v.voice, v.style);
+    } else {
+      Sound.say('Nobody had that one. It was ' + q.answer + ', by ' + (q.artist || 'someone'));
+    }
+    setTimeout(() => this.next(), 5200);
+  },
+
   buildQuickfire(count) {
     const bank = (window.QUESTIONS || []);
     if (bank.length < 4) throw new Error('The question bank did not load — check questions.js sits next to index.html.');
@@ -3752,6 +3958,7 @@ const Quiz = {
   async buildChunk(decade, count, style, extra, label) {
     const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
     // closest-wins comes from the baked fact bank, not from a decade search
+    if (this.mode === 'buzzname') return await this.buildBuzzName(decade, count, style, extra);
     if (this.mode === 'places') return await this.buildPlaces(count);
     if (this.mode === 'logos') return await this.buildLogos(count);
     if (this.mode === 'quickfire') return this.buildQuickfire(count);
@@ -3849,7 +4056,7 @@ const Quiz = {
     // Everything that wasn't covers used to fall through to "films", so the
     // host line read "10 questions from films" on the closest-wins round too.
     // Only the picture and music rounds actually come from films.
-    const SOURCE = { quickfire: 'the question bank', guess: 'the fact bank', logos: 'the logo list', places: 'the map list' };
+    const SOURCE = { quickfire: 'the question bank', guess: 'the fact bank', logos: 'the logo list', places: 'the map list', buzzname: 'the song search' };
     const label = this.mode === 'covers'
       ? ([style, extra, decadeLabel].filter(Boolean).join(', ') || 'that')
       : SOURCE[this.mode]
@@ -3880,7 +4087,10 @@ const Quiz = {
         qs = await this.buildChunk(decade, count, style, extra, label);
       }
 
-      if (this.mode === 'places') {
+      if (this.mode === 'buzzname') {
+        this.questions = qs.filter(q => q.uri);
+        if (!this.questions.length) throw new Error('Could not find playable tracks for that.');
+      } else if (this.mode === 'places') {
         this.questions = qs;
       } else if (this.mode === 'quickfire' || this.mode === 'guess') {
         this.questions = qs;
@@ -3980,7 +4190,7 @@ const Quiz = {
     this.answers = {};
     this.gains = {};
     this.firstCorrect = null;
-    const audioRound = ['themes', 'years', 'songs', 'tv'].includes(this.mode);
+    const audioRound = ['themes', 'years', 'songs', 'tv', 'buzzname'].includes(this.mode);
     // audio rounds have no picture to flash
     const flash = audioRound ? 0 : this.flashMs;
     // Music used to start the instant the question went out, with the clock
@@ -4029,6 +4239,7 @@ const Quiz = {
       songs: 'A song plays and four song titles appear on the phones. The classic music round. Decade applies; style narrows it.',
       tv: 'A TV theme tune plays and four shows appear. Show names are checked against TMDB, so what you get is a real programme. Decade filters on when the SHOW aired; style is ignored.',
       years: 'A song plays and four years appear. Decade applies; style narrows it. Remasters are filtered out so the dates are honest.',
+      buzzname: 'The game picks the songs — you never touch the music. A track plays, anyone can BUZZ and the music stops dead. Whoever buzzed says the song and the artist out loud, and it is marked automatically. Both scores double, one of the two scores half, and a wrong answer puts the music back on for everyone else to steal. Needs Spotify.',
       places: 'A place is named and a map appears on every phone — the world, a country, or Tyne and Wear. Tap to drop a pin, move it as much as you like, then lock it in. Closest pin wins, scored like Closest wins. Decade and flavour are ignored; maps and places live in questions.js.',
       logos: 'A logo flashes up on every phone, then four brand names. Symbol marks only — a logo with the name written in it would give the answer away. Decade and flavour are ignored; the brand list is in questions.js.',
       quickfire: 'A written question appears, then four answers a moment later. Fastest correct answer takes the most points. Decade and flavour are ignored — it reads the question bank in questions.js.',
@@ -4376,11 +4587,11 @@ const Quiz = {
   TITLES: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
     songs: '🎧 Name the song', tv: '📺 TV theme tunes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces',
-    quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?'
+    quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
-    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question', logos: 'Logo', places: 'Place'
+    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question', logos: 'Logo', places: 'Place', buzzname: 'Song'
   },
   HOWTO: {
     covers: 'A cover flashes up, then four albums. Pick the right one.',
@@ -4393,7 +4604,8 @@ const Quiz = {
     faces: 'A face flashes up, then four names. Quick!',
     quickfire: 'Read the question, then four answers appear. Fastest right answer wins it.',
     logos: 'A logo flashes up, then four brands. Pick the right one.',
-    places: 'Tap the map to drop a pin. Move it as often as you like, then lock it in. Closest wins.'
+    places: 'Tap the map to drop a pin. Move it as often as you like, then lock it in. Closest wins.',
+    buzzname: 'Listen, then BUZZ. The music stops and you say the song and the artist. Both scores double.'
   },
 
   ROUND_NAMES: {
@@ -4406,7 +4618,8 @@ const Quiz = {
     faces: 'famous faces round',
     quickfire: 'fastest finger round',
     logos: 'logo round',
-    places: 'where is it round'
+    places: 'where is it round',
+    buzzname: 'buzz and name it round'
   },
 
   stop() {
@@ -4630,7 +4843,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzer: '🔔 Buzzer round (you judge)'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', buzzer: '🔔 Buzzer round (you judge)'
   },
 
   load() {
@@ -4665,7 +4878,7 @@ const Night = {
   --------------------------------------------------------------------- */
 
   // which modes actually read the style/flavour word
-  STYLE_USED_BY: ['covers', 'years', 'songs'],
+  STYLE_USED_BY: ['covers', 'years', 'songs', 'buzzname'],
   DECADES: ['1960-1969', '1970-1979', '1980-1989', '1990-1999', '2000-2009', '2010-2019', '2020-2029'],
 
   randomDecade() { return this.DECADES[Math.floor(Math.random() * this.DECADES.length)]; },
@@ -5102,6 +5315,11 @@ const Player = {
         this.setStatus('');
         break;
 
+      case 'bnYours':   this.bnYours(msg); break;
+      case 'bnWaiting': this.bnWaiting(msg); break;
+      case 'bnSteal':   this.bnSteal(msg); break;
+      case 'bnWrong':   this.bnWrong(msg); break;
+      case 'bnResult':  this.bnResult(msg); break;
       case 'placeResult': this.placeResult(msg); break;
       case 'guessResult': this.guessResult(msg); break;
       case 'countIn': showCount(msg.text, msg.go); break;
@@ -5148,6 +5366,7 @@ const Player = {
         $('quizPrompt').textContent = ''; $('quizPrompt').classList.add('hidden');
         $('placeBox').classList.add('hidden');
         $('placeChart').classList.add('hidden');
+        $('bnBox').classList.add('hidden');
         $('buzzBtn').classList.add('hidden');
         const el = $('roundCard');
         let body;
@@ -5271,6 +5490,7 @@ const Player = {
 
   quizQuestion(msg) {
     this.setPlaying(true);
+    if (msg.kind === 'buzzname') return this.bnQuestion(msg);
     if (msg.kind === 'place') return this.placeQuestion(msg);
     if (msg.kind === 'guess') return this.guessQuestion(msg);
     $('roundCard').classList.add('hidden');
@@ -5364,6 +5584,189 @@ const Player = {
     window.addEventListener('resize', () => {
       if ($('placeBox') && !$('placeBox').classList.contains('hidden')) { this.fitMap(); this.applyView(); }
     });
+  },
+
+  /* ---- buzz and name it ------------------------------------------------ */
+  bnQuestion(msg) {
+    this.setPlaying(true);
+    clearInterval(this._quizTimer);
+    this._quizN = msg.n; this._quizAnswered = false;
+    this.hideExtras();
+    $('quizPanel').classList.remove('hidden');
+    $('buzzBtn').classList.add('hidden');
+    $('quizArtWrap').classList.remove('showing');
+    $('quizOptions').innerHTML = '';
+    $('quizPrompt').textContent = ''; $('quizPrompt').classList.add('hidden');
+    $('placeBox').classList.add('hidden');
+    $('guessBox').classList.add('hidden');
+    $('bnBox').classList.remove('hidden');
+    $('quizRound').textContent = (msg.roundLabel ? msg.roundLabel + ' · ' : '') + (msg.title || 'Buzz and name it');
+    $('quizProgress').textContent = 'Song ' + msg.n + ' of ' + msg.total;
+    $('quizFeedback').textContent = '';
+    $('bnSaid').textContent = '';
+    $('bnNote').textContent = 'Song AND artist scores double';
+    $('bnType').classList.add('hidden'); $('bnType').value = '';
+    $('bnMic').classList.add('hidden');
+    const b = $('bnBuzz');
+    b.classList.remove('hidden'); b.disabled = false; b.textContent = 'BUZZ';
+    b.onclick = () => {
+      if (this._quizAnswered) return;
+      b.disabled = true; b.textContent = 'Buzzed!';
+      this.vibe([80]);
+      this.conn.send({ type: 'bnBuzz', n: this._quizN });
+    };
+  },
+
+  bnYours(msg) {
+    $('bnBuzz').classList.add('hidden');
+    $('bnSaid').textContent = 'Your go —';
+    $('bnNote').textContent = 'Say the song and the artist';
+    const mic = $('bnMic');
+    mic.classList.remove('hidden');
+    mic.disabled = false;
+    mic.textContent = '🎤 Say it';
+    mic.onclick = () => this.bnListen();
+    this.vibe([60, 40, 120]);
+    // start listening straight away — they buzzed, they are ready
+    this.bnListen();
+  },
+
+  /* Browser recogniser first: instant, no download. */
+  bnListen() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const mic = $('bnMic');
+    if (!SR) return this.bnWhisper();
+    let rec;
+    try { rec = new SR(); } catch (e) { return this.bnWhisper(); }
+    rec.lang = 'en-GB';
+    rec.interimResults = true;
+    rec.maxAlternatives = 5;      // the right answer is often the second guess
+    rec.continuous = false;
+    mic.classList.add('listening');
+    mic.textContent = '🎤 Listening…';
+    let sent = false;
+    const finish = guesses => {
+      if (sent) return;
+      sent = true;
+      mic.classList.remove('listening');
+      mic.textContent = 'Sent';
+      mic.disabled = true;
+      this._quizAnswered = true;
+      this.conn.send({ type: 'bnSay', n: this._quizN, guesses: guesses });
+    };
+    rec.onresult = ev => {
+      const last = ev.results[ev.results.length - 1];
+      $('bnSaid').textContent = '“' + (last[0] || {}).transcript + '”';
+      if (!last.isFinal) return;
+      const alts = [];
+      for (let i = 0; i < last.length; i++) alts.push(last[i].transcript);
+      finish(alts);
+    };
+    rec.onerror = e => {
+      mic.classList.remove('listening');
+      // no permission or no service — fall through rather than dead-end
+      if (!sent) this.bnWhisper(e.error === 'not-allowed');
+    };
+    rec.onend = () => { if (!sent) { mic.classList.remove('listening'); mic.textContent = '🎤 Try again'; mic.disabled = false; } };
+    try { rec.start(); } catch (e) { this.bnWhisper(); }
+    // never leave them stuck if nothing at all comes back
+    setTimeout(() => { if (!sent) { try { rec.stop(); } catch (e) {} } }, 9000);
+  },
+
+  /* Whisper, run on the phone. Same model Audiolog uses, so nothing is sent
+     anywhere — the cost is a one-off download, which is why it is second. */
+  async bnWhisper(noMic) {
+    const mic = $('bnMic'), note = $('bnNote');
+    if (noMic || !navigator.mediaDevices || !window.MediaRecorder) return this.bnTyping();
+    try {
+      note.textContent = 'Loading the on-device recogniser…';
+      mic.textContent = '🎤 Hold and speak';
+      const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
+      this._whisper = this._whisper || await pipeline('automatic-speech-recognition', 'Xenova/whisper-base.en');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks = [];
+      const mr = new MediaRecorder(stream);
+      mr.ondataavailable = e => chunks.push(e.data);
+      mr.onstop = async () => {
+        stream.getTracks().forEach(tr => tr.stop());
+        note.textContent = 'Working it out…';
+        try {
+          const blob = new Blob(chunks, { type: 'audio/webm' });
+          const buf = await blob.arrayBuffer();
+          const ac = new (window.AudioContext || window.webkitAudioContext)();
+          const decoded = await ac.decodeAudioData(buf);
+          const off = new OfflineAudioContext(1, Math.ceil(decoded.duration * 16000), 16000);
+          const src = off.createBufferSource(); src.buffer = decoded;
+          src.connect(off.destination); src.start(0);
+          const rendered = await off.startRendering();
+          const out = await this._whisper(rendered.getChannelData(0));
+          const said = (out && out.text || '').trim();
+          $('bnSaid').textContent = '“' + said + '”';
+          this._quizAnswered = true;
+          this.conn.send({ type: 'bnSay', n: this._quizN, guesses: [said] });
+        } catch (e) { this.bnTyping(); }
+      };
+      mic.classList.add('listening');
+      mic.textContent = '🎤 Recording — tap to stop';
+      note.textContent = 'Runs on your phone, nothing is sent anywhere';
+      mr.start();
+      mic.onclick = () => { mic.classList.remove('listening'); mic.disabled = true; try { mr.stop(); } catch (e) {} };
+      setTimeout(() => { if (mr.state === 'recording') mic.onclick(); }, 10000);
+    } catch (e) {
+      this.bnTyping();
+    }
+  },
+
+  /* Last resort, so nobody is ever locked out of answering. */
+  bnTyping() {
+    $('bnMic').classList.add('hidden');
+    const box = $('bnType');
+    box.classList.remove('hidden');
+    box.focus();
+    $('bnNote').textContent = 'Speech is not available on this phone — type it instead, then press enter';
+    box.onkeydown = ev => {
+      if (ev.key !== 'Enter' || this._quizAnswered) return;
+      this._quizAnswered = true;
+      this.conn.send({ type: 'bnSay', n: this._quizN, guesses: [box.value] });
+      box.disabled = true;
+      $('bnSaid').textContent = '“' + box.value + '”';
+    };
+  },
+
+  bnWaiting(msg) {
+    $('bnBuzz').disabled = true;
+    $('bnBuzz').textContent = (msg.who || 'Someone') + ' buzzed';
+    $('bnNote').textContent = 'Waiting for their answer…';
+  },
+
+  bnSteal(msg) {
+    $('bnSaid').textContent = (msg.who || 'They') + ' said “' + (msg.heard || '—') + '” — wrong!';
+    $('bnNote').textContent = 'Back on — buzz to steal it';
+    const b = $('bnBuzz');
+    b.classList.remove('hidden'); b.disabled = false; b.textContent = 'BUZZ';
+    this.vibe([40, 40, 40]);
+  },
+
+  bnWrong(msg) {
+    $('bnMic').classList.add('hidden');
+    $('bnType').classList.add('hidden');
+    $('bnSaid').textContent = 'Not quite — “' + (msg.heard || '') + '”';
+    $('bnNote').textContent = 'You are out of this one';
+    this.vibe([200]);
+  },
+
+  bnResult(msg) {
+    clearInterval(this._quizTimer);
+    $('bnBuzz').classList.add('hidden');
+    $('bnMic').classList.add('hidden');
+    $('bnType').classList.add('hidden');
+    $('bnSaid').innerHTML = '<b>' + esc(msg.title) + '</b>' + (msg.artist ? ' — ' + esc(msg.artist) : '');
+    $('bnNote').textContent = msg.winner
+      ? (msg.mine ? 'You got ' + (msg.got === 2 ? 'both — ' : 'half — ') + '+' + msg.gained
+                  : msg.winner + ' got ' + (msg.got === 2 ? 'both' : 'half'))
+      : 'Nobody got that one';
+    $('pScore').textContent = (msg.score || 0) + ' pts';
+    if (msg.mine) this.vibe([60, 40, 60, 40, 200]);
   },
 
   placeQuestion(msg) {
