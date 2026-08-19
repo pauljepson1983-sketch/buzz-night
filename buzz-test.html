@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Buzz test — say the song</title>
+<style>
+  :root { color-scheme: dark }
+  * { box-sizing: border-box }
+  body { margin: 0; padding: 18px; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: #1a0f35; color: #fff; min-height: 100vh }
+  h1 { font-size: 1.15rem; margin: 0 0 4px }
+  .sub { opacity: .7; font-size: .85rem; margin-bottom: 18px; line-height: 1.4 }
+  .card { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
+          border-radius: 14px; padding: 16px; margin-bottom: 14px }
+  .song { font-size: 1.35rem; font-weight: 800; line-height: 1.2 }
+  .by { opacity: .75; margin-top: 2px }
+  button { width: 100%; border: none; border-radius: 14px; font-weight: 800;
+           font-family: inherit; cursor: pointer }
+  #say { padding: 26px 12px; font-size: 1.3rem; color: #06331d;
+         background: linear-gradient(180deg,#5ce6a2,#16a86a); box-shadow: 0 6px 0 #0b6b43 }
+  #say:active { transform: translateY(3px); box-shadow: 0 3px 0 #0b6b43 }
+  #say.listening { animation: pulse 1s ease-in-out infinite }
+  #say:disabled { filter: grayscale(.6) brightness(.75); box-shadow: 0 3px 0 #0b6b43 }
+  @keyframes pulse { 50% { filter: brightness(1.25) } }
+  .ghost { background: rgba(255,255,255,.1); color: #fff; padding: 12px; font-size: .95rem; margin-top: 10px }
+  #heard { font-size: 1.05rem; min-height: 1.4em; margin-top: 14px; font-weight: 700 }
+  #verdict { margin-top: 12px; font-size: 1.1rem; font-weight: 800; line-height: 1.35 }
+  .good { color: #21d07a } .half { color: #ffd83d } .bad { color: #ff6b8a }
+  .note { font-size: .8rem; opacity: .65; margin-top: 10px; line-height: 1.4 }
+  ol { padding-left: 20px; line-height: 1.6; font-size: .9rem }
+  code { background: rgba(0,0,0,.35); padding: 1px 5px; border-radius: 5px; font-size: .85em }
+</style>
+</head>
+<body>
+
+<h1>Buzz test — say the song</h1>
+<p class="sub">This is the one part of the buzzer round that has never been tested on a real
+phone: speaking an answer and having it marked. No Spotify, no room, no other
+players — just this. Open it on the phone you would actually play on.</p>
+
+<div class="card">
+  <div class="song" id="title">Wonderwall</div>
+  <div class="by" id="artist">by Oasis</div>
+</div>
+
+<button id="say">🎤 Say it</button>
+<button class="ghost" id="next">Give me a different song</button>
+
+<div id="heard"></div>
+<div id="verdict"></div>
+<p class="note" id="support"></p>
+
+<div class="card" style="margin-top:20px">
+  <b style="font-size:.95rem">What to try</b>
+  <ol>
+    <li>Say the song <b>and</b> the artist — should score <b>both</b></li>
+    <li>Say only the song — should score <b>half</b></li>
+    <li>Say it sloppily: <i>"erm, is it Wonderwall by Oasis?"</i> — should still score both</li>
+    <li>Say something wrong — should score <b>nothing</b></li>
+    <li>Try it with the telly on, to see how it copes with noise</li>
+  </ol>
+  <p class="note">Whatever it heard is shown in quotes, so if it marks you wrong you can see
+  whether the phone misheard you or the marking was too strict. That is the
+  thing I need to know before this goes back in the game.</p>
+</div>
+
+<script>
+/* ── the exact marking used by the round ───────────────────────────────────
+   Kept identical on purpose: if it behaves differently here than in the game
+   the test is worthless. Spaces are stripped entirely because speech engines
+   split words their own way — "wonder wall" has to match "Wonderwall".      */
+const squash = s => String(s || '').toLowerCase()
+  .replace(/\(.*?\)|\[.*?\]/g, ' ')
+  .replace(/\s*-\s*(remaster|remastered|live|mono|stereo|radio edit|single version|version).*$/i, '')
+  .replace(/&/g, ' and ')
+  .replace(/[^a-z0-9 ]/g, ' ')
+  .replace(/\b(the|a|an|by|its|it|feat|featuring|and)\b/g, ' ')
+  .replace(/\s+/g, '').trim();
+
+function lev(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+
+function heardIn(said, target) {
+  const h = squash(said), tg = squash(target);
+  if (!tg || tg.length < 2 || !h) return false;
+  if (h.includes(tg)) return true;
+  const tol = tg.length <= 8 ? 1 : tg.length <= 16 ? 2 : 3;
+  for (let i = 0; i + tg.length - tol <= h.length; i++)
+    for (const len of [tg.length - tol, tg.length, tg.length + tol])
+      if (len > 0 && lev(h.substr(i, len), tg) <= tol) return true;
+  return false;
+}
+
+/* ── a handful of songs to try ─────────────────────────────────────────── */
+const SONGS = [
+  ['Wonderwall', 'Oasis'],
+  ['Bohemian Rhapsody', 'Queen'],
+  ["Livin' On A Prayer", 'Bon Jovi'],
+  ['Rolling In The Deep', 'Adele'],
+  ['Dancing Queen', 'ABBA'],
+  ["Don't Look Back in Anger", 'Oasis'],
+  ['Sweet Caroline', 'Neil Diamond'],
+  ['Common People', 'Pulp']
+];
+let idx = 0;
+const $ = id => document.getElementById(id);
+function show() {
+  $('title').textContent = SONGS[idx][0];
+  $('artist').textContent = 'by ' + SONGS[idx][1];
+  $('heard').textContent = '';
+  $('verdict').textContent = '';
+  $('verdict').className = '';
+}
+$('next').onclick = () => { idx = (idx + 1) % SONGS.length; show(); };
+show();
+
+/* ── does this phone do speech at all? ─────────────────────────────────── */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+$('support').textContent = SR
+  ? 'This phone has speech recognition. It will ask for the microphone the first time.'
+  : 'This phone has NO built-in speech recognition — in the real round it would fall back to Whisper or typing. Worth telling me if you see this.';
+
+function mark(guesses) {
+  const [title, artist] = SONGS[idx];
+  let gotT = false, gotA = false;
+  for (const g of guesses) { gotT = gotT || heardIn(g, title); gotA = gotA || heardIn(g, artist); }
+  const v = $('verdict');
+  if (gotT && gotA) { v.textContent = '✅ BOTH — song and artist. That is full marks.'; v.className = 'good'; }
+  else if (gotT)    { v.textContent = '🟡 HALF — got the song, missed the artist.'; v.className = 'half'; }
+  else if (gotA)    { v.textContent = '🟡 HALF — got the artist, missed the song.'; v.className = 'half'; }
+  else              { v.textContent = '❌ NOTHING — that would be marked wrong.'; v.className = 'bad'; }
+}
+
+$('say').onclick = () => {
+  if (!SR) { $('heard').textContent = 'No speech recognition on this phone.'; return; }
+  const btn = $('say');
+  let rec;
+  try { rec = new SR(); } catch (e) { $('heard').textContent = 'Could not start: ' + e.message; return; }
+  rec.lang = 'en-GB';
+  rec.interimResults = true;
+  rec.maxAlternatives = 5;      // the right answer is often the second guess
+  rec.continuous = false;
+  btn.classList.add('listening');
+  btn.textContent = '🎤 Listening…';
+  btn.disabled = true;
+  let done = false;
+  const finish = () => { btn.classList.remove('listening'); btn.textContent = '🎤 Say it'; btn.disabled = false; };
+
+  rec.onresult = ev => {
+    const last = ev.results[ev.results.length - 1];
+    $('heard').textContent = '“' + last[0].transcript + '”';
+    if (!last.isFinal) return;
+    done = true;
+    const alts = [];
+    for (let i = 0; i < last.length; i++) alts.push(last[i].transcript);
+    // show every guess the phone offered — this is what I need to see
+    $('heard').innerHTML = '“' + alts[0] + '”' +
+      (alts.length > 1 ? '<br><span style="opacity:.6;font-size:.85rem">also heard: ' +
+        alts.slice(1).map(a => '“' + a + '”').join(', ') + '</span>' : '');
+    mark(alts);
+    finish();
+  };
+  rec.onerror = e => {
+    $('heard').textContent = 'Microphone problem: ' + e.error +
+      (e.error === 'not-allowed' ? ' — permission was refused' : '');
+    finish();
+  };
+  rec.onend = () => { if (!done) { $('heard').textContent = $('heard').textContent || 'Heard nothing — try again'; } finish(); };
+  try { rec.start(); } catch (e) { $('heard').textContent = 'Could not start listening: ' + e.message; finish(); }
+};
+</script>
+</body>
+</html>
