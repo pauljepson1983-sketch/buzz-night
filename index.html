@@ -2809,17 +2809,20 @@ const Quiz = {
   /* Closest-wins. No four options: everyone types a number and the nearest
      takes it. Scored on a curve rather than winner-takes-all, because with six
      players one winner and five nils kills the round. */
+  /* Wikidata stores these in metric; a quiz played in a British living room
+     should ask in miles and feet. Converted at build time so the question, the
+     stored answer and the scoring all agree. */
   GUESS_KINDS: [
-    { key: 'countrypop', q: n => 'How many people live in ' + n + '?', unit: 'people' },
-    { key: 'citypop',    q: n => 'What is the population of the city of ' + n + '?', unit: 'people' },
-    { key: 'area',       q: n => 'How big is ' + n + ', in square kilometres?', unit: 'km²' },
-    { key: 'buildings',  q: n => 'How tall is ' + n + ', in metres?', unit: 'm' }
+    { key: 'countrypop', q: n => 'How many people live in ' + n + '?', unit: 'people', conv: v => v },
+    { key: 'citypop',    q: n => 'What is the population of the city of ' + n + '?', unit: 'people', conv: v => v },
+    { key: 'area',       q: n => 'How big is ' + n + ', in square miles?', unit: 'sq miles', conv: v => Math.round(v / 2.58999) },
+    { key: 'buildings',  q: n => 'How tall is ' + n + ', in feet?', unit: 'feet', conv: v => Math.round(v * 3.28084) }
   ],
 
   buildGuess(count) {
     const pool = [];
     this.GUESS_KINDS.forEach(k => (FACTS[k.key] || []).forEach(([name, value]) => {
-      pool.push({ seenKey: k.key + ':' + name, label: name, prompt: k.q(name), answer: value, unit: k.unit });
+      pool.push({ seenKey: k.key + ':' + name, label: name, prompt: k.q(name), answer: k.conv(value), unit: k.unit });
     }));
     if (pool.length < 4) throw new Error('Fact bank is empty.');
     this.available = pool.length;
@@ -3873,9 +3876,9 @@ const Player = {
         break;
       case 'phase':
         this.hideExtras();
-        if (msg.phase === 'armed') { this.hideExtras(); this.setBuzz(true); this.setStatus('🟢 BUZZ WHEN YOU KNOW IT!', 'good'); this.vibe([60]); }
+        if (msg.phase === 'armed') { this.setPlaying(true); this.hideExtras(); this.setBuzz(true); this.setStatus('🟢 BUZZ WHEN YOU KNOW IT!', 'good'); this.vibe([60]); }
         else if (msg.phase === 'locked') { this.setBuzz(false); this.setStatus('🔒 Locked out this song', 'bad'); }
-        else { this.setBuzz(false); this.setStatus('Listen… buzzers not live yet'); }
+        else { this.setBuzz(false); this.setPlaying(false); this.setStatus('Listen… buzzers not live yet'); }
         break;
       case 'buzzAck':
         this.setBuzz(false);
@@ -3977,6 +3980,7 @@ const Player = {
       }
 
       case 'quizEnd': {
+        this.setPlaying(false);
         clearInterval(this._quizTimer);
         clearInterval(this._quizLead);
         $('quizPanel').classList.add('hidden');
@@ -4029,6 +4033,7 @@ const Player = {
   },
 
   quizQuestion(msg) {
+    this.setPlaying(true);
     if (msg.kind === 'guess') return this.guessQuestion(msg);
     $('roundCard').classList.add('hidden');
     clearInterval(this._quizTimer);
@@ -4104,6 +4109,7 @@ const Player = {
   },
 
   guessQuestion(msg) {
+    this.setPlaying(true);
     clearInterval(this._quizTimer);
     this._quizN = msg.n; this._quizAnswered = false;
     this.setStatus('');
@@ -4429,6 +4435,16 @@ const Player = {
       test: !!test
     });
     if (test) this.setStatus('🔊 Playing on the host speaker…');
+  },
+
+  /* The avatar and buzzer cards are setup, not gameplay. Left on screen they
+     sat directly under a live question, competing with it and pushing it up
+     the page. Shown while waiting, hidden the moment a question lands. */
+  setPlaying(on) {
+    const me = $('myMeCard'), kit = $('myKitCard');
+    if (me) me.classList.toggle('hidden', !!on);
+    if (kit) kit.classList.toggle('hidden', !!on);
+    this._playing = !!on;
   },
 
   hideExtras() {
