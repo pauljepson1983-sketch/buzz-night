@@ -3726,9 +3726,14 @@ const Quiz = {
     entries.forEach((e, i) => {
       const p = Host.players[e.id];
       if (!p) return;
-      let pts = i < AWARD.length ? AWARD[i] : 3;
+      // Nothing for a wild guess. It used to be 3, which meant typing any
+      // number at all beat thinking about it, and a number picked at random
+      // was never actually wrong.
+      let pts = i < AWARD.length ? AWARD[i] : 0;
       const within = truth ? e.off / Math.abs(truth) : 1;
-      if (within <= 0.10) pts += 10;          // close enough to deserve it
+      // Still pays to be close even out of the medals — and this cannot
+      // overtake the place above, since anyone closer is inside 10% too.
+      if (within <= 0.10) pts += 10;
       p.score += pts;
       p.stats = p.stats || Host.blankStats();
       p.stats.answered++;
