@@ -285,18 +285,26 @@
   #placeAsk { font-size: 1.15rem; font-weight: 700; text-align: center; margin-bottom: 4px }
   #placeWhere { font-size: .85rem; text-align: center; opacity: .75; margin-bottom: 8px }
   #placeWrap { position: relative; width: 100%; border-radius: 12px; overflow: hidden;
-               background: #0d0722; touch-action: manipulation; cursor: crosshair }
+               background: #0d0722; cursor: crosshair;
+               /* none, so dragging pans the map instead of scrolling the page */
+               touch-action: none; user-select: none }
   #placeWrap img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none }
   .pin { position: absolute; pointer-events: none; box-sizing: border-box }
 
   /* Placing a pin needs PRECISION, so it is a ring you can see the map
      through with a small dot at the exact point — not a blob that hides
      the very thing you are aiming at. */
-  .pin.mine { width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%;
-              border: 2px solid #ffd83d; background: rgba(255,216,61,.14) }
+  /* Magenta, not yellow. Political maps are washes of yellow, tan and pale
+     green, so a yellow pin sat straight into the background. Magenta appears
+     nowhere on them, and the white outer ring keeps it readable over dark sea
+     as well as pale land. */
+  .pin.mine { width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+              border: 3px solid #ff2d95; background: rgba(255,45,149,.15);
+              box-shadow: 0 0 0 2px rgba(255,255,255,.92), 0 1px 6px rgba(0,0,0,.55) }
   .pin.mine::after { content: ''; position: absolute; left: 50%; top: 50%;
-                     width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #ffd83d }
-  .pin.locked { border-color: #fff; box-shadow: 0 0 0 3px rgba(255,216,61,.4) }
+                     width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%;
+                     background: #fff; box-shadow: 0 0 0 1.5px #ff2d95 }
+  .pin.locked { box-shadow: 0 0 0 2px #fff, 0 0 0 6px rgba(255,45,149,.45) }
 
   /* Everyone else's pins sit back — they are context, not the answer. */
   .pin.other { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
@@ -316,7 +324,7 @@
   }
   @media (prefers-reduced-motion: reduce) { .pin.truth::before { animation: none; opacity: .55 } }
 
-  #placeZoomOut { display: none; margin-top: 8px; width: 100% }
+  #placeZoom { display: none; margin-top: 8px; width: 100% }
   #placeWrap.zoomed { cursor: zoom-in }
   #placeMap { transition: transform .18s ease-out }
   #placeHint { font-size: .85rem; text-align: center; margin-top: 8px; min-height: 1.2em }
@@ -752,7 +760,7 @@
       <div id="placeWhere"></div>
       <div id="placeWrap"><img id="placeMap" alt=""></div>
       <div id="placeHint"></div>
-      <button class="btn ghost small" id="placeZoomOut">Zoom back out</button>
+      <button class="btn ghost small" id="placeZoom">🔍 Zoom in to fine-tune</button>
       <button class="btn green" id="placeLock" style="width:100%;margin-top:10px">Lock it in</button>
     </div>
     <div id="guessBox" class="hidden">
@@ -3277,7 +3285,9 @@ const Quiz = {
     const urlFor = {};
     try {
       const r = await fetch('https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*' +
-        '&prop=imageinfo&iiprop=url&iiurlwidth=1200&titles=' + encodeURIComponent(titles.join('|')));
+        // 1920 rather than 1200: zooming into a 1200px map ran out of pixels
+        // and went soft, which is half of why placing a pin felt hard
+        '&prop=imageinfo&iiprop=url&iiurlwidth=1920&titles=' + encodeURIComponent(titles.join('|')));
       const j = await r.json();
       Object.values(((j.query || {}).pages) || {}).forEach(p => {
         if (p.imageinfo) urlFor[p.title.replace('File:', '')] = p.imageinfo[0].thumburl;
@@ -5067,44 +5077,128 @@ const Player = {
     // how far the second tap goes in, set per map — a world map needs far
     // more than Tyne and Wear, where it would lose every landmark
     this._zoomFactor = msg.mapZoom || this.ZOOM;
-    this._view = null;                     // no zoom until the first tap
+    this._view = null;                     // starts on the whole map
     this.applyView();
+    $('placeZoom').style.display = 'none';
+    $('placeZoom').textContent = '🔍 Zoom in to fine-tune';
     this.vibe([40]);
 
-    /* Two taps rather than one. The first says roughly where, and the map
-       zooms in around it; the second places the pin properly. Chosen over
-       pinch-zoom because there are no gestures to fumble halfway through a
-       round, and it works the same on every phone. */
-    wrap.onclick = ev => {
-      if (this._quizAnswered) return;
-      const r = $('placeMap').getBoundingClientRect();
-      if (!r.width || !r.height) { $('placeHint').textContent = 'Map still loading — try again in a second'; return; }
-      const fx = (ev.clientX - r.left) / r.width, fy = (ev.clientY - r.top) / r.height;
-      const at = this.viewToMap(fx, fy);
+    /* One tap places the pin, and that is enough on its own. Zooming is now
+       OFFERED rather than forced: making every pin cost two taps turned a
+       simple placement into a fiddle, and throwing the map to somewhere
+       unrecognisable on the first tap was worse than not zooming at all.
 
-      if (!this._view) {
-        // first tap: frame up around it so the second tap can be accurate
-        this._view = { cx: at.x, cy: at.y, z: this._zoomFactor || this.ZOOM };
-        this._pin = at;
-        this.applyView();
-        $('placeZoomOut').style.display = 'block';
-        $('placeHint').textContent = 'Now tap exactly where you mean, then lock it in';
-        this.vibe([20]);
-        return;
-      }
-      this._pin = at;
-      this.applyView();
-      lock.disabled = false;
-      $('placeHint').textContent = 'Tap again to adjust, then lock it in';
-      this.vibe([20]);
+       Drag to move the map about once you are zoomed in — without it you
+       could only ever look at the one spot you happened to tap first.
+
+       Still no pinch-zoom: two thumbs on a phone being passed round a room
+       trigger it constantly by accident. */
+    const pts = new Map();          // every finger currently on the map
+    let drag = null, pinch = null, gestured = false;
+
+    const frame = () => $('placeMap').getBoundingClientRect();
+    const midOf = () => {
+      const a = [...pts.values()];
+      return { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2,
+               d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) };
     };
 
-    $('placeZoomOut').onclick = ev => {
-      ev.stopPropagation();
-      this._view = null;
+    wrap.onpointerdown = ev => {
+      if (this._quizAnswered) return;
+      pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      // capture keeps a drag alive if the finger leaves the map, but it
+      // throws on some browsers rather than being merely unavailable
+      try { wrap.setPointerCapture && wrap.setPointerCapture(ev.pointerId); } catch (e) {}
+      if (pts.size === 1) {
+        drag = { x: ev.clientX, y: ev.clientY,
+                 cx: this._view ? this._view.cx : 50, cy: this._view ? this._view.cy : 50 };
+        gestured = false;
+      } else if (pts.size === 2) {
+        // a second finger turns this into a pinch, never a pin
+        gestured = true;
+        drag = null;
+        const m = midOf(), r = frame();
+        const under = this.viewToMap((m.x - r.left) / r.width, (m.y - r.top) / r.height);
+        pinch = { d: m.d, z: this._view ? this._view.z : 1, under: under };
+      }
+    };
+
+    wrap.onpointermove = ev => {
+      if (this._quizAnswered || !pts.has(ev.pointerId)) return;
+      pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      const r = frame();
+      if (!r.width) return;
+
+      /* Two fingers: scale about the point between them, so whatever you are
+         pinching around stays put rather than sliding off. */
+      if (pts.size >= 2 && pinch) {
+        const m = midOf();
+        if (!pinch.d) return;
+        const maxZ = (this._zoomFactor || this.ZOOM) * 2.5;
+        const z = Math.max(1, Math.min(maxZ, pinch.z * (m.d / pinch.d)));
+        if (z <= 1.02) { this._view = null; }
+        else {
+          const fx = (m.x - r.left) / r.width, fy = (m.y - r.top) / r.height;
+          this._view = {
+            z: z,
+            cx: Math.max(0, Math.min(100, pinch.under.x - (fx - 0.5) * (100 / z))),
+            cy: Math.max(0, Math.min(100, pinch.under.y - (fy - 0.5) * (100 / z)))
+          };
+        }
+        this.applyView();
+        this.syncZoomButton();
+        return;
+      }
+
+      // One finger: drag the map about. A few pixels of wobble is still a tap.
+      if (!drag) return;
+      const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+      if (!gestured && Math.hypot(dx, dy) < 6) return;
+      gestured = true;
+      if (!this._view) return;                       // nothing to pan when fully out
+      this._view.cx = Math.max(0, Math.min(100, drag.cx - dx / r.width * 100 / this._view.z));
+      this._view.cy = Math.max(0, Math.min(100, drag.cy - dy / r.height * 100 / this._view.z));
       this.applyView();
-      $('placeZoomOut').style.display = 'none';
-      $('placeHint').textContent = this._pin ? 'Tap to move your pin, then lock it in' : 'Tap the map to place your pin';
+    };
+
+    const endPointer = ev => {
+      const had = pts.has(ev.pointerId);
+      pts.delete(ev.pointerId);
+      if (pts.size < 2) pinch = null;
+      if (pts.size > 0 || !had || this._quizAnswered) return;
+      const wasGesture = gestured;
+      drag = null; gestured = false;
+      if (wasGesture) return;                        // a drag or pinch never drops a pin
+      const r = frame();
+      if (!r.width || !r.height) { $('placeHint').textContent = 'Map still loading — try again in a second'; return; }
+      this._pin = this.viewToMap((ev.clientX - r.left) / r.width, (ev.clientY - r.top) / r.height);
+      this.drawPin('mine', this._pin.x, this._pin.y);
+      lock.disabled = false;
+      $('placeZoom').style.display = 'block';
+      $('placeHint').textContent = this._view
+        ? 'Pinch or drag to move about, tap to adjust, then lock it in'
+        : 'Tap to move it, pinch to zoom, or lock it in';
+      this.vibe([20]);
+    };
+    wrap.onpointerup = endPointer;
+    wrap.onpointercancel = ev => { pts.delete(ev.pointerId); if (pts.size < 2) pinch = null;
+                                   if (!pts.size) { drag = null; gestured = false; } };
+
+    /* Zoom keeps whatever pin is already down in the middle, so nothing
+       jumps anywhere surprising — you get a closer look at your own answer. */
+    $('placeZoom').onclick = ev => {
+      ev.stopPropagation();
+      if (this._view) {
+        this._view = null;
+        this.syncZoomButton();
+        $('placeHint').textContent = 'Tap to move it, zoom in for a closer look, or lock it in';
+      } else {
+        const at = this._pin || { x: 50, y: 50 };
+        this._view = { cx: at.x, cy: at.y, z: this._zoomFactor || this.ZOOM };
+        this.syncZoomButton();
+        $('placeHint').textContent = 'Drag to move the map, tap to adjust, then lock it in';
+      }
+      this.applyView();
     };
 
     lock.onclick = () => {
@@ -5140,7 +5234,7 @@ const Player = {
   /* How far in the second stage goes. Four times turns the world map from
      a 195px strip into something you can actually aim at, without losing so
      much context that you cannot tell where you are. */
-  ZOOM: 4,
+  ZOOM: 3,
 
   /* A tap sits somewhere in the visible frame; this turns it into a position
      on the WHOLE map, which is what gets scored. Without a zoom in play the
@@ -5180,6 +5274,16 @@ const Player = {
     if (this._pin) this.drawPin('mine', this._pin.x, this._pin.y);
   },
 
+  /* The button and the pinch control the same thing, so the button has to
+     follow along — otherwise it still says "zoom in" after you have already
+     pinched in, and pressing it would zoom you out. */
+  syncZoomButton() {
+    const b = $('placeZoom');
+    if (!b) return;
+    b.style.display = 'block';
+    b.textContent = this._view ? 'Zoom back out' : '🔍 Zoom in to fine-tune';
+  },
+
   drawPin(cls, mx, my) {
     const wrap = $('placeWrap');
     let el = wrap.querySelector('.pin.' + cls.split(' ')[0]);
@@ -5197,7 +5301,7 @@ const Player = {
     // off the edge of whatever frame this player happened to zoom into
     this._view = null;
     this.applyView();
-    $('placeZoomOut').style.display = 'none';
+    $('placeZoom').style.display = 'none';
     [...wrap.querySelectorAll('.pin.other, .pin.truth')].forEach(p => p.remove());
     (msg.pins || []).forEach(p => {
       const mine = p.name && this.name && p.name.toLowerCase() === this.name.toLowerCase();
