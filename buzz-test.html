@@ -301,7 +301,12 @@ $('buzz').onclick = async () => {
      it afterwards whether the music stopped gives a stale answer — measured
      live: it still reported "playing" after the sound had gone. The player
      object is right here in the page and stops immediately. */
-  try { if (S.player) await S.player.pause(); } catch (e) {}
+  /* Fire it, do not wait on it. The promise pause() hands back does not
+     resolve until Spotify acknowledges the command, which took well over a
+     second live, while the sound itself stops long before that. Reading the
+     player's own state costs about three milliseconds, so ask it repeatedly
+     instead of waiting on the acknowledgement. */
+  if (S.player) S.player.pause().catch(() => {});
   /* Tell Spotify's servers as well, so anything else showing the account
      agrees the music has stopped, but do not wait on it. Measured live, that
      round trip took two seconds on its own, which is two seconds of silence
@@ -313,14 +318,15 @@ $('buzz').onclick = async () => {
      happily — a live test heard "I just can't look it's killing me and",
      which is the lyric of the song that was playing rather than anything the
      player said. In a room with the music up that would happen every time. */
-  for (let i = 0; i < 14; i++) {
+  const stopBy = Date.now() + 2500;   // a backstop, not the normal path
+  while (Date.now() < stopBy) {
     try {
       const st = S.player ? await S.player.getCurrentState() : null;
       if (!st || st.paused) break;
     } catch (e) { break; }
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 40));
   }
-  await new Promise(r => setTimeout(r, 250));   // let the speakers fall silent
+  await new Promise(r => setTimeout(r, 200));   // let the speakers fall silent
 
   $('status').textContent = 'Music stopped — say the song and the artist';
   $('say').style.display = 'block';
