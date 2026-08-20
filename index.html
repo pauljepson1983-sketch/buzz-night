@@ -5365,10 +5365,19 @@ const Quiz = {
       Seen.mark(this.mode, this.questions);
       Seen.render();
       Host.endRound(false);
+      /* A team duel is not "two of you", so the standing blurb would be
+         telling half the room something untrue. Worked out here because the
+         sides are not chosen until duelSetUp runs, just below. */
+      let howto = this.HOWTO[this.mode] || '';
+      if (this.mode === 'duel' && Host.teamMode) {
+        const teamed = { A: 0, B: 0 };
+        Object.values(Host.players).forEach(p => { if (teamed[p.team] != null && Host.isPresent(p)) teamed[p.team]++; });
+        if (teamed.A && teamed.B) howto = 'Team against team. Anyone can answer and the first one in answers for the whole team, so the pot rides on whoever is quickest. Every right answer doubles it — bank it whenever you like, but get one wrong and the other team takes it.';
+      }
       Host.broadcast({
         type: 'quizStart', total: this.questions.length,
         title: this.TITLES[this.mode] || 'Quiz round',
-        howto: this.HOWTO[this.mode] || '',
+        howto: howto,
         noun: this.NOUNS[this.mode] || 'Question',
         roundLabel: this.roundLabel || ''
       });
