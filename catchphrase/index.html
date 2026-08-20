@@ -167,6 +167,20 @@ button{font-family:inherit;cursor:pointer;border:0}
 #verdict .sub{font-size:clamp(16px,3vw,24px);color:var(--muted)}
 #override{display:flex;gap:12px}
 #override button{padding:14px 26px;border-radius:999px;font-weight:800;font-size:17px}
+/* picture credits — most of these photos are free only if we name the photographer */
+#credits{position:fixed;inset:0;z-index:62;background:var(--bg);overflow-y:auto;padding:22px}
+#credits .cbox{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+#credits h2{margin:0;color:var(--gold);font-size:clamp(22px,4vw,32px)}
+#credits .cintro{margin:0;color:var(--muted);font-size:15px;line-height:1.55;max-width:60ch}
+#credits h3{margin:18px 0 4px;color:var(--cyan);font-size:13px;letter-spacing:2px;text-transform:uppercase}
+#credits .row{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.07);
+  font-size:14px;line-height:1.35;align-items:baseline}
+#credits .row .what{font-weight:700;flex:0 0 34%;color:var(--text)}
+#credits .row .who{color:var(--muted);flex:1 1 auto}
+#credits .row .lic{color:var(--gold);font-size:12px;white-space:nowrap}
+#credits .src{color:var(--muted);font-size:13px;line-height:1.6}
+#credits .src a{color:var(--cyan)}
+#credits .big{align-self:flex-start;margin:10px 0 30px}
 #giveit{background:var(--green);color:#0c2b18}
 #nope{background:var(--panel);color:var(--text)}
 
@@ -224,6 +238,7 @@ button{font-family:inherit;cursor:pointer;border:0}
   <div class="setup" id="names"></div>
   <div class="setup" id="decks"></div>
   <button class="big" id="start">START</button>
+  <button class="chip" id="showCredits">Picture credits</button>
   <p class="tiny">Tiles lift one at a time. When the <b>bell</b> rings, hit your key — or tap your name — then type what you spot.
   Win one and you play the <b>Bonus</b>, where the money drops with every tile. Then <b>Quickfire</b>: no bell, 90 seconds.
   Whoever leads plays the <b>Super Catchphrase</b> — five squares in a line, and a line through M pays double.</p>
@@ -290,6 +305,16 @@ button{font-family:inherit;cursor:pointer;border:0}
     <button id="phMic">🎤 Listening…</button>
     <input id="phGuess" placeholder="…or type it" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
     <button id="phSend">SEND</button>
+  </div>
+</div>
+
+<div id="credits" class="hide">
+  <div class="cbox">
+    <h2>Picture credits</h2>
+    <p class="cintro">Every photograph in this game is used under a licence that allows it.
+      Most ask only that the photographer is named, which is what this page is for.</p>
+    <div id="clist"></div>
+    <button class="big" id="closeCredits">Back</button>
   </div>
 </div>
 
@@ -750,6 +775,45 @@ function loadDecks(){
   }).catch(() => { $("decks").innerHTML = '<span class="tiny">Decks unavailable — playing the picture puzzles.</span>'; });
 }
 loadDecks();
+
+/* The photographers. Most of these pictures are free to use only on condition
+   that whoever took them is named, so this screen is part of the deal. */
+function buildCredits(){
+  const box = $("clist");
+  box.innerHTML = "";
+  let counted = 0;
+  Object.values(DECKS).forEach(deck => {
+    const withArt = (deck.items || []).filter(it => it.img);
+    if (!withArt.length) return;
+    const h = document.createElement("h3");
+    h.textContent = deck.name;
+    box.appendChild(h);
+    withArt.forEach(it => {
+      counted++;
+      const r = document.createElement("div");
+      r.className = "row";
+      r.innerHTML = '<span class="what"></span><span class="who"></span><span class="lic"></span>';
+      r.querySelector(".what").textContent = it.a;
+      r.querySelector(".who").textContent = (it.by && it.by !== "-") ? it.by : "unknown photographer";
+      r.querySelector(".lic").textContent = it.lic || "";
+      box.appendChild(r);
+    });
+  });
+  const src = document.createElement("p");
+  src.className = "src";
+  src.innerHTML = counted + " pictures. They come from " +
+    '<a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a>, ' +
+    '<a href="https://en.wikipedia.org" target="_blank" rel="noopener">Wikipedia</a> and ' +
+    'the <a href="https://www.metmuseum.org/hubs/open-access" target="_blank" rel="noopener">Metropolitan Museum of Art</a>, ' +
+    "whose works here are released under CC0 and ask for nothing in return. " +
+    "Licence terms: " +
+    '<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY</a> and ' +
+    '<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA</a>. ' +
+    "Anything we could not confirm was free was left out of the game.";
+  box.appendChild(src);
+}
+$("showCredits").onclick = () => { buildCredits(); $("credits").classList.remove("hide"); };
+$("closeCredits").onclick = () => $("credits").classList.add("hide");
 
 // everything the chosen decks hold, shuffled into one pile
 // Two piles, because a picture round and a clue round want different things.
