@@ -4822,6 +4822,21 @@ const Quiz = {
 
   duelFinish() {
     const a = this.duelA, b = this.duelB;
+
+    /* Whatever is in the pot when the last question is done goes to whoever
+       is holding it.
+
+       Losing it because the round ran out of questions is a punishment for
+       nothing: there is no next question to bank before, so the decision the
+       whole round is built on was never offered. The pot is still lost the
+       moment you get one wrong, which is where the nerve actually lives.
+       Caught by a test duel that finished nil-nil because neither of them had
+       happened to press Bank. */
+    if (this.duelControl && this.duelPot > 0) {
+      this.duelBanked[this.duelControl] += this.duelPot;
+      this.duelPot = 0;
+    }
+
     const aS = this.duelBanked[a], bS = this.duelBanked[b];
     const winner = aS === bS ? null : (aS > bS ? a : b);
 
