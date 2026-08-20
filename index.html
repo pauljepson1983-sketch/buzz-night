@@ -1406,7 +1406,13 @@ const App = {
       const keep = Quiz.mode;
       Quiz.mode = m;
       try {
-        const qs = await Quiz.buildChunk('', 2, '', '', 'check');
+        /* Album covers searches on the words it is given, so with neither an
+           era nor a flavour there is nothing to search for — it fails, and
+           rightly. Handing it an era here means the check tests the round
+           rather than reporting a fault of its own making. A check that cries
+           wolf is worse than no check. */
+        const era = m === 'covers' ? '1990-1999' : '';
+        const qs = await Quiz.buildChunk(era, 2, '', '', era ? '1990s' : 'check');
         const n = (qs || []).length;
         if (n >= 2) add('ok', (Quiz.TITLES[m] || m) + ' — builds');
         else add('warn', (Quiz.TITLES[m] || m) + ' — only produced ' + n);
