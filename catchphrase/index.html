@@ -322,6 +322,8 @@ function R(x, y, w, h, o){ return Object.assign({k:"r", x, y, w, h}, o); }      
 function C(x, y, r, o){ return Object.assign({k:"c", x, y, r}, o); }               // circle
 // Mr Jeps himself, dropped into the puzzle to act it out — the way Mr Chips did
 function J(x, y, size, o){ return Object.assign({k:"j", x, y, size}, o); }
+// a drawn prop, or Mr Jeps in a pose: S("hill",50,80,120) / S("jeps_sit",50,40,120)
+function S(s, x, y, size, o){ return Object.assign({k:"s", s, x, y, size}, o); }
 
 const NS = "http://www.w3.org/2000/svg";
 const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
@@ -374,6 +376,14 @@ function drawPart(p){
       rx: p.rx || 6, fill: p.fill || "none", stroke: p.stroke || "none", "stroke-width": p.sw || 8});
     if (rot) node.setAttribute("transform", `rotate(${rot} ${px(p.x)} ${py(p.y)})`);
   }
+  else if (p.k === "s"){                          // a drawn prop from the ART kit
+    node = el("g", {});
+    node.innerHTML = ART[p.s] || "";
+    const sc = p.size / 100;
+    node.setAttribute("transform",
+      "translate(" + (px(p.x) - 50 * sc * flip) + " " + (py(p.y) - 50 * sc) + ") scale(" + (sc * flip) + " " + sc + ")"
+      + (rot ? " rotate(" + rot + " 50 50)" : ""));
+  }
   else if (p.k === "j"){
     node = el("g", {});
     const u = el("use", {href: "#jepsart"});
@@ -393,15 +403,93 @@ function drawPart(p){
 }
 
 /* ============================================================
+   THE ART ENGINE
+   Emoji were the wrong material: fixed poses, someone else's style, and no way
+   to put a character *inside* a scene. Everything here is drawn instead — flat
+   cartoon shapes in one palette, in a 100x100 box, so props can be scaled,
+   posed and combined the way the show's animations were.
+   ============================================================ */
+const INK = "#16233f";                      // one outline colour for everything
+const sh = (d, fill, extra) => '<path d="' + d + '" fill="' + fill + '" stroke="' + INK +
+  '" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"' + (extra || "") + "/>";
+const ci = (x, y, r, fill) => '<circle cx="' + x + '" cy="' + y + '" r="' + r + '" fill="' + fill +
+  '" stroke="' + INK + '" stroke-width="5"/>';
+const bx = (x, y, w, h, fill, r) => '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h +
+  '" rx="' + (r || 4) + '" fill="' + fill + '" stroke="' + INK + '" stroke-width="5"/>';
+
+const ART = {
+  hill:   sh("M-10 100 Q50 20 110 100 Z", "#4caf50"),
+  cloud:  sh("M18 70 Q0 70 4 54 Q6 40 22 42 Q28 22 48 24 Q68 20 74 42 Q94 40 96 56 Q98 70 80 70 Z", "#ffffff"),
+  sun:    ci(50, 50, 30, "#ffd23f") + '<g stroke="' + INK + '" stroke-width="6" stroke-linecap="round">' +
+          '<path d="M50 8V0M50 100v-8M8 50H0M100 50h-8M20 20l-6-6M80 20l6-6M20 80l-6 6M80 80l6 6"/></g>',
+  moon:   sh("M64 8 A44 44 0 1 0 64 92 A34 34 0 1 1 64 8 Z", "#ffe58a"),
+  star:   sh("M50 6 61 38 95 38 68 58 78 92 50 72 22 92 32 58 5 38 39 38 Z", "#ffd23f"),
+  water:  sh("M-10 46 q15 -12 30 0 t30 0 t30 0 t30 0 V110 H-10 Z", "#3fa9f5"),
+  tree:   bx(43, 56, 14, 44, "#a9713c") + ci(50, 40, 30, "#43a047"),
+  house:  bx(18, 46, 64, 54, "#f0e6d2") + sh("M8 48 50 12 92 48 Z", "#c0392b") + bx(42, 68, 16, 32, "#a9713c", 2),
+  kennel: sh("M12 96 12 46 50 16 88 46 88 96 Z", "#a9713c") + sh("M36 96 36 62 Q50 50 64 62 V96 Z", "#16233f"),
+  block:  bx(20, 40, 60, 56, "#a9713c", 6),
+  fence:  '<g stroke="' + INK + '" stroke-width="5" fill="#d8b98a">' +
+          '<rect x="10" y="44" width="80" height="10"/><rect x="10" y="66" width="80" height="10"/>' +
+          '<rect x="20" y="28" width="12" height="66" rx="3"/><rect x="68" y="28" width="12" height="66" rx="3"/></g>',
+  ladder: '<g stroke="' + INK + '" stroke-width="5" fill="#d8b98a">' +
+          '<rect x="22" y="4" width="11" height="92"/><rect x="67" y="4" width="11" height="92"/>' +
+          '<rect x="22" y="24" width="56" height="9"/><rect x="22" y="48" width="56" height="9"/>' +
+          '<rect x="22" y="72" width="56" height="9"/></g>',
+  bucket: sh("M22 38 78 38 70 94 30 94 Z", "#b9c2d0") + sh("M24 38 Q50 12 76 38", "none", ' stroke-width="6"'),
+  bed:    bx(10, 56, 80, 34, "#f0e6d2") + bx(6, 40, 22, 50, "#a9713c", 4) + bx(72, 52, 22, 38, "#a9713c", 4),
+  clock:  ci(50, 50, 40, "#ffffff") + '<path d="M50 50V24M50 50h20" stroke="' + INK +
+          '" stroke-width="7" stroke-linecap="round" fill="none"/>' + ci(50, 50, 5, INK),
+  bridge: sh("M2 74 Q50 22 98 74", "none", ' stroke-width="9"') + bx(0, 70, 100, 12, "#a9713c", 2) +
+          '<g stroke="' + INK + '" stroke-width="5"><path d="M22 70V52M50 70V40M78 70V52"/></g>',
+  boat:   sh("M10 66 90 66 76 92 24 92 Z", "#c0392b") + bx(46, 14, 8, 52, "#a9713c", 2) +
+          sh("M54 18 54 60 88 60 Z", "#ffffff"),
+  fire:   sh("M50 96 Q18 78 34 46 Q40 58 48 52 Q42 26 62 8 Q58 34 74 44 Q86 66 50 96 Z", "#ff6b3d"),
+  door:   bx(24, 12, 52, 88, "#a9713c", 3) + ci(66, 58, 5, "#ffd23f"),
+  hole:   '<ellipse cx="50" cy="66" rx="42" ry="20" fill="#16233f" stroke="' + INK + '" stroke-width="5"/>',
+  wall:   bx(4, 20, 92, 66, "#c96f4a", 3) + '<g stroke="' + INK + '" stroke-width="4" opacity=".55">' +
+          '<path d="M4 42h92M4 64h92M28 20v22M70 20v22M50 42v22M28 64v22M70 64v22"/></g>',
+  box:    bx(16, 38, 68, 58, "#c99a5b", 4) + '<path d="M16 56h68M50 38v58" stroke="' + INK + '" stroke-width="5"/>',
+  drop:   sh("M50 6 Q84 52 74 74 A26 26 0 1 1 26 74 Q16 52 50 6 Z", "#3fa9f5"),
+  heart:  sh("M50 92 C10 62 12 26 34 22 44 20 50 30 50 34 50 30 56 20 66 22 88 26 90 62 50 92 Z", "#e5395e")
+};
+
+/* Mr Jeps, rigged. He can be posed and his head swapped, which is how the show
+   built puzzles like "Lemonheads" — the character IS the vocabulary. */
+function JEPS(pose, headArt){
+  const P = {
+    stand: {la:"M14 44 4 66", ra:"M86 44 96 66", ll:"M38 96v18", rl:"M62 96v18"},
+    walk:  {la:"M14 44 2 60", ra:"M86 44 98 30", ll:"M38 96 22 116", rl:"M62 96 78 112"},
+    cheer: {la:"M14 44 0 14", ra:"M86 44 100 14", ll:"M38 96v18", rl:"M62 96v18"},
+    sit:   {la:"M14 44 2 62", ra:"M86 44 98 62", ll:"M38 96 20 100 20 118", rl:"M62 96 80 100 80 118"},
+    point: {la:"M14 44 2 60", ra:"M86 44 104 40", ll:"M38 96v18", rl:"M62 96v18"},
+    sleep: {la:"M14 44 4 58", ra:"M86 44 96 58", ll:"M38 96v14", rl:"M62 96v14"}
+  }[pose || "stand"];
+  const limbs = '<g stroke="' + INK + '" stroke-width="9" stroke-linecap="round" fill="none">' +
+    '<path d="' + P.la + '"/><path d="' + P.ra + '"/><path d="' + P.ll + '"/><path d="' + P.rl + '"/></g>';
+  const head = headArt || (
+    bx(14, 18, 72, 58, "#ffce3a", 16) + bx(24, 30, 52, 26, "#14082b", 10) +
+    ci(38, 43, 7, "#3fe0ff") + ci(62, 43, 7, "#3fe0ff") +
+    bx(34, 62, 32, 7, "#c99400", 3) + bx(46, 2, 8, 16, "#ffce3a", 4) + ci(50, 4, 7, "#ff4fa3"));
+  return limbs + head + bx(26, 78, 48, 30, "#e8b81f", 10);
+}
+ART.jeps = JEPS("stand");
+["walk","cheer","sit","point","sleep"].forEach(p => ART["jeps_" + p] = JEPS(p));
+// the lemon-head trick: any prop can become his head
+ART.jeps_lemon = JEPS("stand", '<ellipse cx="50" cy="44" rx="34" ry="28" fill="#ffe14d" stroke="' + INK +
+  '" stroke-width="5"/>' + ci(38, 42, 5, INK) + ci(62, 42, 5, INK));
+
+/* ============================================================
    THE PUZZLE BANK
    ============================================================ */
 const GOLD = "#ffce3a", CY = "#3fe0ff", RED = "#ff5252", GRN = "#3ddc84", WHT = "#ffffff", DARK = "#14082b";
 
 const PUZZLES = [
-  {a:"man overboard", p:[ T("BOARD",50,72,150), J(50,30,150,{act:"fall"}) ]},
+  {a:"climbing the ladder", also:["up the ladder","climb the ladder"], bg:"outdoors", p:[ S("ladder",50,50,360), S("jeps_walk",50,44,150,{act:"rise"}) ]},
+  {a:"man overboard", bg:"sea", p:[ S("boat",28,62,320), S("water",50,86,1100), J(68,30,165,{act:"fall"}) ]},
   {a:"once upon a time", p:[ T("1nce",26,50,110), T("upon",48,50,100), T("a",64,50,80), E("🕐",82,50,140) ]},
   {a:"reading between the lines", p:[ L(16,30,84,30,{w:12,stroke:CY}), L(16,72,84,72,{w:12,stroke:CY}), T("READING",50,51,120) ]},
-  {a:"water under the bridge", p:[ E("🌉",50,32,210), E("💧",34,66,110), E("💧",50,72,95), E("💧",66,66,110) ]},
+  {a:"water under the bridge", bg:"sea", p:[ S("bridge",50,54,660), S("water",50,86,1100) ]},
   {a:"a bird in the hand", also:["bird in the hand"], p:[ E("✋",50,58,270), E("🐦",50,44,120) ]},
   {a:"fish out of water", p:[ T("WATER",50,74,140,{fill:CY}), E("🐟",50,34,150,{rot:-28,act:"escape"}) ]},
   {a:"pie in the sky", p:[ E("☁️",26,26,130), E("☁️",74,22,150), E("🥧",50,44,140) ]},
@@ -414,8 +502,8 @@ const PUZZLES = [
   {a:"back to back", p:[ T("BACK",29,50,120), T("BACK",71,50,120,{flip:true,fill:GOLD}) ]},
   {a:"in black and white", p:[ T("IN",20,50,110), R(45,50,20,42,{fill:"#000",stroke:"#555",sw:4}), R(72,50,20,42,{fill:WHT}) ]},
   {a:"turn back the clock", p:[ A(78,20,22,20,26,{arrow:true,stroke:GOLD}), E("🕐",50,58,240,{act:"spin"}) ]},
-  {a:"over the moon", p:[ E("🌙",50,74,190), J(50,30,140,{act:"jump"}) ]},
-  {a:"under the weather", p:[ E("🌧️",50,30,190), T("UNDER",50,74,120) ]},
+  {a:"over the moon", bg:"night", p:[ S("star",12,18,70), S("star",88,26,52), S("moon",50,70,250), J(50,32,165,{act:"jump"}) ]},
+  {a:"under the weather", bg:"outdoors", p:[ S("cloud",50,22,440), S("drop",32,46,52,{act:"drop"}), S("drop",50,52,52,{act:"drop"}), S("drop",68,46,52,{act:"drop"}), S("jeps",50,62,210) ]},
   {a:"on cloud nine", p:[ T("ON",50,22,100), E("☁️",50,56,300), T("9",50,60,130,{fill:DARK}) ]},
   {a:"raining cats and dogs", p:[ E("☁️",50,16,150), E("🐱",26,56,120,{act:"drop"}), E("🐶",48,64,120,{act:"drop"}), E("🐱",72,52,120,{act:"drop"}), E("🐶",60,40,110,{act:"drop"}) ]},
   {a:"head over heels", p:[ T("HEELS",50,80,120), J(50,40,150,{act:"spin"}) ]},
@@ -434,15 +522,15 @@ const PUZZLES = [
     p:[ E("🐑",52,56,270), E("🐺",52,44,140) ]},
   {a:"hold your horses", p:[ E("✋",30,52,220), E("🐴",62,52,190), E("🐴",80,58,150) ]},
   {a:"down to earth", p:[ T("DOWN",50,20,110), A(50,32,50,52,0,{arrow:true,stroke:CY}), E("🌍",50,72,190) ]},
-  {a:"out of the blue", p:[ R(36,50,34,54,{fill:"#2b5cff",rx:14}), T("OUT",66,50,120,{fill:GOLD}) ]},
-  {a:"a drop in the ocean", also:["drop in the ocean"], p:[ E("🌊",50,74,290), E("💧",50,24,95,{act:"drop"}) ]},
+  {a:"out of the blue", p:[ R(34,52,40,64,{fill:"#2b5cff",rx:16}), S("jeps",64,44,190,{act:"escape"}) ]},
+  {a:"a drop in the ocean", also:["drop in the ocean"], bg:"sea", p:[ S("drop",50,30,90,{act:"drop"}), S("water",50,86,1100) ]},
   {a:"music to my ears", p:[ E("🎵",26,46,150), E("🎶",44,36,120), E("👂",72,54,230) ]},
   {a:"an eye for an eye", also:["eye for an eye"], p:[ E("👁️",28,50,180), T("4",50,50,120,{fill:GOLD}), E("👁️",72,50,180) ]},
   {a:"see eye to eye", p:[ E("👁️",28,50,180), T("2",50,50,120,{fill:CY}), E("👁️",72,50,180,{flip:true}) ]},
   {a:"on the ball", p:[ T("ON",50,22,110), E("⚽",50,60,240) ]},
   {a:"behind bars", p:[ E("😀",50,52,250), L(30,14,30,90,{w:14,stroke:"#9aa"}), L(42,14,42,90,{w:14,stroke:"#9aa"}),
     L(54,14,54,90,{w:14,stroke:"#9aa"}), L(66,14,66,90,{w:14,stroke:"#9aa"}) ]},
-  {a:"over the hill", p:[ T("OVER",50,18,105), A(16,60,84,60,-34,{stroke:CY}), E("⛰️",50,72,210) ]},
+  {a:"over the hill", bg:"outdoors", p:[ S("hill",50,74,760), J(50,30,160,{act:"jump"}) ]},
   {a:"bring home the bacon", p:[ E("🥓",24,52,170), A(36,52,62,52,-14,{arrow:true,stroke:GOLD}), E("🏠",78,52,210) ]},
   {a:"a big fish in a small pond", also:["big fish in a small pond"],
     p:[ C(50,54,22,{fill:"#123a55",stroke:CY,sw:8}), E("🐟",50,54,300) ]},
@@ -450,12 +538,12 @@ const PUZZLES = [
   {a:"cold feet", p:[ E("🦶",50,58,260), E("❄️",32,30,120), E("❄️",68,26,100) ]},
   {a:"green fingers", p:[ E("🌿",50,22,130), T("FINGERS",50,58,150,{fill:GRN}) ]},
   {a:"two peas in a pod", p:[ T("2",26,32,110,{fill:GOLD}), E("🫛",54,56,300) ]},
-  {a:"in the doghouse", p:[ T("IN",22,28,100), E("🏠",56,58,260), E("🐶",56,56,130) ]},
+  {a:"in the doghouse", bg:"outdoors", p:[ S("kennel",50,58,400), S("jeps",50,62,150) ]},
   {a:"put your foot in it", p:[ E("🦶",50,38,180), E("🪣",50,70,210) ]},
   {a:"the world is your oyster", p:[ E("🦪",50,58,320), E("🌍",50,50,170) ]},
   {a:"kill two birds with one stone", also:["two birds with one stone","two birds one stone"],
     p:[ E("🪨",26,58,160), E("🐦",60,36,130), E("🐦",74,60,130) ]},
-  {a:"burning bridges", p:[ E("🌉",50,48,250), E("🔥",32,66,130), E("🔥",68,66,130) ]},
+  {a:"burning bridges", bg:"outdoors", p:[ S("bridge",50,58,640), S("fire",26,56,170,{act:"shake"}), S("fire",74,56,170,{act:"shake"}) ]},
   {a:"saved by the bell", p:[ E("🔔",56,52,250), E("🛟",26,56,150) ]},
   {a:"a shot in the dark", also:["shot in the dark"], p:[ R(50,50,74,72,{fill:"#000",rx:12}), E("💥",50,50,150,{act:"grow"}) ]},
   {a:"every cloud has a silver lining", p:[ E("☁️",50,42,300), A(26,64,74,64,20,{stroke:"#d8d8e8",w:14}) ]},
@@ -466,8 +554,7 @@ const PUZZLES = [
     p:[ E("☀️",84,16,120), E("🪱",68,70,140), E("🐦",36,44,180,{act:"walk"}) ]},
   {a:"a level playing field", also:["level playing field"],
     p:[ R(50,64,72,20,{fill:"#1e7a45",rx:6}), E("📏",50,36,170) ]},
-  {a:"sitting on the fence", p:[ L(16,56,84,56,{w:14,stroke:"#c9a06a"}), L(16,70,84,70,{w:14,stroke:"#c9a06a"}),
-    L(28,44,28,88,{w:14,stroke:"#c9a06a"}), L(72,44,72,88,{w:14,stroke:"#c9a06a"}), J(50,32,140,{act:"sway"}) ]},
+  {a:"sitting on the fence", bg:"outdoors", p:[ S("fence",50,64,640), S("jeps_sit",50,38,180,{act:"sway"}) ]},
   {a:"blow your own trumpet", p:[ J(24,54,150), E("💨",44,50,110,{act:"grow"}), E("🎺",70,52,230) ]},
   {a:"chip off the old block", p:[ R(64,62,30,34,{fill:"#8a5a2b",rx:8}), E("🍟",36,38,150,{rot:-30,act:"escape"}) ]},
   {a:"the tip of the iceberg", also:["tip of the iceberg"],
@@ -520,11 +607,11 @@ const PUZZLES = [
     p:[ E("🧹",32,36,180,{rot:-25}), R(62,70,42,10,{fill:"#8a5a2b",rx:4}), C(66,63,4,{fill:GOLD}) ]},
   {a:"hit the road", p:[ E("✋",30,34,170), E("🛣️",60,66,250) ]},
   {a:"a drop in the bucket", p:[ E("🪣",50,62,260), E("💧",50,26,90) ]},
-  {a:"kick the bucket", p:[ E("🪣",68,64,230,{act:"shake"}), J(26,52,150) ]},
+  {a:"kick the bucket", bg:"outdoors", p:[ S("bucket",68,62,240,{act:"shake"}), S("jeps_walk",30,56,220) ]},
   {a:"on the same page", p:[ E("📄",32,52,200), T("=",50,52,90,{fill:GOLD}), E("📄",68,52,200) ]},
   {a:"an open book", also:["open book"], p:[ E("📖",50,52,320) ]},
   {a:"turn over a new leaf", p:[ A(24,26,76,26,-18,{arrow:true,stroke:GOLD}), E("🍃",50,58,260) ]},
-  {a:"let sleeping dogs lie", p:[ E("🐶",48,58,260), E("😴",74,34,130) ]},
+  {a:"let sleeping dogs lie", bg:"outdoors", p:[ S("kennel",72,58,320), S("jeps_sleep",34,64,200), T("z z z",36,30,90,{fill:"#ffffff"}) ]},
   {a:"a cat nap", also:["cat nap","catnap"], p:[ E("🐱",42,56,240), E("😴",72,34,130) ]},
   {a:"curiosity killed the cat", p:[ E("❓",24,32,150), E("🐱",56,56,270) ]},
   {a:"like herding cats", also:["herding cats"], p:[ E("🧍",14,60,110), E("🐱",34,44,120), E("🐱",56,64,120), E("🐱",76,42,120) ]},
@@ -551,15 +638,14 @@ const PUZZLES = [
   {a:"in the red", p:[ T("IN",26,50,110), R(64,50,32,44,{fill:"#c62828",rx:8}) ]},
   {a:"save for a rainy day", p:[ E("🐷",30,60,190), E("🌧️",68,40,210) ]},
   {a:"under one roof", p:[ E("🏠",50,32,200), T("UNDER",50,70,110) ]},
-  {a:"hit the roof", p:[ E("🏠",46,70,240), J(46,34,140,{act:"rise"}) ]},
+  {a:"hit the roof", bg:"outdoors", p:[ S("house",50,62,380), J(50,24,150,{act:"rise"}) ]},
   {a:"home and dry", p:[ E("🏠",30,52,220), T("&",50,52,90,{fill:GOLD}), E("☀️",72,52,200) ]},
   {a:"a house of cards", also:["house of cards"], p:[ E("🃏",50,30,170), E("🃏",38,58,180,{rot:-25}), E("🃏",62,58,180,{rot:25}) ]},
-  {a:"the writing is on the wall", also:["writing on the wall","the writing on the wall"],
-    p:[ R(50,52,66,50,{fill:"#6b4a2f",rx:4}), T("WRITING",50,52,110,{fill:WHT}) ]},
+  {a:"the writing is on the wall", also:["writing on the wall","the writing on the wall"], p:[ S("wall",50,52,760), T("WRITING",50,50,120,{fill:"#fff8e7"}) ]},
   {a:"hit the hay", p:[ E("✋",30,36,160), E("🌾",62,64,230) ]},
   {a:"hit the sack", p:[ E("✋",30,36,160), E("💰",64,62,230) ]},
   {a:"sleep like a log", p:[ E("😴",32,42,180), E("🪵",66,62,230) ]},
-  {a:"burn the midnight oil", p:[ E("🕯️",34,54,210), E("🌙",70,32,170) ]},
+  {a:"burn the midnight oil", bg:"night", p:[ S("star",14,18,60), S("moon",82,22,150), S("house",48,62,360) ]},
   {a:"the crack of dawn", also:["crack of dawn"], p:[ T("DAWN",50,44,190,{fill:GOLD}), L(46,10,54,44,{w:14,stroke:DARK}), L(54,44,44,78,{w:14,stroke:DARK}), E("☀️",50,86,110,{act:"rise"}) ]},
   {a:"time flies", p:[ E("💨",20,54,150), E("🕐",56,48,210,{act:"fly"}) ]},
   {a:"against the clock", p:[ E("🕐",68,50,250), J(26,58,130,{act:"walk"}) ]},
@@ -605,7 +691,7 @@ const PUZZLES = [
   {a:"turn a blind eye", p:[ E("👁️",50,54,300), L(24,24,76,84,{w:16,stroke:RED}) ]},
   {a:"a bird's eye view", also:["birds eye view","a birds eye view"],
     p:[ E("🐦",30,26,140), E("👁️",62,34,150), A(62,46,62,74,0,{arrow:true,stroke:CY}), E("🏠",62,84,120) ]},
-  {a:"head in the clouds", p:[ E("☁️",50,34,300), E("🗣️",50,32,140), T("HEAD",50,74,100) ]},
+  {a:"head in the clouds", bg:"outdoors", p:[ S("jeps",50,58,230), S("cloud",50,24,460) ]},
   {a:"a weight off your shoulders", also:["weight off your shoulders"], p:[ E("🏋️",44,60,220), A(66,44,84,22,-10,{arrow:true,stroke:GRN}) ]},
   {a:"the cold shoulder", also:["cold shoulder","give the cold shoulder"], p:[ E("🫂",42,56,250), E("❄️",74,30,130) ]},
   {a:"twist my arm", also:["twist your arm"], p:[ E("💪",48,54,270), A(20,30,44,34,0,{arrow:true,stroke:GOLD}) ]},
@@ -847,6 +933,27 @@ function loadBoard(puz, tilesDown){
   $("answerbig").classList.add("hide");
   $("svg").innerHTML = "";
 
+  // A scene behind the puzzle. Drawn outside the scaled group so a full-width
+  // sky does not count towards the fit-to-frame maths.
+  if (puz.bg){
+    const sky = {
+      outdoors: ["#7fd0ff", "#d9f2ff", "#4caf50"],
+      sea:      ["#7fd0ff", "#d9f2ff", "#2f8fd8"],
+      night:    ["#1b2a5e", "#3b2a6e", "#243a7a"],
+      indoors:  ["#f6e2bd", "#fff6e3", "#a9713c"]
+    }[puz.bg] || null;
+    if (sky){
+      const bg = el("g", {});
+      bg.innerHTML =
+        '<defs><linearGradient id="skyg" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0" stop-color="' + sky[0] + '"/><stop offset="1" stop-color="' + sky[1] + '"/></linearGradient></defs>' +
+        '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="url(#skyg)"/>' +
+        '<rect x="0" y="' + (H * 0.78) + '" width="' + W + '" height="' + (H * 0.22) + '" fill="' + sky[2] + '"/>' +
+        '<rect x="0" y="' + (H * 0.78) + '" width="' + W + '" height="7" fill="' + INK + '" opacity=".65"/>';
+      $("svg").appendChild(bg);
+    }
+  }
+
   // Each part goes in its own wrapper so the wrapper can carry the drifting
   // animation while the part keeps its own rotation attribute.
   const art = el("g", {});
@@ -862,9 +969,11 @@ function loadBoard(puz, tilesDown){
 
   // Blow the picture up to fill the whole board. Without this the art sits in
   // a huddle in the middle and the corner tiles hide nothing at all.
+  // Scenes are composed against the horizon, so they are never rescaled —
+  // stretching them would lift the characters off the ground.
   try {
-    const bb = art.getBBox();
-    if (bb.width > 0 && bb.height > 0){
+    const bb = puz.bg ? null : art.getBBox();
+    if (bb && bb.width > 0 && bb.height > 0){
       const s = Math.min((W - 70) / bb.width, (H - 60) / bb.height, 2.6);
       const cx = bb.x + bb.width / 2, cy = bb.y + bb.height / 2;
       art.setAttribute("transform",
