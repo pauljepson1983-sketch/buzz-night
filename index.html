@@ -470,6 +470,19 @@
   #duelNote { font-weight: 800; margin: 4px 0 }
   #duelSay { opacity: .85; margin-top: 10px }
   #duelBox.frozen #duelOptions { opacity: .25; pointer-events: none; filter: grayscale(1) }
+  /* Six things to remember, big enough to take in at a glance. */
+  #duelFlash { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+               margin: 14px 0; font-size: 2.6rem; line-height: 1.1 }
+
+  /* The reaction pad. Red means hold, green means go, and it fills the thumb
+     half of the screen so nobody loses on aim. */
+  #duelPad { width: 100%; min-height: 34vh; border: 0; border-radius: 18px;
+             font-size: 1.5rem; font-weight: 900; letter-spacing: .04em;
+             color: #2a0b0b; background: #ff6b6b; margin: 10px 0;
+             transition: background .06s linear }
+  #duelPad.go { background: #3ddc84; color: #05240f }
+  #duelPad.done { background: rgba(255,255,255,.14); color: #fff }
+
   #duelCallBtns { display: flex; gap: 8px }
   #duelCallBtns .btn { flex: 1 }
 </style>
@@ -948,6 +961,8 @@
 
       <p id="duelNote"></p>
       <p id="duelPrompt"></p>
+      <div id="duelFlash" class="hidden"></div>
+      <button id="duelPad" class="hidden" type="button">WAIT…</button>
       <img id="duelImg" class="hidden" alt="">
       <div id="duelOptions"></div>
       <div id="duelActions">
@@ -4200,17 +4215,74 @@ const Quiz = {
      needs: control has to pass cleanly, and a number guess has no wrong, only
      nearer, which is why closest wins is kept out of this. */
   async buildDuel(count) {
-    const written = Math.ceil(count / 2);
-    let qs = this.buildQuickfire(written);
+    /* Four kinds, roughly a quarter each, and only two of them reward knowing
+       things. That is the whole point of the round: somebody who is full of
+       facts should not walk it, because half of what is asked has nothing to
+       do with facts. A quick finger wins the reaction ones and a sharp eye
+       wins the memory ones, whoever you are. */
+    const facts = Math.max(1, Math.round(count * 0.3));
+    const logos = Math.max(1, Math.round(count * 0.2));
+    const memory = Math.max(1, Math.round(count * 0.25));
+    const reaction = Math.max(1, count - facts - logos - memory);
+
+    let qs = this.buildQuickfire(facts)
+      .concat(this.buildMemory(memory))
+      .concat(this.buildReaction(reaction));
     try {
-      const logos = await this.buildLogos(count - written);
-      logos.forEach(q => { q.img = q.url; });
-      qs = qs.concat(logos);
+      const pics = await this.buildLogos(logos);
+      pics.forEach(q => { q.img = q.url; });
+      qs = qs.concat(pics);
     } catch (e) {
       // no logos tonight is a thinner duel, not a dead one
-      qs = qs.concat(this.buildQuickfire(count - written));
+      qs = qs.concat(this.buildQuickfire(logos));
     }
-    return this.shuffle(qs).slice(0, count);
+
+    /* Shuffled, but never two reaction tests back to back — twice in a row
+       stops feeling like a game and starts feeling like a hardware test. */
+    qs = this.shuffle(qs).slice(0, count);
+    for (let i = 1; i < qs.length; i++) {
+      if (qs[i].kind !== 'reaction' || qs[i - 1].kind !== 'reaction') continue;
+      const j = qs.findIndex((x, k) => k > i && x.kind !== 'reaction');
+      if (j > -1) { const tmp = qs[i]; qs[i] = qs[j]; qs[j] = tmp; }
+    }
+    return qs;
+  },
+
+  /* Things to remember. Deliberately concrete and unalike — six kinds of
+     fruit would be a test of reading speed, not memory. */
+  MEMORY_POOL: ['🚗','🐘','⚓','🎸','🍕','🌵','⚽','🔑','☂️','🐧','🎩','🕯️','🍄','🚀','🦋','🧲',
+                '🥁','🪑','🧦','🐢','🌶️','🔔','🪓','🎈','🦉','🧊','🪟','🍋','🦀','🎷'],
+
+  /* Six things flash up, then one of four is the one that was NOT there.
+     Nothing to know, nothing to have read — just whether you were watching. */
+  buildMemory(count) {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const pool = this.shuffle(this.MEMORY_POOL.slice());
+      const shown = pool.slice(0, 6);
+      const absent = pool[6];
+      const options = this.shuffle([absent, shown[0], shown[2], shown[4]]);
+      out.push({
+        kind: 'memory', seenKey: 'memory' + i,
+        prompt: 'Which one was NOT there?',
+        show: shown, showMs: 3200,
+        options: options, correct: options.indexOf(absent), answer: absent
+      });
+    }
+    return out;
+  },
+
+  /* Wait for green, then tap. No advantage whatsoever to knowing anything. */
+  buildReaction(count) {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      out.push({
+        kind: 'reaction', seenKey: 'reaction' + i,
+        prompt: 'Wait for green, then tap. Tap early and you are out.',
+        options: [], correct: 0, answer: 'the fastest finger'
+      });
+    }
+    return out;
   },
 
   /* Who ends up in it. Closest two by default: it needs no explaining to the
@@ -4280,9 +4352,15 @@ const Quiz = {
     this.duelFrozen = this.duelPendingFreeze;
     this.duelPendingFreeze = null;
 
+    /* A memory flash has to be looked at before it can be answered, and a
+       reaction test cannot be answered until the light changes, so neither
+       runs on the plain fifteen seconds. */
+    const extra = q.kind === 'memory' ? (q.showMs || 3200) : 0;
+
     [this.duelA, this.duelB].forEach(id => {
       Host.sendTo(id, {
         type: 'duelQ', n: this.idx + 1, total: this.questions.length,
+        kind: q.kind || 'mcq', show: q.show || null, showMs: q.showMs || 0,
         prompt: q.prompt || '', img: q.img || null, options: q.options,
         secs: this.DUEL_SECS, pot: this.duelPot,
         yours: this.duelControl === id,
@@ -4297,20 +4375,45 @@ const Quiz = {
       if (this.duelIsIn(id)) return;
       Host.sendTo(id, {
         type: 'duelWatch', n: this.idx + 1, total: this.questions.length,
+        kind: q.kind || 'mcq', show: q.show || null, showMs: q.showMs || 0,
         prompt: q.prompt || '', img: q.img || null,
         pot: this.duelPot, aB: this.duelBanked[this.duelA], bB: this.duelBanked[this.duelB],
         control: this.duelControl === this.duelA ? 'a' : this.duelControl === this.duelB ? 'b' : ''
       });
     });
     this.duelHostView();
-    this.endsAt = Date.now() + this.DUEL_SECS * 1000;
-    this.tick = this.later(this.DUEL_SECS * 1000 + 300, () => this.duelSettle());
+
+    if (q.kind === 'reaction') {
+      /* The green light goes out as its own message rather than a time the
+         phones count down to, because each phone starts its own stopwatch the
+         moment IT turns green. That way a slower connection costs you the
+         same either way and the comparison is still two reaction times, not
+         two network speeds. */
+      const wait = 1600 + Math.floor(Math.random() * 2600);
+      this.endsAt = Date.now() + wait + 4000;
+      this.tick = this.later(wait, () => {
+        if (!this.active || this.mode !== 'duel') return;
+        [this.duelA, this.duelB].forEach(id => {
+          if (this.duelFrozen !== id) Host.sendTo(id, { type: 'duelGo' });
+        });
+        Object.keys(Host.players).forEach(id => {
+          if (!this.duelIsIn(id)) Host.sendTo(id, { type: 'duelGo' });
+        });
+        this.tick = this.later(4000, () => this.duelSettle());
+      });
+      return;
+    }
+
+    this.endsAt = Date.now() + extra + this.DUEL_SECS * 1000;
+    this.tick = this.later(extra + this.DUEL_SECS * 1000 + 300, () => this.duelSettle());
   },
 
   duelAnswer(peerId, n, choice, ms) {
     if (!this.active || this.mode !== 'duel') return;
     if (n !== this.idx + 1 || !this.duelIsIn(peerId)) return;
     if (this.duelFrozen === peerId || this.duelAnswers[peerId]) return;
+    // a reaction tap sends 0 for a real one and -1 for jumping the gun, which
+    // lands as a wrong answer and costs them the question
     this.duelAnswers[peerId] = { choice: choice, ms: ms };
     this.duelHostView();
     // once everyone who is allowed to answer has, there is nothing to wait for
@@ -6299,6 +6402,7 @@ const Player = {
       case 'duelStart':       this.duelStart(msg); break;
       case 'duelCalled':      this.duelCalled(msg); break;
       case 'duelQ':           this.duelQ(msg); break;
+      case 'duelGo':          this.duelGo(); break;
       case 'duelWatch':       this.duelWatch(msg); break;
       case 'duelResult':      this.duelResult(msg); break;
       case 'duelWatchResult': this.duelWatchResult(msg); break;
@@ -6600,6 +6704,9 @@ const Player = {
     $('duelSideB').classList.toggle('me', msg.youAre === 'b');
     $('duelPrompt').textContent = '';
     $('duelImg').classList.add('hidden');
+    $('duelFlash').classList.add('hidden');
+    $('duelPad').classList.add('hidden');
+    clearTimeout(this._duelTimer);
     $('duelOptions').innerHTML = '';
     $('duelActions').style.display = 'none';
     $('duelSay').textContent = '';
@@ -6661,16 +6768,17 @@ const Player = {
     $('duelPrompt').textContent = msg.prompt || '';
     if (msg.img) { $('duelImg').src = msg.img; $('duelImg').classList.remove('hidden'); }
     else $('duelImg').classList.add('hidden');
+    $('duelFlash').classList.add('hidden');
+    $('duelPad').classList.add('hidden');
+    $('duelOptions').innerHTML = '';
 
-    const box = $('duelOptions');
-    box.innerHTML = '';
-    (msg.options || []).forEach((opt, i) => {
-      const b = document.createElement('button');
-      b.className = 'btn opt';
-      b.innerHTML = '<span class="optn">' + (i + 1) + '</span> ' + esc(opt);
-      b.onclick = () => this.duelTap(i, b);
-      box.appendChild(b);
-    });
+    if (msg.kind === 'reaction') {
+      this.duelReactionQ(msg);
+    } else if (msg.kind === 'memory') {
+      this.duelMemoryQ(msg);
+    } else {
+      this.duelOptions(msg.options);
+    }
 
     $('duelActions').style.display = (msg.canBank || msg.canFreeze) && !msg.frozen ? 'flex' : 'none';
     $('duelBankBtn').style.display = msg.canBank ? 'block' : 'none';
@@ -6679,6 +6787,80 @@ const Player = {
     $('duelFreezeBtn').style.display = msg.canFreeze ? 'block' : 'none';
     $('duelFreezeBtn').disabled = false;
     if (!msg.frozen) this.vibe([30]);
+  },
+
+  duelOptions(options) {
+    const box = $('duelOptions');
+    box.innerHTML = '';
+    (options || []).forEach((opt, i) => {
+      const b = document.createElement('button');
+      b.className = 'btn opt';
+      b.innerHTML = '<span class="optn">' + (i + 1) + '</span> ' + esc(opt);
+      b.onclick = () => this.duelTap(i, b);
+      box.appendChild(b);
+    });
+  },
+
+  /* Wait for green. Tapping early is a false start and costs the question —
+     otherwise the winning move is to hammer the pad from the off. */
+  duelReactionQ(msg) {
+    const pad = $('duelPad');
+    pad.classList.remove('hidden', 'go', 'done');
+    pad.disabled = !!msg.frozen;
+    pad.textContent = msg.frozen ? 'FROZEN OUT' : 'WAIT…';
+    this._duelGreen = 0;
+    pad.onclick = () => {
+      if (this._duelAnswered) return;
+      if (!this._duelGreen) {
+        // jumped the gun
+        this._duelAnswered = true;
+        pad.classList.add('done');
+        pad.textContent = 'TOO EARLY';
+        this.vibe([200]);
+        if (this.conn) this.conn.send({ type: 'duelAnswer', n: this._duelN, choice: -1, ms: 0 });
+        return;
+      }
+      this._duelAnswered = true;
+      const ms = Date.now() - this._duelGreen;
+      pad.classList.add('done');
+      pad.textContent = ms + 'ms';
+      if (this.conn) this.conn.send({ type: 'duelAnswer', n: this._duelN, choice: 0, ms: ms });
+    };
+  },
+
+  // the light changing, sent as its own message so each phone times itself
+  duelGo() {
+    const pad = $('duelPad');
+    if (pad.classList.contains('hidden') || this._duelAnswered) return;
+    this._duelGreen = Date.now();
+    pad.classList.add('go');
+    pad.textContent = 'TAP!';
+    this.vibe([30]);
+  },
+
+  /* Six things, then gone, then which one was never there. Owes nothing to
+     knowing anything — only to whether you were watching. */
+  duelMemoryQ(msg) {
+    const flash = $('duelFlash');
+    flash.classList.remove('hidden');
+    flash.textContent = (msg.show || []).join(' ');
+    $('duelPrompt').textContent = 'Look…';
+    const opts = msg.options;
+    this.later_(msg.showMs || 3200, () => {
+      flash.classList.add('hidden');
+      flash.textContent = '';
+      $('duelPrompt').textContent = msg.prompt || 'Which one was NOT there?';
+      // the stopwatch starts when the options do, not when the flash did
+      this._duelAskedAt = Date.now();
+      this.duelOptions(opts);
+    });
+  },
+
+  // a timer the round can cancel, so a flash from a dead question cannot
+  // paint options over the next one
+  later_(ms, fn) {
+    clearTimeout(this._duelTimer);
+    this._duelTimer = setTimeout(fn, ms);
   },
 
   duelTap(i, btn) {
@@ -6727,6 +6909,10 @@ const Player = {
   },
 
   duelResult(msg) {
+    clearTimeout(this._duelTimer);
+    $('duelFlash').classList.add('hidden');
+    const pad = $('duelPad');
+    if (!pad.classList.contains('hidden')) { pad.disabled = true; pad.classList.add('done'); }
     const mine = this._duelSide === 'a';
     this.duelBanksAre(mine ? msg.banked : msg.foeBanked, mine ? msg.foeBanked : msg.banked);
     this.duelPotIs(msg.pot, msg.mine && !msg.stolen);
@@ -6759,11 +6945,24 @@ const Player = {
     $('duelPrompt').textContent = msg.prompt || '';
     if (msg.img) { $('duelImg').src = msg.img; $('duelImg').classList.remove('hidden'); }
     else $('duelImg').classList.add('hidden');
+    // watching a reaction test with no idea what the two of them are staring
+    // at is dull, so the flash and the light go out to the room as well
+    clearTimeout(this._duelTimer);
+    $('duelPad').classList.add('hidden');
+    const flash = $('duelFlash');
+    if (msg.kind === 'memory' && msg.show) {
+      flash.classList.remove('hidden');
+      flash.textContent = msg.show.join(' ');
+      this.later_(msg.showMs || 3200, () => { flash.classList.add('hidden'); flash.textContent = ''; });
+    } else flash.classList.add('hidden');
     $('duelOptions').innerHTML = '';
     $('duelSay').textContent = 'Question ' + msg.n + ' of ' + msg.total;
   },
 
   duelWatchResult(msg) {
+    clearTimeout(this._duelTimer);
+    $('duelFlash').classList.add('hidden');
+    $('duelPad').classList.add('hidden');
     this.duelPotIs(msg.pot, false);
     this.duelBanksAre(msg.aB, msg.bB);
     $('duelNote').textContent = msg.nobody ? 'Neither of them. It was ' + msg.answer + '.'
@@ -6771,6 +6970,9 @@ const Player = {
   },
 
   duelEnd(msg) {
+    clearTimeout(this._duelTimer);
+    $('duelFlash').classList.add('hidden');
+    $('duelPad').classList.add('hidden');
     $('duelOptions').innerHTML = '';
     $('duelActions').style.display = 'none';
     $('duelImg').classList.add('hidden');
