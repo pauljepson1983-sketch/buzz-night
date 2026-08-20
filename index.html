@@ -500,6 +500,14 @@
   #duelPad.go { background: #3ddc84; color: #05240f }
   #duelPad.done { background: rgba(255,255,255,.14); color: #fff }
 
+  /* Closest wins, inside a duel. Nothing to tap through — a number and a
+     button, big enough to use without looking. */
+  #duelGuess { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 }
+  #duelGuessInput { font-size: 2rem; font-weight: 800; text-align: center; padding: 14px;
+                    border-radius: 14px; border: 2px solid rgba(255,255,255,.25);
+                    background: rgba(0,0,0,.3); color: #fff; width: 100% }
+  #duelGuessInput:focus { outline: none; border-color: #ffd257 }
+
   #duelCallBtns { display: flex; gap: 8px }
   #duelCallBtns .btn { flex: 1 }
   /* Asking whether to wipe the last game, in the page rather than in a
@@ -999,6 +1007,10 @@
       <p id="duelPrompt"></p>
       <div id="duelFlash" class="hidden"></div>
       <button id="duelPad" class="hidden" type="button">WAIT…</button>
+      <div id="duelGuess" class="hidden">
+        <input type="number" id="duelGuessInput" inputmode="numeric" placeholder="Your number">
+        <button class="btn big green" id="duelGuessBtn">Lock it in</button>
+      </div>
       <img id="duelImg" class="hidden" alt="">
       <div id="duelOptions"></div>
       <div id="duelActions">
@@ -2390,7 +2402,7 @@ const Host = {
       Quiz.answer(conn.peer, msg.n, msg.choice);
       return;
     }
-    if (msg.type === 'duelAnswer') { Quiz.duelAnswer(conn.peer, msg.n, msg.choice, msg.ms); return; }
+    if (msg.type === 'duelAnswer') { Quiz.duelAnswer(conn.peer, msg.n, msg.choice, msg.ms, msg.value); return; }
     if (msg.type === 'duelBank')   { Quiz.duelBank(conn.peer); return; }
     if (msg.type === 'duelFreeze') { Quiz.duelUseFreeze(conn.peer); return; }
     if (msg.type === 'duelCall')   { Quiz.duelCall(conn.peer, msg.who); return; }
@@ -4274,19 +4286,46 @@ const Quiz = {
      needs: control has to pass cleanly, and a number guess has no wrong, only
      nearer, which is why closest wins is kept out of this. */
   async buildDuel(count) {
-    /* Four kinds, roughly a quarter each, and only two of them reward knowing
-       things. That is the whole point of the round: somebody who is full of
-       facts should not walk it, because half of what is asked has nothing to
-       do with facts. A quick finger wins the reaction ones and a sharp eye
-       wins the memory ones, whoever you are. */
-    const facts = Math.max(1, Math.round(count * 0.3));
-    const logos = Math.max(1, Math.round(count * 0.2));
-    const memory = Math.max(1, Math.round(count * 0.25));
-    const reaction = Math.max(1, count - facts - logos - memory);
+    /* Eight kinds now, and five of them owe nothing to knowing facts. That is
+       the whole point of the round: somebody who is full of facts should not
+       walk it, because most of what is asked is not about facts at all. A
+       quick finger takes the reaction ones, a sharp eye the memory and
+       counting ones, a decent instinct the closest-wins, and higher-or-lower
+       is very nearly a coin toss.
+
+       Shares rather than a fixed count, so a six question duel and a fourteen
+       question one both stay balanced. */
+    const share = f => Math.max(1, Math.round(count * f));
+    const facts = share(0.16);
+    const logos = share(0.12);
+    const memory = share(0.14);
+    const reaction = share(0.14);
+    const hilo = share(0.14);
+    const odd = share(0.12);
+    const guess = share(0.10);
+    const songs = Math.max(1, count - facts - logos - memory - reaction - hilo - odd - guess);
 
     let qs = this.buildQuickfire(facts)
       .concat(this.buildMemory(memory))
       .concat(this.buildReaction(reaction));
+
+    // the fact bank is on this device, so these cannot fail for network reasons
+    try { qs = qs.concat(this.buildHigherLower(hilo)); } catch (e) {}
+    try { qs = qs.concat(this.buildOddOneOut(odd)); } catch (e) {}
+
+    // a number to guess: no wrong answer, just nearer and further
+    try {
+      this.buildGuess(guess).forEach(q => { q.kind = 'guess'; qs.push(q); });
+    } catch (e) {}
+
+    /* A song leg needs Spotify, and Spotify is the one thing here that can be
+       logged out or rate limited. A duel without music is still a duel, so a
+       failure quietly costs the leg rather than the round. */
+    try {
+      const tunes = await this.buildSongs('', songs, '', '');
+      tunes.filter(q => q.uri).forEach(q => { q.kind = 'song'; qs.push(q); });
+    } catch (e) {}
+
     try {
       const pics = await this.buildLogos(logos);
       pics.forEach(q => { q.img = q.url; });
@@ -4341,6 +4380,97 @@ const Quiz = {
         options: [], correct: 0, answer: 'the fastest finger'
       });
     }
+    return out;
+  },
+
+  /* How each run of facts reads as a comparison, and whether the winner is
+     the bigger number or the smaller one. A year is the one that trips people
+     up: 1066 is a SMALLER number than 1940 but it happened first. */
+  HILO: {
+    animalspeed: { ask: 'Which is faster?',            bigWins: true },
+    animallife:  { ask: 'Which lives longer?',          bigWins: true },
+    landmarks:   { ask: 'Which is taller?',             bigWins: true },
+    histlong:    { ask: 'Which lasted longer?',         bigWins: true },
+    histyear:    { ask: 'Which happened first?',        bigWins: false },
+    inventions:  { ask: 'Which came first?',            bigWins: false },
+    tvfirst:     { ask: 'Which was on television first?', bigWins: false }
+    /* localyear is deliberately absent. Its entries are written to finish the
+       sentence "What year did..." — "Newcastle Central Station open" — so
+       standing on their own next to another one they read as broken English. */
+  },
+
+  /* Two facts, one question: which of them is the bigger. Almost a coin flip,
+     with just enough of an edge for someone who knows to take more than their
+     half — which is exactly what a duel between a walking encyclopedia and
+     everybody else needs. */
+  buildHigherLower(count) {
+    const bank = window.CLOSEST || {};
+    const kinds = Object.keys(this.HILO).filter(k => bank[k] && (bank[k].items || []).length >= 6);
+    if (!kinds.length) throw new Error('The fact bank did not load — check questions.js sits next to index.html.');
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const kind = kinds[i % kinds.length];
+      const how = this.HILO[kind];
+      const items = this.shuffle((bank[kind].items || []).slice());
+      // a pair that is too close together is a coin flip with no thinking in
+      // it, and a pair with the same value has no answer at all
+      let a = items[0], b = items.find(x => x[1] !== a[1] && Math.abs(x[1] - a[1]) >= Math.max(1, Math.abs(a[1]) * 0.06));
+      if (!b) b = items.find(x => x[1] !== a[1]);
+      if (!b) continue;
+      const winner = how.bigWins ? (a[1] > b[1] ? a : b) : (a[1] < b[1] ? a : b);
+      const options = this.shuffle([a[0], b[0]]);
+      out.push({
+        kind: 'hilo', seenKey: 'hilo:' + a[0] + '|' + b[0],
+        prompt: how.ask, options: options,
+        correct: options.indexOf(winner[0]), answer: winner[0]
+      });
+    }
+    if (!out.length) throw new Error('Could not make a single higher-or-lower question.');
+    return out;
+  },
+
+  /* Groups that are obviously different from one another. Deliberately only
+     four: pairing "events in history" against "inventions" produces questions
+     with two defensible answers, and an argument about the question is not
+     the argument you want. */
+  ODD_GROUPS: [
+    { name: 'animals',        kinds: ['animalspeed', 'animallife'] },
+    { name: 'TV programmes',  kinds: ['tvfirst'] },
+    { name: 'landmarks',      kinds: ['landmarks'] },
+    { name: 'inventions',     kinds: ['inventions'] }
+  ],
+
+  /* Three from one group, one from another. The group is named in the
+     question, so the answer is never a matter of opinion — this is about
+     spotting what does not belong, not about guessing what I meant. */
+  buildOddOneOut(count) {
+    const bank = window.CLOSEST || {};
+    const pool = this.ODD_GROUPS.map(g => ({
+      name: g.name,
+      /* Some entries carry a qualifier that only matters when you are being
+         asked for a measurement — "the Statue of Liberty, including its base".
+         Nothing here is being measured, so the qualifier is just noise in a
+         list of four. */
+      items: g.kinds.flatMap(k => (bank[k] && bank[k].items) || [])
+        .map(it => String(it[0]).replace(/,\s*(including|measured|from|at its).*$/i, '').trim())
+    })).filter(g => g.items.length >= 4);
+    if (pool.length < 2) throw new Error('The fact bank did not load — check questions.js sits next to index.html.');
+
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const groups = this.shuffle(pool.slice());
+      const home = groups[0], away = groups[1];
+      const three = this.shuffle(home.items.slice()).slice(0, 3);
+      const odd = this.shuffle(away.items.slice())[0];
+      if (three.length < 3 || !odd) continue;
+      const options = this.shuffle(three.concat([odd]));
+      out.push({
+        kind: 'odd', seenKey: 'odd:' + odd + '|' + three.join(','),
+        prompt: 'Three of these are ' + home.name + '. Which is the odd one out?',
+        options: options, correct: options.indexOf(odd), answer: odd
+      });
+    }
+    if (!out.length) throw new Error('Could not make a single odd-one-out question.');
     return out;
   },
 
@@ -4411,16 +4541,20 @@ const Quiz = {
     this.duelFrozen = this.duelPendingFreeze;
     this.duelPendingFreeze = null;
 
-    /* A memory flash has to be looked at before it can be answered, and a
-       reaction test cannot be answered until the light changes, so neither
-       runs on the plain fifteen seconds. */
-    const extra = q.kind === 'memory' ? (q.showMs || 3200) : 0;
+    /* A memory flash has to be looked at before it can be answered, a song
+       has to be heard, and a reaction test cannot be answered until the light
+       changes, so none of them runs on the plain fifteen seconds. */
+    const extra = q.kind === 'memory' ? (q.showMs || 3200) : q.kind === 'song' ? 2000 : 0;
+
+    // the music is on the host's speakers; the phones only get the options
+    if (q.kind === 'song' && q.uri) this.playTrack(q, 0);
 
     [this.duelA, this.duelB].forEach(id => {
       Host.sendTo(id, {
         type: 'duelQ', n: this.idx + 1, total: this.questions.length,
         kind: q.kind || 'mcq', show: q.show || null, showMs: q.showMs || 0,
-        prompt: q.prompt || '', img: q.img || null, options: q.options,
+        prompt: q.kind === 'guess' ? (q.title || q.prompt || '') : (q.prompt || ''),
+        unit: q.unit || '', img: q.img || null, options: q.options,
         secs: this.DUEL_SECS, pot: this.duelPot,
         yours: this.duelControl === id,
         frozen: this.duelFrozen === id,
@@ -4435,7 +4569,8 @@ const Quiz = {
       Host.sendTo(id, {
         type: 'duelWatch', n: this.idx + 1, total: this.questions.length,
         kind: q.kind || 'mcq', show: q.show || null, showMs: q.showMs || 0,
-        prompt: q.prompt || '', img: q.img || null,
+        prompt: q.kind === 'guess' ? (q.title || q.prompt || '') : (q.prompt || ''),
+        unit: q.unit || '', img: q.img || null,
         pot: this.duelPot, aB: this.duelBanked[this.duelA], bB: this.duelBanked[this.duelB],
         control: this.duelControl === this.duelA ? 'a' : this.duelControl === this.duelB ? 'b' : ''
       });
@@ -4467,13 +4602,14 @@ const Quiz = {
     this.tick = this.later(extra + this.DUEL_SECS * 1000 + 300, () => this.duelSettle());
   },
 
-  duelAnswer(peerId, n, choice, ms) {
+  duelAnswer(peerId, n, choice, ms, value) {
     if (!this.active || this.mode !== 'duel') return;
     if (n !== this.idx + 1 || !this.duelIsIn(peerId)) return;
     if (this.duelFrozen === peerId || this.duelAnswers[peerId]) return;
     // a reaction tap sends 0 for a real one and -1 for jumping the gun, which
-    // lands as a wrong answer and costs them the question
-    this.duelAnswers[peerId] = { choice: choice, ms: ms };
+    // lands as a wrong answer and costs them the question; a closest-wins leg
+    // sends a typed number instead of an option
+    this.duelAnswers[peerId] = { choice: choice, ms: ms, value: value };
     this.duelHostView();
     // once everyone who is allowed to answer has, there is nothing to wait for
     const live = [this.duelA, this.duelB].filter(id => id !== this.duelFrozen);
@@ -4511,23 +4647,39 @@ const Quiz = {
     if (!this.active || this.mode !== 'duel') return;
     clearTimeout(this.tick);
     const q = this.questions[this.idx];
-    const right = id => { const a = this.duelAnswers[id]; return !!a && a.choice === q.correct; };
-    const aR = right(this.duelA), bR = right(this.duelB);
     let winner = null;
-    if (aR && bR) winner = this.duelAnswers[this.duelA].ms <= this.duelAnswers[this.duelB].ms ? this.duelA : this.duelB;
-    else if (aR) winner = this.duelA;
-    else if (bR) winner = this.duelB;
-
-    // being wrong costs a little, whoever you are
     const docked = [];
-    [this.duelA, this.duelB].forEach(id => {
-      const a = this.duelAnswers[id];
-      if (a && a.choice !== q.correct) {
-        this.duelBanked[id] = Math.max(0, this.duelBanked[id] - this.DUEL_PENALTY);
-        this.duelStreak[id] = 0;
-        docked.push(id);
+
+    if (q.kind === 'guess') {
+      /* A number has no wrong, only nearer and further, so the nearest simply
+         takes it and nobody is docked. Not answering at all is the one way to
+         lose it outright. */
+      const off = id => {
+        const a = this.duelAnswers[id];
+        return a && isFinite(a.value) ? Math.abs(a.value - Number(q.answer)) : Infinity;
+      };
+      const dA = off(this.duelA), dB = off(this.duelB);
+      if (dA !== Infinity || dB !== Infinity) {
+        if (dA === dB) winner = this.duelAnswers[this.duelA].ms <= this.duelAnswers[this.duelB].ms ? this.duelA : this.duelB;
+        else winner = dA < dB ? this.duelA : this.duelB;
       }
-    });
+    } else {
+      const right = id => { const a = this.duelAnswers[id]; return !!a && a.choice === q.correct; };
+      const aR = right(this.duelA), bR = right(this.duelB);
+      if (aR && bR) winner = this.duelAnswers[this.duelA].ms <= this.duelAnswers[this.duelB].ms ? this.duelA : this.duelB;
+      else if (aR) winner = this.duelA;
+      else if (bR) winner = this.duelB;
+
+      // being wrong costs a little, whoever you are
+      [this.duelA, this.duelB].forEach(id => {
+        const a = this.duelAnswers[id];
+        if (a && a.choice !== q.correct) {
+          this.duelBanked[id] = Math.max(0, this.duelBanked[id] - this.DUEL_PENALTY);
+          this.duelStreak[id] = 0;
+          docked.push(id);
+        }
+      });
+    }
 
     let stolen = false, autoBanked = false, earned = false;
     if (winner) {
@@ -4558,7 +4710,8 @@ const Quiz = {
     const name = winner ? this.duelName(winner) : '';
     [this.duelA, this.duelB].forEach(id => {
       Host.sendTo(id, {
-        type: 'duelResult', answer: q.answer, correct: q.correct,
+        type: 'duelResult', answer: q.answer, correct: q.correct, kind: q.kind || 'mcq',
+        unit: q.unit || '', mineValue: (this.duelAnswers[id] || {}).value,
         mine: winner === id, winner: name, nobody: !winner,
         stolen: stolen && winner === id, robbed: stolen && winner !== id,
         docked: docked.indexOf(id) >= 0, autoBanked: autoBanked && winner === id,
@@ -4575,6 +4728,7 @@ const Quiz = {
       });
     });
 
+    if (q.kind === 'song') Spot.hush();
     if (winner) {
       const v = Host.voiceFor(name);
       Sound.say(stolen ? name + ' steals it' : autoBanked ? name + ', five in a row' : name, v.voice, v.style);
@@ -6767,6 +6921,7 @@ const Player = {
     $('duelImg').classList.add('hidden');
     $('duelFlash').classList.add('hidden');
     $('duelPad').classList.add('hidden');
+    $('duelGuess').classList.add('hidden');
     clearTimeout(this._duelTimer);
     $('duelOptions').innerHTML = '';
     $('duelActions').style.display = 'none';
@@ -6834,11 +6989,16 @@ const Player = {
     $('duelPad').classList.add('hidden');
     $('duelOptions').innerHTML = '';
 
+    $('duelGuess').classList.add('hidden');
     if (msg.kind === 'reaction') {
       this.duelReactionQ(msg);
     } else if (msg.kind === 'memory') {
       this.duelMemoryQ(msg);
+    } else if (msg.kind === 'guess') {
+      this.duelGuessQ(msg);
     } else {
+      // a song leg plays on the host's speakers; the phone just lists titles
+      if (msg.kind === 'song') $('duelSay').textContent = '🎧 Listen…';
       this.duelOptions(msg.options);
     }
 
@@ -6888,6 +7048,31 @@ const Player = {
       pad.textContent = ms + 'ms';
       if (this.conn) this.conn.send({ type: 'duelAnswer', n: this._duelN, choice: 0, ms: ms });
     };
+  },
+
+  /* A number, not a tap. Nearest takes the question and nobody is docked —
+     there is no wrong answer to a guess, only a further-away one. */
+  duelGuessQ(msg) {
+    const box = $('duelGuess'), input = $('duelGuessInput'), btn = $('duelGuessBtn');
+    box.classList.remove('hidden');
+    input.value = '';
+    input.placeholder = msg.unit ? 'Your answer in ' + msg.unit : 'Your number';
+    input.disabled = false;
+    btn.disabled = false;
+    btn.textContent = 'Lock it in';
+    const send = () => {
+      if (this._duelAnswered || !this.conn) return;
+      const v = Number(input.value);
+      if (!input.value.length || !isFinite(v)) return;
+      this._duelAnswered = true;
+      input.disabled = true; btn.disabled = true; btn.textContent = 'Locked';
+      $('duelActions').style.display = 'none';
+      this.conn.send({ type: 'duelAnswer', n: this._duelN, choice: -2,
+                       ms: Date.now() - this._duelAskedAt, value: v });
+    };
+    btn.onclick = send;
+    input.onkeydown = e => { if (e.key === 'Enter') send(); };
+    if (!msg.frozen) setTimeout(() => { try { input.focus(); } catch (e) {} }, 120);
   },
 
   // the light changing, sent as its own message so each phone times itself
@@ -6987,7 +7172,19 @@ const Player = {
     });
     $('duelActions').style.display = 'none';
 
+    $('duelGuess').classList.add('hidden');
     let line;
+    if (msg.kind === 'guess') {
+      const truth = msg.answer + (msg.unit ? ' ' + msg.unit : '');
+      const mine = (msg.mineValue == null || !isFinite(msg.mineValue)) ? null : msg.mineValue;
+      line = msg.nobody ? 'Neither of you put a number in. It was ' + truth + '.'
+           : msg.mine ? '✅ Closest — it was ' + truth + (mine != null ? ' and you said ' + mine : '') + '.'
+           : '👀 ' + msg.winner + ' was nearer. It was ' + truth + '.';
+      $('duelNote').textContent = line;
+      $('duelSay').textContent = '';
+      this.vibe(msg.mine ? [60, 40, 60] : [120]);
+      return;
+    }
     if (msg.nobody) line = 'Neither of you. It was ' + msg.answer + '.';
     else if (msg.stolen) line = '💰 Stolen! You took the pot off them.';
     else if (msg.robbed) line = '😬 ' + msg.winner + ' stole the pot.';
@@ -7013,6 +7210,7 @@ const Player = {
     // at is dull, so the flash and the light go out to the room as well
     clearTimeout(this._duelTimer);
     $('duelPad').classList.add('hidden');
+    $('duelGuess').classList.add('hidden');
     const flash = $('duelFlash');
     if (msg.kind === 'memory' && msg.show) {
       flash.classList.remove('hidden');
@@ -7037,6 +7235,7 @@ const Player = {
     clearTimeout(this._duelTimer);
     $('duelFlash').classList.add('hidden');
     $('duelPad').classList.add('hidden');
+    $('duelGuess').classList.add('hidden');
     $('duelOptions').innerHTML = '';
     $('duelActions').style.display = 'none';
     $('duelImg').classList.add('hidden');
