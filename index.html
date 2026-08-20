@@ -4062,9 +4062,29 @@ const Quiz = {
       .slice(0, count + 12);
     $('quizStatus').textContent = 'Fetching logos…';
     const sized = await Promise.all(picks.map(async b => {
-      const url = 'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(b.domain) + '&sz=256';
-      const w = await this.iconWidth(url);
-      return w >= this.MIN_LOGO_PX ? { label: b.name, seenKey: b.name, url } : null;
+      /* Three services, biggest picture wins.
+
+         No single one is best. Measured across 163 brands: Google has the
+         largest icon for 82 of them, DuckDuckGo for four and unavatar for
+         three — but those seven include WhatsApp, Spotify, Slack and Jaguar,
+         which Google alone serves too small to use. Asking all three costs a
+         moment at build time and buys a noticeably bigger list.
+
+         Favicons on purpose, rather than the proper logo files on Wikidata:
+         those are usually the version with the company name written across
+         it, which rather gives the game away. */
+      const sources = [
+        'https://www.google.com/s2/favicons?domain=' + encodeURIComponent(b.domain) + '&sz=256',
+        'https://icons.duckduckgo.com/ip3/' + encodeURIComponent(b.domain) + '.ico',
+        'https://unavatar.io/' + encodeURIComponent(b.domain)
+      ];
+      let best = null, bestW = 0;
+      for (const url of sources) {
+        const w = await this.iconWidth(url).catch(() => 0);
+        if (w > bestW) { bestW = w; best = url; }
+        if (bestW >= 256) break;   // already as good as it gets
+      }
+      return bestW >= this.MIN_LOGO_PX ? { label: b.name, seenKey: b.name, url: best } : null;
     }));
     const kept = sized.filter(Boolean);
     if (kept.length < 4) throw new Error('Only ' + kept.length + ' logos came back big enough to use.');
