@@ -517,6 +517,15 @@
   #newGameAsk p { margin: 0 0 10px; font-weight: 700; color: #ffe08a }
   #newGameAsk .row { display: flex; gap: 8px; flex-wrap: wrap }
   #newGameAsk .btn { flex: 1; min-width: 150px }
+  /* The pre-flight report. Colours come from the game's own palette rather
+     than a new set invented for one panel. */
+  #checkOut { margin-top: 12px; padding: 14px 16px; border-radius: 12px;
+              background: var(--panel2); border: 1px solid rgba(255,255,255,.12);
+              font-size: .92rem; line-height: 1.7 }
+  #checkOut .ok   { color: var(--green) }
+  #checkOut .bad  { color: var(--red) }
+  #checkOut .warn { color: var(--gold) }
+  #checkOut b { display: block; margin-bottom: 6px }
 </style>
 </head>
 <body>
@@ -555,6 +564,13 @@
       <button class="btn" id="newGameWipe">Start fresh</button>
     </div>
   </div>
+
+  <!-- Everything that can quietly be wrong before a night starts, checked
+       in one go. Spotify logs itself out, a question file can fail to load,
+       an image host can be down — all of which are fine to find out about
+       now and miserable to find out about with six people watching. -->
+  <button class="btn mt" id="checkBtn" onclick="App.preflight()">🩺 Check everything works</button>
+  <div id="checkOut" class="hidden"></div>
 
   <details class="fold mt" id="setupFold">
     <summary>⚙️ Setup &amp; options</summary>
@@ -1312,6 +1328,104 @@ const App = {
   pushLeaderboard() { Host.pushBoard(); },
   resetScores() { if (confirm('Reset all scores?')) Host.resetScores(); },
 
+  /* Trouble worth telling the host about, said on the screen.
+
+     Anything that fires on its own — a Spotify player error, a peer failing
+     to open — must never be an alert(). Nobody pressed anything, so the
+     window may well not be on top, and a browser will suppress a dialog in a
+     background window: the page then sits there blocked on an answer to a
+     question nobody was ever shown. That is exactly what made the host look
+     frozen earlier. */
+  trouble(msg) {
+    const el = $('quizStatus');
+    if (el) el.textContent = '⚠ ' + msg;
+    const s = $('spotifyOffline');
+    if (s && /spotify/i.test(msg)) s.classList.remove('hidden');
+    console.warn('[buzz night]', msg);
+  },
+
+  /* Everything that can quietly be wrong, checked before anyone arrives.
+
+     Each round is actually built rather than merely looked at, because
+     "the code is there" and "it will produce ten questions tonight" are
+     different claims and only the second one matters. */
+  async preflight() {
+    const out = $('checkOut'), btn = $('checkBtn');
+    out.classList.remove('hidden');
+    btn.disabled = true;
+    const lines = [];
+    const paint = () => { out.innerHTML = '<b>Pre-flight</b>' + lines.join('<br>'); };
+    const add = (state, text) => { lines.push('<span class="' + state + '">' +
+      (state === 'ok' ? '✓' : state === 'bad' ? '✗' : '⚠') + '</span> ' + esc(text)); paint(); };
+
+    lines.push('<span class="warn">…</span> checking'); paint();
+    lines.length = 0;
+
+    // 1. the written banks, which live in questions.js next to this file
+    const banks = [['QUESTIONS', 'written questions'], ['CLOSEST', 'closest-wins facts'],
+                   ['LOGOS', 'logos'], ['MAPS', 'maps'], ['PLACES', 'places']];
+    let bankTrouble = false;
+    banks.forEach(([key, name]) => {
+      const v = window[key];
+      const n = Array.isArray(v) ? v.length : v ? Object.keys(v).length : 0;
+      if (!n) { add('bad', name + ' did not load — questions.js may be missing'); bankTrouble = true; }
+    });
+    if (!bankTrouble) add('ok', 'Question banks loaded');
+
+    // 2. the room
+    if (Host.peer) add('ok', 'Room ' + (Host.roomCode || '') + ' is open');
+    else add('warn', 'No room open yet — players cannot join until you open one');
+
+    // 3. Spotify, which is the thing most likely to have logged itself out
+    const connected = !!(Spot.token || store.get('spotify_refresh'));
+    if (!connected) add('bad', 'Spotify is not connected — every music round will fail');
+    else {
+      try {
+        const me = await Spot.api('/me');
+        if (me.product !== 'premium') add('bad', 'Spotify is connected but not Premium — it cannot play in the browser');
+        else add('ok', 'Spotify connected as ' + (me.display_name || me.id) + ' (Premium)');
+        try {
+          const s = await Spot.api('/search?type=track&limit=1&q=' + encodeURIComponent('year:1990-1999 pop'));
+          if (s && s.tracks && s.tracks.items && s.tracks.items.length) add('ok', 'Spotify search is answering');
+          else add('warn', 'Spotify search came back empty');
+        } catch (e) {
+          add(e.rateLimited ? 'warn' : 'bad', 'Spotify search: ' + e.message);
+        }
+        if (Spot.deviceId) add('ok', 'This device is ready to play');
+        else add('warn', 'Player not started yet — it starts on the first song');
+      } catch (e) { add('bad', 'Spotify would not answer: ' + e.message); }
+    }
+
+    /* 4. build one of each round for real. Two questions apiece: enough to
+       prove it works, few enough not to eat the Spotify allowance before the
+       night has even started. */
+    const modes = ['quickfire', 'guess', 'logos', 'places', 'faces', 'covers',
+                   'backdrops', 'themes', 'songs', 'years', 'tv', 'duel'];
+    const wasMode = this._m;
+    for (const m of modes) {
+      const keep = Quiz.mode;
+      Quiz.mode = m;
+      try {
+        const qs = await Quiz.buildChunk('', 2, '', '', 'check');
+        const n = (qs || []).length;
+        if (n >= 2) add('ok', (Quiz.TITLES[m] || m) + ' — builds');
+        else add('warn', (Quiz.TITLES[m] || m) + ' — only produced ' + n);
+      } catch (e) {
+        add('bad', (Quiz.TITLES[m] || m) + ' — ' + e.message.slice(0, 70));
+      }
+      Quiz.mode = keep;
+    }
+
+    const bad = lines.filter(l => l.indexOf('"bad"') >= 0).length;
+    const warn = lines.filter(l => l.indexOf('"warn"') >= 0).length;
+    lines.push('');
+    lines.push(bad ? '<span class="bad">' + bad + ' thing' + (bad === 1 ? '' : 's') + ' will stop a round tonight.</span>'
+      : warn ? '<span class="warn">Nothing broken. ' + warn + ' worth a look.</span>'
+      : '<span class="ok">All good. Go and enjoy yourself.</span>');
+    paint();
+    btn.disabled = false;
+  },
+
   /* Run a duel here and now, outside the running order.
 
      It sits apart from the night on purpose: a duel is two people playing
@@ -1558,9 +1672,11 @@ const Spot = {
         Host.arm();
       }
     });
-    this.player.addListener('initialization_error', e => alert('Spotify player error: ' + e.message));
-    this.player.addListener('authentication_error', e => alert('Spotify auth error — reconnect Spotify. ' + e.message));
-    this.player.addListener('account_error', e => alert('Spotify says this account can’t stream here (Premium needed).'));
+    // these arrive on their own, so they are said on screen rather than in a
+    // dialog that can block a window nobody is looking at
+    this.player.addListener('initialization_error', e => App.trouble('Spotify player error: ' + e.message));
+    this.player.addListener('authentication_error', e => App.trouble('Spotify has logged out — reconnect it on the host screen. ' + e.message));
+    this.player.addListener('account_error', e => App.trouble('Spotify says this account cannot stream here — Premium is needed.'));
     const joined = await this.player.connect();
     if (!joined) throw new Error('Spotify would not accept the player — check it is Premium and try again.');
     return await this.waitForDevice();
@@ -1612,7 +1728,7 @@ const Spot = {
   // through it with "Next song".
   async playContext(uri, name) {
     await this.unhush();
-    if (!this.deviceId) { alert('Spotify player not ready yet — wait a second and try again.'); return; }
+    if (!this.deviceId) { App.trouble('Spotify player is not ready yet — give it a second and try again.'); return; }
     await this.api('/me/player/play?device_id=' + this.deviceId, {
       method: 'PUT', body: JSON.stringify({ context_uri: uri })
     });
@@ -2294,7 +2410,7 @@ const Host = {
           }), keepCode ? 1600 : 0);
           return;
         }
-        alert('Room code clash — try creating again.');
+        App.trouble('That room code is already taken — press Open a room again for a new one.');
       } else console.warn('Peer error', e);
     });
     this.peer.on('disconnected', () => { $('connDot').classList.remove('on'); this.peer.reconnect(); });
@@ -4399,10 +4515,37 @@ const Quiz = {
 
   /* Six things flash up, then one of four is the one that was NOT there.
      Nothing to know, nothing to have read — just whether you were watching. */
+  /* Not every phone has every emoji. A missing one renders as an empty box,
+     and if that box is one of the four options the question becomes
+     unanswerable — you cannot pick the thing you never saw.
+
+     Measured rather than assumed: a glyph the font does not have falls back
+     to the same "missing character" box for every codepoint, so anything
+     whose width matches a deliberately absent character is dropped. Done once
+     and remembered, because it is the same answer all night.
+
+     This runs on the HOST, which is not where the emoji are read. It still
+     catches the common case of a machine with a thin emoji font; the phones
+     get whatever survives. */
+  safeEmoji() {
+    if (this._safeEmoji) return this._safeEmoji;
+    let list = this.MEMORY_POOL.slice();
+    try {
+      const c = document.createElement('canvas').getContext('2d');
+      c.font = '32px sans-serif';
+      // a codepoint no font has: everything missing measures the same as this
+      const missing = c.measureText('￿').width;
+      const kept = list.filter(e => Math.abs(c.measureText(e).width - missing) > 0.5);
+      if (kept.length >= 12) list = kept;
+    } catch (e) {}
+    return (this._safeEmoji = list);
+  },
+
   buildMemory(count) {
     const out = [];
+    const safe = this.safeEmoji();
     for (let i = 0; i < count; i++) {
-      const pool = this.shuffle(this.MEMORY_POOL.slice());
+      const pool = this.shuffle(safe.slice());
       const shown = pool.slice(0, 6);
       const absent = pool[6];
       const options = this.shuffle([absent, shown[0], shown[2], shown[4]]);
