@@ -6362,7 +6362,7 @@ const Player = {
     switch (msg.type) {
       case 'ping': this.conn.send({ type: 'pong', t: msg.t }); break;
       case 'welcome':
-        $('pScore').textContent = msg.score + ' pts';
+        $('pScore').textContent = (msg.score || 0) + ' pts';
         if (msg.teamMode && msg.team) $('pTeam').textContent = '· Team ' + msg.team;
         this.renderKit(msg);
         break;
@@ -6391,11 +6391,11 @@ const Player = {
         this.hideExtras();
         if (msg.ok && msg.onTheBuzzer) {
           this.setStatus('⚡ FIRST ON THE BUZZER AND CORRECT! +' + msg.pts + ' in ' + secs(msg.ms), 'good');
-          $('pScore').textContent = msg.score + ' pts';
+          $('pScore').textContent = (msg.score || 0) + ' pts';
           this.vibe([60, 40, 60, 40, 60, 40, 250]);
           break;
         }
-        $('pScore').textContent = msg.score + ' pts';
+        $('pScore').textContent = (msg.score || 0) + ' pts';
         this.setStatus(msg.ok ? '🎉 CORRECT! +' + msg.pts : '❌ Wrong — locked out this song', msg.ok ? 'good' : 'bad');
         this.vibe(msg.ok ? [80, 40, 80, 40, 200] : [400]);
         break;
@@ -6500,7 +6500,7 @@ const Player = {
         $('quizFeedback').textContent = got
           ? (msg.fastest ? '⚡ Fastest finger! +' + msg.gained : '✅ Correct! +' + msg.gained)
           : (msg.picked < 0 ? '⏱ Too slow — ' + msg.answer : '❌ ' + msg.answer);
-        $('pScore').textContent = msg.score + ' pts';
+        $('pScore').textContent = (msg.score || 0) + ' pts';
         this.vibe(got ? [80, 40, 80] : [300]);
         break;
       }
@@ -6550,7 +6550,7 @@ const Player = {
         }
         el.innerHTML = body;
         el.classList.remove('hidden');
-        $('pScore').textContent = msg.yourScore + ' pts';
+        $('pScore').textContent = (msg.yourScore || 0) + ' pts';
         this.setStatus('');
         setTimeout(() => el.classList.remove('celebrate'), 4000);
         break;
@@ -7042,7 +7042,7 @@ const Player = {
       : msg.iLost ? 'Beaten this time.'
       : msg.calledIt ? '🎯 You called it — +' + msg.gotCall + '.'
       : 'You backed the other one.';
-    if (typeof msg.score === 'number') $('pScore').textContent = msg.score + ' pts';
+    if (typeof msg.score === 'number') $('pScore').textContent = (msg.score || 0) + ' pts';
     this.vibe(msg.mine || msg.calledIt ? [60, 40, 60, 40, 120] : [120]);
   },
 
@@ -7729,7 +7729,7 @@ const Player = {
       '<div class="gs-truth">Answer: ' + (msg.unit ? msg.truth.toLocaleString() + ' ' + esc(msg.unit) : String(msg.truth)) + '</div>' +
       (rows || '<p class="muted">Nobody guessed.</p>');
     $('quizFeedback').textContent = msg.gained ? '+' + msg.gained + ' points' : 'No points this time';
-    $('pScore').textContent = msg.score + ' pts';
+    $('pScore').textContent = (msg.score || 0) + ' pts';
     const won = msg.board && msg.board[0] && msg.board[0].name.toLowerCase() === me;
     this.vibe(won ? [80, 40, 80, 40, 200] : [180]);
   },
