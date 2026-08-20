@@ -744,7 +744,6 @@
             <button class="btn ghost small" onclick="Night.quickAdd('logos')">🏷️ Logos</button>
             <button class="btn ghost small" onclick="Night.quickAdd('places')">🌍 Where is it?</button>
             <button class="btn ghost small" onclick="Night.quickAdd('buzzname')">🎤 Buzz and name it</button>
-            <button class="btn ghost small" onclick="Night.quickAdd('duel')">⚔️ The Duel</button>
             <button class="btn ghost small" onclick="Night.quickAdd('guess')">🎯 Closest wins</button>
             <button class="btn ghost small" onclick="Night.quickAdd('faces')">⭐ Faces</button>
             <button class="btn ghost small" onclick="Night.quickAdd('backdrops')">🎬 Stills</button>
@@ -796,7 +795,6 @@
             <option value="songs">Name the song (music)</option>
             <option value="tv">TV theme tunes (music)</option>
             <option value="buzzname">Buzz and name it (music)</option>
-            <option value="duel">The Duel (two players, head to head)</option>
             <option value="places">Where is it? (maps)</option>
             <option value="logos">Logos</option>
             <option value="quickfire">Fastest finger (general knowledge)</option>
@@ -914,6 +912,27 @@
         <div class="row mt">
           <button class="btn small alt" onclick="App.pushLeaderboard()">📣 Show on phones</button>
           <button class="btn ghost small" onclick="App.resetScores()">Reset scores</button>
+          <!-- Started on its own rather than sitting in the running order. A
+               duel is two people playing while everybody else watches, which
+               is a thing you choose to do at a moment that suits the room —
+               not something the night should walk into by itself. -->
+          <button class="btn small" id="duelNowBtn" onclick="App.startDuel()">⚔️ Duel these two</button>
+        </div>
+        <p class="muted mt" id="duelNowNote" style="font-size:.85rem">Two players head to head, about three minutes. Everyone else backs a winner.</p>
+        <div class="row mt">
+          <label class="muted" style="font-size:.85rem" for="duelPairing">Who duels</label>
+          <select id="duelPairing">
+            <option value="closest" selected>The two closest on points</option>
+            <option value="top">The top two</option>
+            <option value="topbottom">Top versus bottom</option>
+            <option value="random">Pick two at random</option>
+          </select>
+          <label class="muted" style="font-size:.85rem" for="duelLength">Length</label>
+          <select id="duelLength">
+            <option value="6">Short (6)</option>
+            <option value="10" selected>Normal (10)</option>
+            <option value="14">Long (14)</option>
+          </select>
         </div>
       </div>
     </div>
@@ -1292,6 +1311,33 @@ const App = {
   toggleTeams(on) { Host.setTeamMode(on); },
   pushLeaderboard() { Host.pushBoard(); },
   resetScores() { if (confirm('Reset all scores?')) Host.resetScores(); },
+
+  /* Run a duel here and now, outside the running order.
+
+     It sits apart from the night on purpose: a duel is two people playing
+     while everybody else watches, so it is something the host picks a moment
+     for — after a lull, or as the last thing of the evening — rather than
+     something a five round plan wanders into on its own. */
+  async startDuel() {
+    if (!Host.peer) { $('quizStatus').textContent = '⚠ Open a room first.'; return; }
+    if (Night.running) { $('quizStatus').textContent = '⚠ A night is running — press Stop first, or wait for it to finish.'; return; }
+    const here = Host.presentCount();
+    if (here < 2) { $('quizStatus').textContent = '⚠ A duel needs two people in the room. There ' + (here === 1 ? 'is only one' : 'is nobody') + ' here.'; return; }
+    const btn = $('duelNowBtn');
+    btn.disabled = true;
+    try {
+      await Quiz.runRound({
+        mode: 'duel', decade: '', style: '', extra: $('duelPairing').value,
+        count: parseInt($('duelLength').value, 10) || 10,
+        secs: 15, flash: 3000, startAt: 'skip', crop: 'crop',
+        roundLabel: 'A duel'
+      });
+      Host.pushBoard();
+    } catch (e) {
+      $('quizStatus').textContent = '⚠ ' + e.message;
+    }
+    btn.disabled = false;
+  },
   searchTracks() { Spot.search($('searchInput').value); },
   loadPlaylists() { Spot.loadPlaylists(); },
   togglePlay() { Spot.togglePlay(); },
@@ -5349,7 +5395,7 @@ const Quiz = {
       songs: 'A song plays and four song titles appear on the phones. The classic music round. Decade applies; style narrows it.',
       tv: 'A TV theme tune plays and four shows appear. Show names are checked against TMDB, so what you get is a real programme. Decade filters on when the SHOW aired; style is ignored.',
       years: 'A song plays and four years appear. Decade applies; style narrows it. Remasters are filtered out so the dates are honest.',
-      duel: 'Two players go head to head while everyone else watches and backs a winner. Every right answer doubles the pot; bank it whenever you like. Get one wrong and the other one takes both the question and the pot. Three in a row earns a freeze that kills their buttons for a question. Ten questions, about three minutes.',
+      duel: 'Started from the Duel button by the leaderboard, not from here. Two players go head to head while everyone else watches and backs a winner. Every right answer doubles the pot; bank it whenever you like. Get one wrong and the other one takes both the question and the pot. Three in a row earns a freeze that kills their buttons for a question. Ten questions, about three minutes.',
       buzzname: 'The game picks the songs — you never touch the music. A track plays, anyone can BUZZ and the music stops dead. Whoever buzzed says the song and the artist out loud, and it is marked automatically. Both scores double, one of the two scores half, and a wrong answer puts the music back on for everyone else to steal. Needs Spotify.',
       places: 'A place is named and a map appears on every phone — the world, a country, or Tyne and Wear. Tap to drop a pin, move it as much as you like, then lock it in. Closest pin wins, scored like Closest wins. Decade and flavour are ignored; maps and places live in questions.js.',
       logos: 'A logo flashes up on every phone, then four brand names. Symbol marks only — a logo with the name written in it would give the answer away. Decade and flavour are ignored; the brand list is in questions.js.',
@@ -5994,6 +6040,11 @@ const Night = {
     // the poster round was removed: its crops leaked the title on half the
     // films tested. Film stills is the same idea with no text at all.
     this.plan.forEach(r => { if (r.mode === 'posters') r.mode = 'backdrops'; });
+    /* The duel left the running order — it is two people playing while the
+       rest of the room watches, so it is started on its own from the button
+       by the leaderboard. A saved night from before that change would still
+       have one sat in it. */
+    this.plan = this.plan.filter(r => r.mode !== 'duel');
     this.quickChanged();
     this.render();
   },
