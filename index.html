@@ -4542,6 +4542,22 @@ const Quiz = {
 
   duelName(id) { return (Host.players[id] || {}).name || '?'; },
 
+  /* A side is one person or a whole team. Everything below works on sides,
+     so a solo duel is simply a team of one and there is only ever one set of
+     rules to get wrong. */
+  duelSideOf(id) {
+    if (!this.duelSides) return null;
+    if (this.duelSides.a.members.indexOf(id) >= 0) return 'a';
+    if (this.duelSides.b.members.indexOf(id) >= 0) return 'b';
+    return null;
+  },
+  duelMembers(side) {
+    return (this.duelSides && this.duelSides[side] ? this.duelSides[side].members : [])
+      .filter(id => Host.players[id]);
+  },
+  duelLabel(side) { return this.duelSides && this.duelSides[side] ? this.duelSides[side].label : '?'; },
+  duelOther(side) { return side === 'a' ? 'b' : 'a'; },
+
   /* Still in the room and able to answer. A phone that locks, drops off the
      wifi or goes in a pocket used to leave the duel waiting out the full
      clock on every question — ten times over, with everyone watching a
@@ -4550,33 +4566,69 @@ const Quiz = {
     const p = Host.players[id];
     return !!p && Host.isPresent(p);
   },
-  duelFoe(id) { return id === this.duelA ? this.duelB : this.duelA; },
-  duelIsIn(id) { return id === this.duelA || id === this.duelB; },
+
+  // a side is still in it if anybody on it is
+  duelSideHere(side) { return this.duelMembers(side).some(id => this.duelHere(id)); },
+  duelIsIn(id) { return !!this.duelSideOf(id); },
 
   duelSetUp() {
-    const pair = this.duelPick();
-    this.duelA = pair[0]; this.duelB = pair[1];
-    this.duelBanked = {}; this.duelBanked[this.duelA] = 0; this.duelBanked[this.duelB] = 0;
-    this.duelStreak = {}; this.duelStreak[this.duelA] = 0; this.duelStreak[this.duelB] = 0;
-    this.duelHasFreeze = {}; this.duelHasFreeze[this.duelA] = false; this.duelHasFreeze[this.duelB] = false;
+    /* Team mode turns this into Team A against Team B. Otherwise it is two
+       people, which is the same thing with one member a side. */
+    const here = id => this.duelHere(id);
+    const byTeam = { A: [], B: [] };
+    Object.keys(Host.players).forEach(id => {
+      const tm = (Host.players[id] || {}).team;
+      if ((tm === 'A' || tm === 'B') && here(id)) byTeam[tm].push(id);
+    });
+
+    if (Host.teamMode && byTeam.A.length && byTeam.B.length) {
+      this.duelTeams = true;
+      this.duelSides = {
+        a: { label: 'Team A', members: byTeam.A, team: 'A' },
+        b: { label: 'Team B', members: byTeam.B, team: 'B' }
+      };
+    } else {
+      if (Host.teamMode) {
+        // team mode on but somebody has to be on each side for it to mean
+        // anything — fall back rather than refusing to start
+        $('quizStatus').textContent = 'Both teams need someone on them for a team duel, so this one is two players.';
+      }
+      this.duelTeams = false;
+      const pair = this.duelPick();
+      this.duelSides = {
+        a: { label: this.duelName(pair[0]), members: [pair[0]] },
+        b: { label: this.duelName(pair[1]), members: [pair[1]] }
+      };
+    }
+
+    this.duelBanked = { a: 0, b: 0 };
+    this.duelStreak = { a: 0, b: 0 };
+    this.duelHasFreeze = { a: false, b: false };
+    this.duelAnsweredBy = {};
     this.duelPot = this.DUEL_START;
     this.duelControl = null;
     this.duelPendingFreeze = null;
     this.duelFrozen = null;
     this.duelAnswers = {};
     this.duelCalls = {};
+    this.duelGoneSince = null;
+
+    const faceOf = side => {
+      const m = this.duelMembers(side);
+      return this.duelTeams ? (side === 'a' ? '🅰️' : '🅱️') : ((Host.players[m[0]] || {}).avatar || '');
+    };
     const card = {
       type: 'duelStart',
-      a: { name: this.duelName(this.duelA), avatar: (Host.players[this.duelA] || {}).avatar || '' },
-      b: { name: this.duelName(this.duelB), avatar: (Host.players[this.duelB] || {}).avatar || '' },
+      a: { name: this.duelLabel('a'), avatar: faceOf('a'), who: this.duelMembers('a').map(i => this.duelName(i)) },
+      b: { name: this.duelLabel('b'), avatar: faceOf('b'), who: this.duelMembers('b').map(i => this.duelName(i)) },
+      teams: this.duelTeams,
       total: this.questions.length, pot: this.duelPot, ceiling: this.DUEL_CEIL
     };
     Object.keys(Host.players).forEach(id => {
-      Host.sendTo(id, Object.assign({}, card, {
-        youAre: id === this.duelA ? 'a' : id === this.duelB ? 'b' : 'watch'
-      }));
+      Host.sendTo(id, Object.assign({}, card, { youAre: this.duelSideOf(id) || 'watch' }));
     });
-    Sound.say(this.duelName(this.duelA) + ' versus ' + this.duelName(this.duelB) + '. Everybody else, pick a winner.');
+    Sound.say(this.duelLabel('a') + ' versus ' + this.duelLabel('b') +
+      (this.duelTeams ? '. Anyone can answer — first one in answers for the team.' : '. Everybody else, pick a winner.'));
     this.duelHostView();
   },
 
@@ -4587,7 +4639,7 @@ const Quiz = {
   duelCall(peerId, who) {
     if (!this.active || this.mode !== 'duel') return;
     if (this.duelIsIn(peerId) || this.idx >= 1) return;
-    this.duelCalls[peerId] = who === 'a' ? this.duelA : this.duelB;
+    this.duelCalls[peerId] = who === 'a' ? 'a' : 'b';
     Host.sendTo(peerId, { type: 'duelCalled', who: who });
     this.duelHostView();
   },
@@ -4596,7 +4648,7 @@ const Quiz = {
     /* If one of them has gone for good there is no duel left to run. Stopping
        here and handing it to whoever is still standing beats grinding through
        the remaining questions against an empty chair. */
-    const hereA = this.duelHere(this.duelA), hereB = this.duelHere(this.duelB);
+    const hereA = this.duelSideHere('a'), hereB = this.duelSideHere('b');
     if (!hereA || !hereB) {
       this.duelGoneSince = this.duelGoneSince || Date.now();
       // a moment's grace: phones drop off and come straight back all the time
@@ -4604,8 +4656,8 @@ const Quiz = {
         /* Scores stand as they are rather than handing it to whoever is
            left. They earned what they banked, and a duel decided by whose
            phone survived would be a worse answer than an early finish. */
-        $('quizHostView').innerHTML = '<b>' + esc(this.duelName(hereA ? this.duelA : this.duelB)) +
-          '</b> is the only one still here — finishing on the scores as they stand.';
+        $('quizHostView').innerHTML = '<b>' + esc(this.duelLabel(hereA ? 'a' : 'b')) +
+          '</b> is all that is left — finishing on the scores as they stand.';
         Sound.say('We seem to have lost somebody. Finishing on the scores as they stand.');
         return this.duelFinish();
       }
@@ -4625,19 +4677,22 @@ const Quiz = {
     // the music is on the host's speakers; the phones only get the options
     if (q.kind === 'song' && q.uri) this.playTrack(q, 0);
 
-    [this.duelA, this.duelB].forEach(id => {
-      Host.sendTo(id, {
-        type: 'duelQ', n: this.idx + 1, total: this.questions.length,
-        kind: q.kind || 'mcq', show: q.show || null, showMs: q.showMs || 0,
-        prompt: q.kind === 'guess' ? (q.title || q.prompt || '') : (q.prompt || ''),
-        unit: q.unit || '', img: q.img || null, options: q.options,
-        secs: this.DUEL_SECS, pot: this.duelPot,
-        yours: this.duelControl === id,
-        frozen: this.duelFrozen === id,
-        banked: this.duelBanked[id], foeBanked: this.duelBanked[this.duelFoe(id)],
-        foeName: this.duelName(this.duelFoe(id)),
-        canBank: this.duelControl === id && this.duelPot > this.DUEL_START,
-        canFreeze: this.duelHasFreeze[id]
+    ['a', 'b'].forEach(side => {
+      const foe = this.duelOther(side);
+      this.duelMembers(side).forEach(id => {
+        Host.sendTo(id, {
+          type: 'duelQ', n: this.idx + 1, total: this.questions.length,
+          kind: q.kind || 'mcq', show: q.show || null, showMs: q.showMs || 0,
+          prompt: q.kind === 'guess' ? (q.title || q.prompt || '') : (q.prompt || ''),
+          unit: q.unit || '', img: q.img || null, options: q.options,
+          secs: this.DUEL_SECS, pot: this.duelPot,
+          yours: this.duelControl === side,
+          frozen: this.duelFrozen === side,
+          banked: this.duelBanked[side], foeBanked: this.duelBanked[foe],
+          foeName: this.duelLabel(foe),
+          canBank: this.duelControl === side && this.duelPot > this.DUEL_START,
+          canFreeze: this.duelHasFreeze[side]
+        });
       });
     });
     Object.keys(Host.players).forEach(id => {
@@ -4651,8 +4706,8 @@ const Quiz = {
            shouting at the telly is the whole reason to give the room a duel
            to watch rather than a private game between two people. */
         options: q.options || [], unit: q.unit || '', img: q.img || null,
-        pot: this.duelPot, aB: this.duelBanked[this.duelA], bB: this.duelBanked[this.duelB],
-        control: this.duelControl === this.duelA ? 'a' : this.duelControl === this.duelB ? 'b' : ''
+        pot: this.duelPot, aB: this.duelBanked.a, bB: this.duelBanked.b,
+        control: this.duelControl || ''
       });
     });
     this.duelHostView();
@@ -4667,8 +4722,10 @@ const Quiz = {
       this.endsAt = Date.now() + wait + 4000;
       this.tick = this.later(wait, () => {
         if (!this.active || this.mode !== 'duel') return;
-        [this.duelA, this.duelB].forEach(id => {
-          if (this.duelFrozen !== id) Host.sendTo(id, { type: 'duelGo' });
+        // everyone on a side that is not frozen out, plus the whole room
+        ['a', 'b'].forEach(side => {
+          if (this.duelFrozen === side) return;
+          this.duelMembers(side).forEach(id => Host.sendTo(id, { type: 'duelGo' }));
         });
         Object.keys(Host.players).forEach(id => {
           if (!this.duelIsIn(id)) Host.sendTo(id, { type: 'duelGo' });
@@ -4684,18 +4741,38 @@ const Quiz = {
 
   duelAnswer(peerId, n, choice, ms, value) {
     if (!this.active || this.mode !== 'duel') return;
-    if (n !== this.idx + 1 || !this.duelIsIn(peerId)) return;
-    if (this.duelFrozen === peerId || this.duelAnswers[peerId]) return;
+    if (n !== this.idx + 1) return;
+    const side = this.duelSideOf(peerId);
+    if (!side || this.duelFrozen === side) return;
+
+    /* Everyone on a team can answer, and the FIRST one in answers for the
+       team — their answer is the team's answer and the pot rides on it.
+       Anyone later is told who beat them to it rather than being ignored,
+       because a button that silently does nothing reads as broken. */
+    if (this.duelAnswers[side]) {
+      const who = this.duelAnsweredBy[side];
+      if (who && who !== peerId) {
+        Host.sendTo(peerId, { type: 'duelTooLate', who: this.duelName(who) });
+      }
+      return;
+    }
+
     // a reaction tap sends 0 for a real one and -1 for jumping the gun, which
-    // lands as a wrong answer and costs them the question; a closest-wins leg
-    // sends a typed number instead of an option
-    this.duelAnswers[peerId] = { choice: choice, ms: ms, value: value };
+    // lands as a wrong answer; a closest-wins leg sends a typed number
+    this.duelAnswers[side] = { choice: choice, ms: ms, value: value, by: peerId };
+    this.duelAnsweredBy[side] = peerId;
+
+    // tell the rest of the team who has taken it on
+    this.duelMembers(side).forEach(id => {
+      if (id !== peerId) Host.sendTo(id, { type: 'duelTheyAnswered', who: this.duelName(peerId) });
+    });
     this.duelHostView();
-    /* Once everyone who CAN answer has, there is nothing left to wait for —
-       and someone whose phone has gone quiet is not going to answer, so they
-       do not get to hold the question open. */
-    const live = [this.duelA, this.duelB].filter(id => id !== this.duelFrozen && this.duelHere(id));
-    if (live.length && live.every(id => this.duelAnswers[id])) {
+
+    /* Once every side that CAN answer has, there is nothing left to wait for.
+       A side whose players have all gone quiet is not going to answer, so it
+       does not get to hold the question open. */
+    const live = ['a', 'b'].filter(s => s !== this.duelFrozen && this.duelSideHere(s));
+    if (live.length && live.every(s => this.duelAnswers[s])) {
       clearTimeout(this.tick);
       this.later(250, () => this.duelSettle());
     }
@@ -4703,24 +4780,33 @@ const Quiz = {
 
   duelBank(peerId) {
     if (!this.active || this.mode !== 'duel') return;
-    if (peerId !== this.duelControl || this.duelPot <= this.DUEL_START) return;
-    this.duelBanked[peerId] += this.duelPot;
+    const side = this.duelSideOf(peerId);
+    if (!side || side !== this.duelControl || this.duelPot <= this.DUEL_START) return;
+    this.duelBanked[side] += this.duelPot;
     this.duelPot = this.DUEL_START;
     // banking does not lose them control; the only cost is the doubling they
-    // have just walked away from
-    Sound.say(this.duelName(peerId) + ' banks it.');
-    Host.sendTo(peerId, { type: 'duelBanked', banked: this.duelBanked[peerId], pot: this.duelPot });
-    Host.sendTo(this.duelFoe(peerId), { type: 'duelFoeBanked', who: this.duelName(peerId), foeBanked: this.duelBanked[peerId], pot: this.duelPot });
+    // have just walked away from. On a team, whoever presses first does it
+    // for everybody, same as answering.
+    const name = this.duelTeams ? this.duelName(peerId) + ' banks it for ' + this.duelLabel(side)
+                                : this.duelName(peerId) + ' banks it';
+    Sound.say(name + '.');
+    this.duelMembers(side).forEach(id =>
+      Host.sendTo(id, { type: 'duelBanked', banked: this.duelBanked[side], pot: this.duelPot, who: this.duelName(peerId) }));
+    this.duelMembers(this.duelOther(side)).forEach(id =>
+      Host.sendTo(id, { type: 'duelFoeBanked', who: this.duelLabel(side), foeBanked: this.duelBanked[side], pot: this.duelPot }));
     this.duelHostView();
   },
 
   duelUseFreeze(peerId) {
     if (!this.active || this.mode !== 'duel') return;
-    if (!this.duelIsIn(peerId) || !this.duelHasFreeze[peerId]) return;
-    this.duelHasFreeze[peerId] = false;
-    this.duelPendingFreeze = this.duelFoe(peerId);
-    Host.sendTo(peerId, { type: 'duelFroze', who: this.duelName(this.duelFoe(peerId)) });
-    Sound.say(this.duelName(peerId) + ' freezes ' + this.duelName(this.duelFoe(peerId)) + ' out.');
+    const side = this.duelSideOf(peerId);
+    if (!side || !this.duelHasFreeze[side]) return;
+    const foe = this.duelOther(side);
+    this.duelHasFreeze[side] = false;
+    this.duelPendingFreeze = foe;
+    this.duelMembers(side).forEach(id =>
+      Host.sendTo(id, { type: 'duelFroze', who: this.duelLabel(foe), by: this.duelName(peerId) }));
+    Sound.say(this.duelName(peerId) + ' freezes ' + this.duelLabel(foe) + ' out.');
     this.duelHostView();
   },
 
@@ -4736,29 +4822,29 @@ const Quiz = {
       /* A number has no wrong, only nearer and further, so the nearest simply
          takes it and nobody is docked. Not answering at all is the one way to
          lose it outright. */
-      const off = id => {
-        const a = this.duelAnswers[id];
+      const off = s => {
+        const a = this.duelAnswers[s];
         return a && isFinite(a.value) ? Math.abs(a.value - Number(q.answer)) : Infinity;
       };
-      const dA = off(this.duelA), dB = off(this.duelB);
+      const dA = off('a'), dB = off('b');
       if (dA !== Infinity || dB !== Infinity) {
-        if (dA === dB) winner = this.duelAnswers[this.duelA].ms <= this.duelAnswers[this.duelB].ms ? this.duelA : this.duelB;
-        else winner = dA < dB ? this.duelA : this.duelB;
+        if (dA === dB) winner = this.duelAnswers.a.ms <= this.duelAnswers.b.ms ? 'a' : 'b';
+        else winner = dA < dB ? 'a' : 'b';
       }
     } else {
-      const right = id => { const a = this.duelAnswers[id]; return !!a && a.choice === q.correct; };
-      const aR = right(this.duelA), bR = right(this.duelB);
-      if (aR && bR) winner = this.duelAnswers[this.duelA].ms <= this.duelAnswers[this.duelB].ms ? this.duelA : this.duelB;
-      else if (aR) winner = this.duelA;
-      else if (bR) winner = this.duelB;
+      const right = s => { const a = this.duelAnswers[s]; return !!a && a.choice === q.correct; };
+      const aR = right('a'), bR = right('b');
+      if (aR && bR) winner = this.duelAnswers.a.ms <= this.duelAnswers.b.ms ? 'a' : 'b';
+      else if (aR) winner = 'a';
+      else if (bR) winner = 'b';
 
       // being wrong costs a little, whoever you are
-      [this.duelA, this.duelB].forEach(id => {
-        const a = this.duelAnswers[id];
+      ['a', 'b'].forEach(s => {
+        const a = this.duelAnswers[s];
         if (a && a.choice !== q.correct) {
-          this.duelBanked[id] = Math.max(0, this.duelBanked[id] - this.DUEL_PENALTY);
-          this.duelStreak[id] = 0;
-          docked.push(id);
+          this.duelBanked[s] = Math.max(0, this.duelBanked[s] - this.DUEL_PENALTY);
+          this.duelStreak[s] = 0;
+          docked.push(s);
         }
       });
     }
@@ -4777,7 +4863,7 @@ const Quiz = {
         stolen = true;
       }
       this.duelStreak[winner]++;
-      this.duelStreak[this.duelFoe(winner)] = 0;
+      this.duelStreak[this.duelOther(winner)] = 0;
       if (this.duelStreak[winner] >= this.DUEL_FREEZE_AT && !this.duelHasFreeze[winner]) {
         this.duelHasFreeze[winner] = true; earned = true;
       }
@@ -4789,16 +4875,24 @@ const Quiz = {
       }
     }
 
-    const name = winner ? this.duelName(winner) : '';
-    [this.duelA, this.duelB].forEach(id => {
-      Host.sendTo(id, {
-        type: 'duelResult', answer: q.answer, correct: q.correct, kind: q.kind || 'mcq',
-        unit: q.unit || '', mineValue: (this.duelAnswers[id] || {}).value,
-        mine: winner === id, winner: name, nobody: !winner,
-        stolen: stolen && winner === id, robbed: stolen && winner !== id,
-        docked: docked.indexOf(id) >= 0, autoBanked: autoBanked && winner === id,
-        earnedFreeze: earned && winner === id,
-        pot: this.duelPot, banked: this.duelBanked[id], foeBanked: this.duelBanked[this.duelFoe(id)]
+    const name = winner ? this.duelLabel(winner) : '';
+    // on a team, say who actually took it on
+    const byName = winner && this.duelAnsweredBy[winner] ? this.duelName(this.duelAnsweredBy[winner]) : '';
+    ['a', 'b'].forEach(side => {
+      const foe = this.duelOther(side);
+      const mineBy = this.duelAnsweredBy[side];
+      this.duelMembers(side).forEach(id => {
+        Host.sendTo(id, {
+          type: 'duelResult', answer: q.answer, correct: q.correct, kind: q.kind || 'mcq',
+          unit: q.unit || '', mineValue: (this.duelAnswers[side] || {}).value,
+          mine: winner === side, winner: name, byName: byName, teams: this.duelTeams,
+          answeredBy: mineBy && mineBy !== id ? this.duelName(mineBy) : '',
+          nobody: !winner,
+          stolen: stolen && winner === side, robbed: stolen && winner !== side,
+          docked: docked.indexOf(side) >= 0, autoBanked: autoBanked && winner === side,
+          earnedFreeze: earned && winner === side,
+          pot: this.duelPot, banked: this.duelBanked[side], foeBanked: this.duelBanked[foe]
+        });
       });
     });
     Object.keys(Host.players).forEach(id => {
@@ -4806,8 +4900,8 @@ const Quiz = {
       Host.sendTo(id, {
         type: 'duelWatchResult', answer: q.answer, correct: q.correct,
         kind: q.kind || 'mcq', unit: q.unit || '', winner: name, nobody: !winner,
-        stolen: stolen, pot: this.duelPot,
-        aB: this.duelBanked[this.duelA], bB: this.duelBanked[this.duelB]
+        stolen: stolen, pot: this.duelPot, byName: byName,
+        aB: this.duelBanked.a, bB: this.duelBanked.b
       });
     });
 
@@ -4821,34 +4915,36 @@ const Quiz = {
   },
 
   duelFinish() {
-    const a = this.duelA, b = this.duelB;
-
     /* Whatever is in the pot when the last question is done goes to whoever
-       is holding it.
-
-       Losing it because the round ran out of questions is a punishment for
-       nothing: there is no next question to bank before, so the decision the
-       whole round is built on was never offered. The pot is still lost the
-       moment you get one wrong, which is where the nerve actually lives.
-       Caught by a test duel that finished nil-nil because neither of them had
-       happened to press Bank. */
+       is holding it. Losing it because the round ran out of questions is a
+       punishment for nothing: banking is a decision made before a question,
+       and on the last one there is no question left to make it before. The
+       pot is still lost the instant you get one wrong, which is where the
+       nerve actually lives. */
     if (this.duelControl && this.duelPot > 0) {
       this.duelBanked[this.duelControl] += this.duelPot;
       this.duelPot = 0;
     }
 
-    const aS = this.duelBanked[a], bS = this.duelBanked[b];
-    const winner = aS === bS ? null : (aS > bS ? a : b);
+    const aS = this.duelBanked.a, bS = this.duelBanked.b;
+    const winner = aS === bS ? null : (aS > bS ? 'a' : 'b');
 
-    // what was banked in the duel is what goes on the real scoreboard
-    [a, b].forEach(id => {
-      const p = Host.players[id];
-      if (!p) return;
-      p.score += this.duelBanked[id];
-      p.stats = p.stats || Host.blankStats();
-      p.stats.byMode.duel = (p.stats.byMode.duel || 0) + this.duelBanked[id];
-      p.stats.bestSingle = Math.max(p.stats.bestSingle || 0, this.duelBanked[id]);
-      this.roundGains[id] = (this.roundGains[id] || 0) + this.duelBanked[id];
+    /* What a side banked is what goes on the scoreboard. A team's total is
+       the sum of its members, so the banked score is split across them —
+       otherwise a team of four would score four times what it won. */
+    ['a', 'b'].forEach(side => {
+      const members = this.duelMembers(side);
+      if (!members.length) return;
+      const each = Math.round(this.duelBanked[side] / members.length);
+      members.forEach(id => {
+        const p = Host.players[id];
+        if (!p) return;
+        p.score += each;
+        p.stats = p.stats || Host.blankStats();
+        p.stats.byMode.duel = (p.stats.byMode.duel || 0) + each;
+        p.stats.bestSingle = Math.max(p.stats.bestSingle || 0, each);
+        this.roundGains[id] = (this.roundGains[id] || 0) + each;
+      });
     });
 
     // and the watchers who called it right
@@ -4863,38 +4959,45 @@ const Quiz = {
 
     Object.keys(Host.players).forEach(id => {
       const backed = this.duelCalls[id];
+      const mySide = this.duelSideOf(id);
       Host.sendTo(id, {
         type: 'duelEnd',
-        aName: this.duelName(a), bName: this.duelName(b), aScore: aS, bScore: bS,
-        winner: winner ? this.duelName(winner) : '', drawn: !winner,
-        mine: id === winner, iLost: this.duelIsIn(id) && !!winner && id !== winner,
+        aName: this.duelLabel('a'), bName: this.duelLabel('b'), aScore: aS, bScore: bS,
+        winner: winner ? this.duelLabel(winner) : '', drawn: !winner,
+        mine: !!mySide && mySide === winner,
+        iLost: !!mySide && !!winner && mySide !== winner,
         calledIt: !!(backed && winner && backed === winner), gotCall: this.DUEL_PREDICT,
         score: (Host.players[id] || {}).score || 0
       });
     });
     Host.pushBoard();
-    $('quizHostView').innerHTML = '<b>Duel over</b> — ' + esc(this.duelName(a)) + ' ' + aS +
-      ', ' + esc(this.duelName(b)) + ' ' + bS +
-      (winner ? ' — <b>' + esc(this.duelName(winner)) + '</b> takes it' : ' — dead heat');
+    $('quizHostView').innerHTML = '<b>Duel over</b> — ' + esc(this.duelLabel('a')) + ' ' + aS +
+      ', ' + esc(this.duelLabel('b')) + ' ' + bS +
+      (winner ? ' — <b>' + esc(this.duelLabel(winner)) + '</b> takes it' : ' — dead heat');
     if (winner) {
-      const v = Host.voiceFor(this.duelName(winner));
-      Sound.say(this.duelName(winner) + ' wins the duel', v.voice, v.style);
+      const v = Host.voiceFor(this.duelLabel(winner));
+      Sound.say(this.duelLabel(winner) + ' wins the duel', v.voice, v.style);
     } else Sound.say('A dead heat. Nobody wins that one.');
     this.later(5200, () => this.finish());
   },
 
   duelHostView(q, name, stolen) {
-    if (!this.duelA) return;
-    const line = id => esc(this.duelName(id)) + ' <b>' + this.duelBanked[id] + '</b>' +
-      (this.duelControl === id ? ' ⟵ holds the pot' : '') +
-      (this.duelHasFreeze[id] ? ' ❄' : '') +
-      (this.duelFrozen === id ? ' <span class="muted">(frozen out)</span>' : '') +
-      (this.duelAnswers[id] ? ' <span class="muted">· answered</span>' : '');
+    if (!this.duelSides) return;
+    const line = side => {
+      const ans = this.duelAnswers[side];
+      const by = ans && ans.by ? this.duelName(ans.by) : '';
+      return esc(this.duelLabel(side)) + ' <b>' + this.duelBanked[side] + '</b>' +
+        (this.duelTeams ? ' <span class="muted">(' + this.duelMembers(side).map(i => esc(this.duelName(i))).join(', ') + ')</span>' : '') +
+        (this.duelControl === side ? ' ⟵ holds the pot' : '') +
+        (this.duelHasFreeze[side] ? ' ❄' : '') +
+        (this.duelFrozen === side ? ' <span class="muted">(frozen out)</span>' : '') +
+        (ans ? ' <span class="muted">· ' + (by ? esc(by) + ' answered' : 'answered') + '</span>' : '');
+    };
     const calls = Object.keys(this.duelCalls).length;
     $('quizHostView').innerHTML =
       '<b>' + (this.idx + 1 || 0) + '/' + this.questions.length + '</b> — pot <b>' + this.duelPot + '</b>' +
       (q ? ' — answer: <b>' + esc(q.answer) + '</b>' + (name ? ' — ' + esc(name) + (stolen ? ' STEALS it' : ' takes it') : ' — nobody got it') : '') +
-      '<br>' + line(this.duelA) + '<br>' + line(this.duelB) +
+      '<br>' + line('a') + '<br>' + line('b') +
       (calls ? '<br><span class="muted">' + calls + ' watching have called it</span>' : '');
   },
 
@@ -5249,9 +5352,9 @@ const Quiz = {
         if (!this.questions.length) throw new Error('Could not prepare any ' + noun + 's.');
       }
       // nothing from a previous duel should leak into this round
-      this.duelA = null; this.duelB = null; this.duelControl = null;
+      this.duelSides = null; this.duelTeams = false; this.duelControl = null;
       this.duelFrozen = null; this.duelPendingFreeze = null; this.duelGoneSince = null;
-      this.duelAnswers = {}; this.duelCalls = {};
+      this.duelAnswers = {}; this.duelAnsweredBy = {}; this.duelCalls = {};
       // a new number for this round, so anything still pending from the last
       // one is ignored rather than fired into this one
       this.runId = (this.runId || 0) + 1;
@@ -6729,6 +6832,8 @@ const Player = {
       case 'duelBanked':      this.duelBanked(msg); break;
       case 'duelFoeBanked':   this.duelFoeBanked(msg); break;
       case 'duelFroze':       this.duelFroze(msg); break;
+      case 'duelTheyAnswered': this.duelTheyAnswered(msg); break;
+      case 'duelTooLate':     this.duelTooLate(msg); break;
       case 'duelEnd':         this.duelEnd(msg); break;
       case 'bnYours':   this.bnYours(msg); break;
       case 'bnWaiting': this.bnWaiting(msg); break;
@@ -7036,7 +7141,10 @@ const Player = {
     $('duelSay').textContent = '';
 
     if (this._duelMe) {
-      $('duelNote').textContent = 'You are in this one.';
+      $('duelNote').textContent = msg.teams
+        ? 'You are on ' + (msg.youAre === 'a' ? msg.a.name : msg.b.name) +
+          '. Anyone can answer — first one in answers for the team.'
+        : 'You are in this one.';
       $('duelCall').classList.add('hidden');
     } else {
       // watchers get a stake: back one of them before a question is asked
@@ -7247,7 +7355,7 @@ const Player = {
                       mine ? $('duelBankB').textContent : msg.banked);
     this.duelPotIs(msg.pot, false);
     $('duelBankBtn').style.display = 'none';
-    $('duelSay').textContent = 'Banked. It is yours whatever happens now.';
+    $('duelSay').textContent = (msg.who ? msg.who + ' banked it. ' : 'Banked. ') + 'It is safe whatever happens now.';
     this.vibe([60, 40, 60]);
   },
 
@@ -7261,8 +7369,27 @@ const Player = {
 
   duelFroze(msg) {
     $('duelFreezeBtn').style.display = 'none';
-    $('duelSay').textContent = '❄ ' + msg.who + ' is frozen out of the next one.';
+    $('duelSay').textContent = '❄ ' + msg.who + ' is frozen out of the next one' +
+      (msg.by ? ' — ' + msg.by + ' spent it.' : '.');
     this.vibe([80]);
+  },
+
+  /* Somebody on your team got in first. Their answer is the team's answer, so
+     say who rather than leaving the rest of the team tapping at buttons that
+     have quietly stopped mattering. */
+  duelTheyAnswered(msg) {
+    this._duelAnswered = true;
+    [...$('duelOptions').children].forEach(b => { b.disabled = true; });
+    const pad = $('duelPad');
+    if (!pad.classList.contains('hidden')) { pad.disabled = true; pad.classList.add('done'); pad.textContent = msg.who + ' got it'; }
+    const gi = $('duelGuessInput');
+    if (gi) { gi.disabled = true; $('duelGuessBtn').disabled = true; }
+    $('duelSay').textContent = '⚡ ' + msg.who + ' answered for you.';
+  },
+
+  duelTooLate(msg) {
+    $('duelSay').textContent = '⚡ ' + msg.who + ' was in first — that one is theirs.';
+    this.vibe([40]);
   },
 
   duelResult(msg) {
@@ -7298,11 +7425,12 @@ const Player = {
     else if (msg.stolen) line = '💰 Stolen! You took the pot off them.';
     else if (msg.robbed) line = '😬 ' + msg.winner + ' stole the pot.';
     else if (msg.autoBanked) line = '🏆 Five in a row — banked automatically.';
-    else if (msg.mine) line = '✅ Yours. The pot doubles.';
-    else line = msg.winner + ' takes it.';
+    else if (msg.mine) line = '✅ Yours. The pot doubles.' + (msg.teams && msg.byName ? ' (' + msg.byName + ' had it)' : '');
+    else line = msg.winner + ' takes it.' + (msg.teams && msg.byName ? ' (' + msg.byName + ')' : '');
     if (msg.docked) line += ' (−' + 10 + ' for the wrong answer)';
     $('duelNote').textContent = line;
-    $('duelSay').textContent = msg.earnedFreeze ? '❄ Three in a row — you have a freeze to spend.' : '';
+    $('duelSay').textContent = msg.earnedFreeze ? '❄ Three in a row — you have a freeze to spend.'
+      : msg.answeredBy ? msg.answeredBy + ' answered for you that time.' : '';
     this.vibe(msg.mine ? [60, 40, 60] : [120]);
   },
 
