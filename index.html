@@ -439,6 +439,10 @@
   .night-opts select { flex: 1; min-width: 0; font-size: .8rem; padding: 4px 6px;
                        border-radius: 8px; background: rgba(0,0,0,.3); color: #fff;
                        border: 1px solid rgba(255,255,255,.2) }
+  /* Shown when the host tab loses the screen mid-night. */
+  #hiddenWarn { margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+                background: rgba(255,193,7,.15); border: 1px solid rgba(255,193,7,.5);
+                color: #ffe08a; font-size: .9rem; font-weight: 700 }
 </style>
 </head>
 <body>
@@ -686,6 +690,10 @@
           <button class="btn ghost small" onclick="Night.stop()">Stop</button>
         </div>
         <p class="muted redact-note mt" id="nightStatus">Nothing planned yet — set up a round below and add it.</p>
+        <!-- Chrome slows a hidden tab's timers right down, so a night left in
+             the background crawls. Say so plainly rather than letting the
+             game look broken. -->
+        <div id="hiddenWarn" class="hidden">⚠ Keep this window on screen — Buzz Night runs the clocks and the music from here, and browsers slow down tabs you cannot see.</div>
       </div>
 
       <details class="fold" id="quizCard">
@@ -1882,12 +1890,72 @@ const Sound = {
 };
 
 /* keep screens awake during the game (phones lock mid-round otherwise) */
+/* Keeping the host awake.
+
+   This looked like the game freezing, and it is not. Chrome throttles timers
+   in a tab that is not on screen: everything short is clamped to once a
+   second, and after five minutes hidden it drops to once a MINUTE. The host
+   tab runs every clock in the game — question timers, count-ins, round
+   changes, the music — so a host who switches tab or minimises the window
+   comes back to a quiz that has barely moved. Measured here: timers set for
+   200ms were firing at 1000ms the moment the tab lost the screen.
+
+   A screen wake lock does not help with that; it only stops the display
+   dimming, and it cannot even be taken while the tab is hidden, which is why
+   it was never actually held. What does help is audio. Chrome exempts a page
+   that is producing sound from the worst of the throttling, so a night keeps
+   a silent tone running for as long as it is playing. */
 const Wake = {
-  lock: null,
-  async on() { try { this.lock = await navigator.wakeLock.request('screen'); } catch(e) {} }
+  lock: null, ctx: null, node: null,
+
+  async on() {
+    // a wake lock can only be taken while visible, and is lost on hiding
+    try { if (document.visibilityState === 'visible') this.lock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  },
+
+  /* Silent, but sound as far as Chrome is concerned. Started from the click
+     that begins the night, because audio needs a gesture behind it. */
+  audioOn() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!this.ctx) {
+        this.ctx = new AC();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        // not zero: some browsers optimise a truly silent graph away
+        gain.gain.value = 0.0001;
+        osc.frequency.value = 30;
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start();
+        this.node = osc;
+      }
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+    } catch (e) {}
+  },
+
+  audioOff() {
+    try { if (this.ctx && this.ctx.state === 'running') this.ctx.suspend(); } catch (e) {}
+  }
 };
+
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && Wake.lock) Wake.on();
+  const back = document.visibilityState === 'visible';
+  if (back) {
+    Wake.on();
+    if (Wake.ctx) Wake.audioOn();
+    /* Coming back from a throttled spell, a question whose time ran out while
+       nobody was looking would otherwise sit there waiting for a timer that
+       is late. Settle it now rather than leaving the room staring at it. */
+    try {
+      if (Quiz.active && Quiz.mode !== 'buzzname' && Quiz.endsAt && Date.now() > Quiz.endsAt + 500) Quiz.close();
+    } catch (e) {}
+  }
+  // say so, rather than letting it look broken
+  try {
+    const warn = $('hiddenWarn');
+    if (warn) warn.classList.toggle('hidden', back || !Night.running);
+  } catch (e) {}
 });
 
 /* ======================================================================
@@ -5420,6 +5488,9 @@ const Night = {
     if (!this.plan.length) { alert('Add some rounds first.'); return; }
     if (this.running) return;
     this.running = true; this.idx = -1;
+    // pressing start is the gesture that lets us hold the tab awake for the
+    // rest of the night
+    Wake.audioOn(); Wake.on();
     Seen.newNight();   // a fresh evening: nothing counts as used-tonight yet
     $('nightGoBtn').disabled = true;
     Sound.say('Welcome to Buzz Night. Here we go.');
@@ -5638,6 +5709,8 @@ const Night = {
 
   stop() {
     this.running = false; this.waiting = false;
+    Wake.audioOff();
+    $('hiddenWarn') && $('hiddenWarn').classList.add('hidden');
     clearTimeout(this.timer);
     this.releaseGo();
     if (Quiz.active) Quiz.stop();
@@ -5680,6 +5753,8 @@ const Night = {
 
   done() {
     this.running = false;
+    Wake.audioOff();
+    $('hiddenWarn') && $('hiddenWarn').classList.add('hidden');
     $('nightNextBtn').classList.add('hidden');
     $('nightGoBtn').classList.remove('hidden');
     $('nightGoBtn').disabled = false;
