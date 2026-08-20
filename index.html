@@ -8,7 +8,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <!-- Written question bank. Local file, no build step, loads off the hard
      drive as well as off Pages. Missing = only this round breaks. -->
-<script src="questions.js"></script>
+<!-- Loaded with the page's own timestamp on the end, so a question bank
+     that changed five minutes ago is not quietly served from yesterday's
+     cache. GitHub Pages caches for ten minutes and the file is only about
+     100KB, so re-fetching it costs nothing next to spending an evening
+     wondering why an edit has not appeared. -->
+<script>document.write('<script src="questions.js?v=' + Math.floor(Date.now() / 60000) + '"><\/script>');</script>
 <style>
   :root {
     --bg: #14082b;
