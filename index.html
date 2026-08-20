@@ -229,13 +229,23 @@
   #quizArt.logo { object-fit: contain; image-rendering: auto }
   #quizCountdown { font-size: 2.6rem; font-weight: 900; color: var(--gold); min-height: 3rem; }
   #quizCountdown.hurry { color: var(--red); }
-  #quizOptions { display: grid; gap: 10px; margin-top: 6px; }
+  /* Four boxes in a square rather than a list running down the screen.
+
+     A column makes the four options read like a ranking, and it pushes the
+     last one under the fold on a small phone — which is a real disadvantage
+     if the answer happens to be number four. A square puts all four the same
+     distance from a thumb and the same distance from the eye.
+
+     It drops back to a single column when the options are long enough that
+     two across would wrap into a mess. */
+  #quizOptions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+  #quizOptions.longtext { grid-template-columns: 1fr; }
   /* Answer buttons are the thing people jab at in a noisy room, half cut, on
      a phone held one-handed. Comfortably past the 44px minimum tap target,
      with a visible border rather than relying on background alone, and a
      number so they can be called out loud. */
   .quiz-opt {
-    min-height: 64px; padding: 16px 14px; border-radius: 14px;
+    min-height: 84px; padding: 14px 12px; border-radius: 14px;
     border: 2px solid rgba(255,255,255,.28);
     background: var(--panel2); color: #fff; font-size: 1.15rem; font-weight: 700;
     cursor: pointer; text-align: left; line-height: 1.35;
@@ -481,6 +491,8 @@
   #duelActions .btn { flex: 1; font-size: .95rem }
   /* duel options are quiz-opt like every other round, so they inherit the
      right and wrong colours rather than needing their own */
+  #duelOptions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
+  #duelOptions.longtext { grid-template-columns: 1fr }
   #duelOptions .quiz-opt { width: 100% }
   #duelBankBtn { background: #ffd257; color: #241a04 }
   #duelFreezeBtn { background: #7fdcff; color: #06222b }
@@ -7262,6 +7274,7 @@ const Player = {
     const showOptions = () => {
       $('quizArtWrap').classList.remove('showing');
       if (msg.listen) this.setStatus('🎧 Listen…');
+      this.squareOrColumn($('quizOptions'), msg.options);
       msg.options.forEach((opt, i) => {
         const b = document.createElement('button');
         b.className = 'quiz-opt';
@@ -7441,9 +7454,18 @@ const Player = {
     if (!msg.frozen) this.vibe([30]);
   },
 
+  /* Two across is better for four short answers and worse for four long
+     ones — "A combined question and exclamation mark" in a half-width box is
+     four lines of wrapping. Anything wordy goes back to a single column. */
+  squareOrColumn(box, options) {
+    const longest = (options || []).reduce((n, o) => Math.max(n, String(o).length), 0);
+    box.classList.toggle('longtext', longest > 16 || (options || []).length !== 4);
+  },
+
   duelOptions(options) {
     const box = $('duelOptions');
     box.innerHTML = '';
+    this.squareOrColumn(box, options);
     (options || []).forEach((opt, i) => {
       const b = document.createElement('button');
       b.className = 'quiz-opt';
@@ -7677,6 +7699,7 @@ const Player = {
     const later = msg.kind === 'memory' ? (msg.showMs || 3200) : 0;
     this.later_(later, () => {
       box.innerHTML = '';
+      this.squareOrColumn(box, msg.options);
       (msg.options || []).forEach((opt, i) => {
         const b = document.createElement('button');
         b.className = 'quiz-opt';
