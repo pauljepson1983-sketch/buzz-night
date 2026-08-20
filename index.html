@@ -5789,6 +5789,13 @@ const Player = {
         $('quizPrompt').classList.add('hidden');
         $('quizPrompt').textContent = '';
         $('placeBox').classList.add('hidden');
+        /* Closest wins and the buzz round have their own panels, and neither
+           was cleared here. Start a round after either of them and the last
+           question sat on screen underneath the new one — two questions at
+           once, which is exactly as confusing as it sounds. */
+        $('guessBox').classList.add('hidden');
+        $('guessPrompt').textContent = '';
+        $('bnBox').classList.add('hidden');
         $('quizFeedback').textContent = '';
         $('quizCountdown').textContent = '';
         $('quizRound').textContent = (msg.roundLabel ? msg.roundLabel + ' · ' : '') + (msg.title || 'Quiz round');
