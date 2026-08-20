@@ -3111,6 +3111,9 @@ const Quiz = {
       if (found.size >= count + 12) break;
     }
     const films = [...found.values()].filter(f => !needUri || f.uri);
+    // a refused search is not a narrow one — do not send the host off
+    // changing decades that were never the problem
+    if (films.length < 4 && failure) { failure.searchFailed = true; throw failure; }
     if (films.length < 4) throw new Error('Only found ' + films.length + ' films for ' + (label || 'that') + ' — too narrow. Try Any decade.');
     this.available = films.length;
     return films;
