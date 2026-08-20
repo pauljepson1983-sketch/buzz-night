@@ -5504,14 +5504,38 @@ const Night = {
     }
 
     if (!this.running) return;
+
+    /* Still nothing. Rather than leave a hole in the night, play something
+       that needs no internet at all.
+
+       Fastest finger, closest wins, logos and the map round all build from
+       what is already on this device, so they cannot fail for the reasons the
+       music rounds do. A room does not care which round was planned; it cares
+       that the quiz carried on. The planned round stays in the running order
+       and can be tried again afterwards. */
+    if (!ok && this.running) {
+      const why0 = ($('quizStatus').textContent || '').replace(/^⚠\s*/, '');
+      const OFFLINE = ['quickfire', 'guess', 'logos', 'places'].filter(m => m !== r.mode);
+      const alt = OFFLINE[Math.floor(Math.random() * OFFLINE.length)];
+      $('nightStatus').textContent = 'Round ' + n + ' would not build' +
+        (why0 && /[a-z]/i.test(why0) ? ' — ' + why0 : '.') +
+        ' Playing ' + (Quiz.TITLES[alt] || alt) + ' instead so the night keeps moving.';
+      Sound.say('That one is not playing ball. ' + (Quiz.ROUND_NAMES[alt] || 'Another round') + ' instead.');
+      await this.wait(2600);
+      if (!this.running) return;
+      Host.broadcast({ type: 'roundCard', kicker: r.roundLabel,
+        name: Quiz.TITLES[alt] || 'Quiz round', how: Quiz.HOWTO[alt] || '' });
+      ok = await Quiz.runRound({ ...r, mode: alt, decade: '', style: '', extra: '' });
+    }
+
+    if (!this.running) return;
     if (!ok) {
       // carry the actual reason through instead of a shrug — it is the
       // difference between 'the game is broken' and 'Spotify is logged out'
       const why = ($('quizStatus').textContent || '').replace(/^⚠s*/, '');
-      /* Do not just move on. The host is stood in front of a room and needs
-         to decide: have another go, or drop it and carry on. Waiting for a
-         person is the right default — the night resumes the moment they
-         press something. */
+      /* Even the offline stand-in failed, which means something is properly
+         wrong. Now it is worth stopping to ask, rather than churning through
+         the running order failing at every round. */
       this.failedRound = r;
       $('nightRetryBtn').classList.remove('hidden');
       $('nightStatus').textContent = 'Round ' + n + ' could not be built' +
