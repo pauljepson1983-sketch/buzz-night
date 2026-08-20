@@ -443,6 +443,35 @@
   #hiddenWarn { margin-top: 10px; padding: 10px 12px; border-radius: 10px;
                 background: rgba(255,193,7,.15); border: 1px solid rgba(255,193,7,.5);
                 color: #ffe08a; font-size: .9rem; font-weight: 700 }
+  /* The Duel. The pot is the biggest thing on the screen, because the pot is
+     the whole decision. */
+  #duelVs { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+            gap: 10px; margin: 10px 0 14px }
+  .duel-side { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0 }
+  .duel-face { font-size: 1.6rem; line-height: 1 }
+  .duel-who { font-size: .82rem; opacity: .8; max-width: 100%; overflow: hidden;
+              text-overflow: ellipsis; white-space: nowrap }
+  .duel-bank { font-size: 1.5rem; font-weight: 900; font-variant-numeric: tabular-nums }
+  .duel-side.holds .duel-bank { color: #ffd257 }
+  .duel-side.me .duel-who { opacity: 1; font-weight: 800; text-decoration: underline }
+  #duelPot { font-size: 2.6rem; font-weight: 900; color: #ffd257; font-variant-numeric: tabular-nums;
+             text-shadow: 0 0 18px rgba(255,210,87,.45) }
+  #duelPot.grew { animation: duelPop .45s ease-out }
+  @keyframes duelPop { 0% { transform: scale(1) } 45% { transform: scale(1.35) } 100% { transform: scale(1) } }
+  @media (prefers-reduced-motion: reduce) { #duelPot.grew { animation: none } }
+
+  #duelPrompt { font-size: 1.15rem; font-weight: 800; margin: 8px 0 }
+  #duelImg { max-width: 60%; max-height: 30vh; margin: 6px auto; display: block; border-radius: 12px; background: #fff; padding: 10px }
+  #duelOptions { display: flex; flex-direction: column; gap: 8px }
+  #duelActions { display: flex; gap: 8px; margin-top: 12px }
+  #duelActions .btn { flex: 1; font-size: .95rem }
+  #duelBankBtn { background: #ffd257; color: #241a04 }
+  #duelFreezeBtn { background: #7fdcff; color: #06222b }
+  #duelNote { font-weight: 800; margin: 4px 0 }
+  #duelSay { opacity: .85; margin-top: 10px }
+  #duelBox.frozen #duelOptions { opacity: .25; pointer-events: none; filter: grayscale(1) }
+  #duelCallBtns { display: flex; gap: 8px }
+  #duelCallBtns .btn { flex: 1 }
 </style>
 </head>
 <body>
@@ -658,6 +687,7 @@
             <button class="btn ghost small" onclick="Night.quickAdd('logos')">🏷️ Logos</button>
             <button class="btn ghost small" onclick="Night.quickAdd('places')">🌍 Where is it?</button>
             <button class="btn ghost small" onclick="Night.quickAdd('buzzname')">🎤 Buzz and name it</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('duel')">⚔️ The Duel</button>
             <button class="btn ghost small" onclick="Night.quickAdd('guess')">🎯 Closest wins</button>
             <button class="btn ghost small" onclick="Night.quickAdd('faces')">⭐ Faces</button>
             <button class="btn ghost small" onclick="Night.quickAdd('backdrops')">🎬 Stills</button>
@@ -709,6 +739,7 @@
             <option value="songs">Name the song (music)</option>
             <option value="tv">TV theme tunes (music)</option>
             <option value="buzzname">Buzz and name it (music)</option>
+            <option value="duel">The Duel (two players, head to head)</option>
             <option value="places">Where is it? (maps)</option>
             <option value="logos">Logos</option>
             <option value="quickfire">Fastest finger (general knowledge)</option>
@@ -893,6 +924,39 @@
       <button class="btn ghost small" id="placeZoom">🔍 Zoom in to fine-tune</button>
       <button class="btn green" id="placeLock" style="width:100%;margin-top:10px">Lock it in</button>
     </div>
+    <!-- The duel. Two people get the buttons; everyone else gets the same
+         scoreboard with no buttons, plus a winner to back before it starts. -->
+    <div id="duelBox" class="hidden">
+      <div id="duelVs">
+        <div class="duel-side" id="duelSideA">
+          <span class="duel-face" id="duelFaceA"></span>
+          <span class="duel-who" id="duelNameA"></span>
+          <span class="duel-bank" id="duelBankA">0</span>
+        </div>
+        <span id="duelPot" title="the pot">10</span>
+        <div class="duel-side" id="duelSideB">
+          <span class="duel-face" id="duelFaceB"></span>
+          <span class="duel-who" id="duelNameB"></span>
+          <span class="duel-bank" id="duelBankB">0</span>
+        </div>
+      </div>
+
+      <div id="duelCall" class="hidden">
+        <p id="duelCallAsk">Who is going to win it?</p>
+        <div id="duelCallBtns"></div>
+      </div>
+
+      <p id="duelNote"></p>
+      <p id="duelPrompt"></p>
+      <img id="duelImg" class="hidden" alt="">
+      <div id="duelOptions"></div>
+      <div id="duelActions">
+        <button class="btn big" id="duelBankBtn" onclick="Player.duelBankIt()">💰 Bank it</button>
+        <button class="btn big" id="duelFreezeBtn" onclick="Player.duelFreezeThem()">❄ Freeze them out</button>
+      </div>
+      <p id="duelSay"></p>
+    </div>
+
     <div id="guessBox" class="hidden">
       <p id="guessPrompt" style="font-size:1.15rem; font-weight:800; margin:10px 0"></p>
       <input type="number" id="guessInput" inputmode="numeric" placeholder="Your guess"
@@ -2257,6 +2321,10 @@ const Host = {
       Quiz.answer(conn.peer, msg.n, msg.choice);
       return;
     }
+    if (msg.type === 'duelAnswer') { Quiz.duelAnswer(conn.peer, msg.n, msg.choice, msg.ms); return; }
+    if (msg.type === 'duelBank')   { Quiz.duelBank(conn.peer); return; }
+    if (msg.type === 'duelFreeze') { Quiz.duelUseFreeze(conn.peer); return; }
+    if (msg.type === 'duelCall')   { Quiz.duelCall(conn.peer, msg.who); return; }
     if (msg.type === 'bnBuzz') { Quiz.bnBuzz(conn.peer, msg.n); return; }
     if (msg.type === 'bnSay')  { Quiz.bnSaid(conn.peer, msg.n, msg.guesses || ['']); return; }
     if (msg.type === 'quizP') {
@@ -4105,6 +4173,317 @@ const Quiz = {
     this.later(5200, () => this.next());
   },
 
+  /* ---- The Duel: two players, everyone else watching -------------------
+
+     One nervous decision, asked ten times over: take the pot, or go again for
+     double. Everything else hangs off that. A duel with four separate systems
+     in it is a duel nobody can follow from the sofa.
+
+     The pot doubles on every consecutive right answer and is lost on a wrong
+     one, which hands the question — and the pot — to the other player. Three
+     in a row earns a freeze that kills the opponent's buttons for one
+     question. Being wrong also costs a little off the banked score: enough to
+     stop someone tapping at random, not enough to feel mean.
+
+     Everyone not duelling backs a winner before it starts, so a round with
+     two people in it still has something in it for the other four. */
+  DUEL_START: 10,        // where every fresh streak begins
+  DUEL_CEIL: 160,        // five in a row: banked automatically, streak over
+  DUEL_PENALTY: 10,      // cost of answering wrong, off the banked score
+  DUEL_FREEZE_AT: 3,     // consecutive right answers that earn a freeze
+  DUEL_SECS: 15,
+  DUEL_PREDICT: 20,      // for a watcher who called it right
+
+  /* Half written questions, half logos, shuffled together. The mix is the
+     variety — no two questions running the same way is what keeps three
+     minutes feeling short. Both are plainly right or wrong, which the pot
+     needs: control has to pass cleanly, and a number guess has no wrong, only
+     nearer, which is why closest wins is kept out of this. */
+  async buildDuel(count) {
+    const written = Math.ceil(count / 2);
+    let qs = this.buildQuickfire(written);
+    try {
+      const logos = await this.buildLogos(count - written);
+      logos.forEach(q => { q.img = q.url; });
+      qs = qs.concat(logos);
+    } catch (e) {
+      // no logos tonight is a thinner duel, not a dead one
+      qs = qs.concat(this.buildQuickfire(count - written));
+    }
+    return this.shuffle(qs).slice(0, count);
+  },
+
+  /* Who ends up in it. Closest two by default: it needs no explaining to the
+     room and it never produces a walkover. */
+  duelPick() {
+    const ids = Object.keys(Host.players).filter(id => Host.isPresent(Host.players[id]));
+    if (ids.length < 2) throw new Error('The duel needs two people in the room — there ' +
+      (ids.length === 1 ? 'is only one' : 'is nobody') + ' here.');
+    const how = this.duelPairing || 'closest';
+    const score = id => (Host.players[id] || {}).score || 0;
+    const sorted = ids.slice().sort((a, b) => score(b) - score(a));
+    if (how === 'top') return [sorted[0], sorted[1]];
+    if (how === 'topbottom') return [sorted[0], sorted[sorted.length - 1]];
+    if (how === 'random') { const s = this.shuffle(ids.slice()); return [s[0], s[1]]; }
+    let best = [sorted[0], sorted[1]], gap = Infinity;
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const g = Math.abs(score(sorted[i]) - score(sorted[i + 1]));
+      if (g < gap) { gap = g; best = [sorted[i], sorted[i + 1]]; }
+    }
+    return best;
+  },
+
+  duelName(id) { return (Host.players[id] || {}).name || '?'; },
+  duelFoe(id) { return id === this.duelA ? this.duelB : this.duelA; },
+  duelIsIn(id) { return id === this.duelA || id === this.duelB; },
+
+  duelSetUp() {
+    const pair = this.duelPick();
+    this.duelA = pair[0]; this.duelB = pair[1];
+    this.duelBanked = {}; this.duelBanked[this.duelA] = 0; this.duelBanked[this.duelB] = 0;
+    this.duelStreak = {}; this.duelStreak[this.duelA] = 0; this.duelStreak[this.duelB] = 0;
+    this.duelHasFreeze = {}; this.duelHasFreeze[this.duelA] = false; this.duelHasFreeze[this.duelB] = false;
+    this.duelPot = this.DUEL_START;
+    this.duelControl = null;
+    this.duelPendingFreeze = null;
+    this.duelFrozen = null;
+    this.duelAnswers = {};
+    this.duelCalls = {};
+    const card = {
+      type: 'duelStart',
+      a: { name: this.duelName(this.duelA), avatar: (Host.players[this.duelA] || {}).avatar || '' },
+      b: { name: this.duelName(this.duelB), avatar: (Host.players[this.duelB] || {}).avatar || '' },
+      total: this.questions.length, pot: this.duelPot, ceiling: this.DUEL_CEIL
+    };
+    Object.keys(Host.players).forEach(id => {
+      Host.sendTo(id, Object.assign({}, card, {
+        youAre: id === this.duelA ? 'a' : id === this.duelB ? 'b' : 'watch'
+      }));
+    });
+    Sound.say(this.duelName(this.duelA) + ' versus ' + this.duelName(this.duelB) + '. Everybody else, pick a winner.');
+    this.duelHostView();
+  },
+
+  // a watcher backing one of them, before the first question goes out
+  duelCall(peerId, who) {
+    if (!this.active || this.mode !== 'duel') return;
+    if (this.duelIsIn(peerId) || this.idx >= 0) return;
+    this.duelCalls[peerId] = who === 'a' ? this.duelA : this.duelB;
+    Host.sendTo(peerId, { type: 'duelCalled', who: who });
+    this.duelHostView();
+  },
+
+  duelAsk() {
+    const q = this.questions[this.idx];
+    this.duelAnswers = {};
+    // a freeze bought last question lands on this one
+    this.duelFrozen = this.duelPendingFreeze;
+    this.duelPendingFreeze = null;
+
+    [this.duelA, this.duelB].forEach(id => {
+      Host.sendTo(id, {
+        type: 'duelQ', n: this.idx + 1, total: this.questions.length,
+        prompt: q.prompt || '', img: q.img || null, options: q.options,
+        secs: this.DUEL_SECS, pot: this.duelPot,
+        yours: this.duelControl === id,
+        frozen: this.duelFrozen === id,
+        banked: this.duelBanked[id], foeBanked: this.duelBanked[this.duelFoe(id)],
+        foeName: this.duelName(this.duelFoe(id)),
+        canBank: this.duelControl === id && this.duelPot > this.DUEL_START,
+        canFreeze: this.duelHasFreeze[id]
+      });
+    });
+    Object.keys(Host.players).forEach(id => {
+      if (this.duelIsIn(id)) return;
+      Host.sendTo(id, {
+        type: 'duelWatch', n: this.idx + 1, total: this.questions.length,
+        prompt: q.prompt || '', img: q.img || null,
+        pot: this.duelPot, aB: this.duelBanked[this.duelA], bB: this.duelBanked[this.duelB],
+        control: this.duelControl === this.duelA ? 'a' : this.duelControl === this.duelB ? 'b' : ''
+      });
+    });
+    this.duelHostView();
+    this.endsAt = Date.now() + this.DUEL_SECS * 1000;
+    this.tick = this.later(this.DUEL_SECS * 1000 + 300, () => this.duelSettle());
+  },
+
+  duelAnswer(peerId, n, choice, ms) {
+    if (!this.active || this.mode !== 'duel') return;
+    if (n !== this.idx + 1 || !this.duelIsIn(peerId)) return;
+    if (this.duelFrozen === peerId || this.duelAnswers[peerId]) return;
+    this.duelAnswers[peerId] = { choice: choice, ms: ms };
+    this.duelHostView();
+    // once everyone who is allowed to answer has, there is nothing to wait for
+    const live = [this.duelA, this.duelB].filter(id => id !== this.duelFrozen);
+    if (live.every(id => this.duelAnswers[id])) {
+      clearTimeout(this.tick);
+      this.later(250, () => this.duelSettle());
+    }
+  },
+
+  duelBank(peerId) {
+    if (!this.active || this.mode !== 'duel') return;
+    if (peerId !== this.duelControl || this.duelPot <= this.DUEL_START) return;
+    this.duelBanked[peerId] += this.duelPot;
+    this.duelPot = this.DUEL_START;
+    // banking does not lose them control; the only cost is the doubling they
+    // have just walked away from
+    Sound.say(this.duelName(peerId) + ' banks it.');
+    Host.sendTo(peerId, { type: 'duelBanked', banked: this.duelBanked[peerId], pot: this.duelPot });
+    Host.sendTo(this.duelFoe(peerId), { type: 'duelFoeBanked', who: this.duelName(peerId), foeBanked: this.duelBanked[peerId], pot: this.duelPot });
+    this.duelHostView();
+  },
+
+  duelUseFreeze(peerId) {
+    if (!this.active || this.mode !== 'duel') return;
+    if (!this.duelIsIn(peerId) || !this.duelHasFreeze[peerId]) return;
+    this.duelHasFreeze[peerId] = false;
+    this.duelPendingFreeze = this.duelFoe(peerId);
+    Host.sendTo(peerId, { type: 'duelFroze', who: this.duelName(this.duelFoe(peerId)) });
+    Sound.say(this.duelName(peerId) + ' freezes ' + this.duelName(this.duelFoe(peerId)) + ' out.');
+    this.duelHostView();
+  },
+
+  /* Who took the question, and what that does to the pot. */
+  duelSettle() {
+    if (!this.active || this.mode !== 'duel') return;
+    clearTimeout(this.tick);
+    const q = this.questions[this.idx];
+    const right = id => { const a = this.duelAnswers[id]; return !!a && a.choice === q.correct; };
+    const aR = right(this.duelA), bR = right(this.duelB);
+    let winner = null;
+    if (aR && bR) winner = this.duelAnswers[this.duelA].ms <= this.duelAnswers[this.duelB].ms ? this.duelA : this.duelB;
+    else if (aR) winner = this.duelA;
+    else if (bR) winner = this.duelB;
+
+    // being wrong costs a little, whoever you are
+    const docked = [];
+    [this.duelA, this.duelB].forEach(id => {
+      const a = this.duelAnswers[id];
+      if (a && a.choice !== q.correct) {
+        this.duelBanked[id] = Math.max(0, this.duelBanked[id] - this.DUEL_PENALTY);
+        this.duelStreak[id] = 0;
+        docked.push(id);
+      }
+    });
+
+    let stolen = false, autoBanked = false, earned = false;
+    if (winner) {
+      if (!this.duelControl || winner === this.duelControl) {
+        // already theirs, or the opening question: the pot grows
+        this.duelControl = winner;
+        this.duelPot = Math.min(this.DUEL_CEIL, this.duelPot * 2);
+      } else {
+        // taken off the other one: straight into the bank, no doubling
+        this.duelBanked[winner] += this.duelPot;
+        this.duelPot = this.DUEL_START;
+        this.duelControl = winner;
+        stolen = true;
+      }
+      this.duelStreak[winner]++;
+      this.duelStreak[this.duelFoe(winner)] = 0;
+      if (this.duelStreak[winner] >= this.DUEL_FREEZE_AT && !this.duelHasFreeze[winner]) {
+        this.duelHasFreeze[winner] = true; earned = true;
+      }
+      if (this.duelPot >= this.DUEL_CEIL) {
+        this.duelBanked[winner] += this.duelPot;
+        this.duelPot = this.DUEL_START;
+        this.duelStreak[winner] = 0;
+        autoBanked = true;
+      }
+    }
+
+    const name = winner ? this.duelName(winner) : '';
+    [this.duelA, this.duelB].forEach(id => {
+      Host.sendTo(id, {
+        type: 'duelResult', answer: q.answer, correct: q.correct,
+        mine: winner === id, winner: name, nobody: !winner,
+        stolen: stolen && winner === id, robbed: stolen && winner !== id,
+        docked: docked.indexOf(id) >= 0, autoBanked: autoBanked && winner === id,
+        earnedFreeze: earned && winner === id,
+        pot: this.duelPot, banked: this.duelBanked[id], foeBanked: this.duelBanked[this.duelFoe(id)]
+      });
+    });
+    Object.keys(Host.players).forEach(id => {
+      if (this.duelIsIn(id)) return;
+      Host.sendTo(id, {
+        type: 'duelWatchResult', answer: q.answer, winner: name, nobody: !winner,
+        stolen: stolen, pot: this.duelPot,
+        aB: this.duelBanked[this.duelA], bB: this.duelBanked[this.duelB]
+      });
+    });
+
+    if (winner) {
+      const v = Host.voiceFor(name);
+      Sound.say(stolen ? name + ' steals it' : autoBanked ? name + ', five in a row' : name, v.voice, v.style);
+    } else Sound.say('Neither of them. It was ' + q.answer);
+    this.duelHostView(q, name, stolen);
+    this.later(3400, () => this.next());
+  },
+
+  duelFinish() {
+    const a = this.duelA, b = this.duelB;
+    const aS = this.duelBanked[a], bS = this.duelBanked[b];
+    const winner = aS === bS ? null : (aS > bS ? a : b);
+
+    // what was banked in the duel is what goes on the real scoreboard
+    [a, b].forEach(id => {
+      const p = Host.players[id];
+      if (!p) return;
+      p.score += this.duelBanked[id];
+      p.stats = p.stats || Host.blankStats();
+      p.stats.byMode.duel = (p.stats.byMode.duel || 0) + this.duelBanked[id];
+      p.stats.bestSingle = Math.max(p.stats.bestSingle || 0, this.duelBanked[id]);
+      this.roundGains[id] = (this.roundGains[id] || 0) + this.duelBanked[id];
+    });
+
+    // and the watchers who called it right
+    Object.keys(this.duelCalls).forEach(id => {
+      const p = Host.players[id];
+      if (!p || !winner || this.duelCalls[id] !== winner) return;
+      p.score += this.DUEL_PREDICT;
+      this.roundGains[id] = (this.roundGains[id] || 0) + this.DUEL_PREDICT;
+      p.stats = p.stats || Host.blankStats();
+      p.stats.byMode.duel = (p.stats.byMode.duel || 0) + this.DUEL_PREDICT;
+    });
+
+    Object.keys(Host.players).forEach(id => {
+      const backed = this.duelCalls[id];
+      Host.sendTo(id, {
+        type: 'duelEnd',
+        aName: this.duelName(a), bName: this.duelName(b), aScore: aS, bScore: bS,
+        winner: winner ? this.duelName(winner) : '', drawn: !winner,
+        mine: id === winner, iLost: this.duelIsIn(id) && !!winner && id !== winner,
+        calledIt: !!(backed && winner && backed === winner), gotCall: this.DUEL_PREDICT,
+        score: (Host.players[id] || {}).score || 0
+      });
+    });
+    Host.pushBoard();
+    $('quizHostView').innerHTML = '<b>Duel over</b> — ' + esc(this.duelName(a)) + ' ' + aS +
+      ', ' + esc(this.duelName(b)) + ' ' + bS +
+      (winner ? ' — <b>' + esc(this.duelName(winner)) + '</b> takes it' : ' — dead heat');
+    if (winner) {
+      const v = Host.voiceFor(this.duelName(winner));
+      Sound.say(this.duelName(winner) + ' wins the duel', v.voice, v.style);
+    } else Sound.say('A dead heat. Nobody wins that one.');
+    this.later(5200, () => this.finish());
+  },
+
+  duelHostView(q, name, stolen) {
+    if (!this.duelA) return;
+    const line = id => esc(this.duelName(id)) + ' <b>' + this.duelBanked[id] + '</b>' +
+      (this.duelControl === id ? ' ⟵ holds the pot' : '') +
+      (this.duelHasFreeze[id] ? ' ❄' : '') +
+      (this.duelFrozen === id ? ' <span class="muted">(frozen out)</span>' : '') +
+      (this.duelAnswers[id] ? ' <span class="muted">· answered</span>' : '');
+    const calls = Object.keys(this.duelCalls).length;
+    $('quizHostView').innerHTML =
+      '<b>' + (this.idx + 1 || 0) + '/' + this.questions.length + '</b> — pot <b>' + this.duelPot + '</b>' +
+      (q ? ' — answer: <b>' + esc(q.answer) + '</b>' + (name ? ' — ' + esc(name) + (stolen ? ' STEALS it' : ' takes it') : ' — nobody got it') : '') +
+      '<br>' + line(this.duelA) + '<br>' + line(this.duelB) +
+      (calls ? '<br><span class="muted">' + calls + ' watching have called it</span>' : '');
+  },
+
   buildQuickfire(count) {
     const bank = (window.QUESTIONS || []);
     if (bank.length < 4) throw new Error('The question bank did not load — check questions.js sits next to index.html.');
@@ -4290,6 +4669,7 @@ const Quiz = {
     const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
     // closest-wins comes from the baked fact bank, not from a decade search
     if (this.mode === 'buzzname') return await this.buildBuzzName(decade, count, style, extra);
+    if (this.mode === 'duel') return await this.buildDuel(count);
     if (this.mode === 'places') return await this.buildPlaces(count);
     if (this.mode === 'logos') return await this.buildLogos(count);
     if (this.mode === 'quickfire') return this.buildQuickfire(count);
@@ -4387,7 +4767,7 @@ const Quiz = {
     // Everything that wasn't covers used to fall through to "films", so the
     // host line read "10 questions from films" on the closest-wins round too.
     // Only the picture and music rounds actually come from films.
-    const SOURCE = { quickfire: 'the question bank', guess: 'the fact bank', logos: 'the logo list', places: 'the map list', buzzname: 'the song search' };
+    const SOURCE = { quickfire: 'the question bank', guess: 'the fact bank', logos: 'the logo list', places: 'the map list', buzzname: 'the song search', duel: 'the question bank' };
     const label = this.mode === 'covers'
       ? ([style, extra, decadeLabel].filter(Boolean).join(', ') || 'that')
       : SOURCE[this.mode]
@@ -4423,7 +4803,7 @@ const Quiz = {
         if (!this.questions.length) throw new Error('Could not find playable tracks for that.');
       } else if (this.mode === 'places') {
         this.questions = qs;
-      } else if (this.mode === 'quickfire' || this.mode === 'guess') {
+      } else if (this.mode === 'quickfire' || this.mode === 'guess' || this.mode === 'duel') {
         this.questions = qs;
       } else if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) {
         this.questions = qs.filter(q => q.uri);
@@ -4471,6 +4851,12 @@ const Quiz = {
         noun: this.NOUNS[this.mode] || 'Question',
         roundLabel: this.roundLabel || ''
       });
+      /* The pair, the versus card and the watchers' call all happen before
+         the count-in, so the room knows who is up before anything is asked. */
+      if (this.mode === 'duel') {
+        this.duelPairing = extra || 'closest';
+        this.duelSetUp();
+      }
       if (this.mode === 'buzzname' && this.bnWidened) {
         $('quizStatus').textContent = 'Round running — ' + this.questions.length + ' songs' + this.bnWidened + '.';
         this.bnWidened = '';
@@ -4524,11 +4910,17 @@ const Quiz = {
   next() {
     if (!this.active) return;
     this.idx++;
+    // the duel settles up itself: banks, watchers' calls, then the usual finish
+    if (this.mode === 'duel' && this.idx >= this.questions.length) return this.duelFinish();
     if (this.idx >= this.questions.length) return this.finish();
     const q = this.questions[this.idx];
     this.answers = {};
     this.gains = {};
     this.firstCorrect = null;
+    /* The duel sends two different things — a question to the two players and
+       a watching view to everyone else — so it never goes near the broadcast
+       below, which assumes one screen for the whole room. */
+    if (this.mode === 'duel') { this.duelAsk(); return; }
     const audioRound = ['themes', 'years', 'songs', 'tv', 'buzzname'].includes(this.mode);
     // audio rounds have no picture to flash
     const flash = audioRound ? 0 : this.flashMs;
@@ -4600,6 +4992,7 @@ const Quiz = {
       songs: 'A song plays and four song titles appear on the phones. The classic music round. Decade applies; style narrows it.',
       tv: 'A TV theme tune plays and four shows appear. Show names are checked against TMDB, so what you get is a real programme. Decade filters on when the SHOW aired; style is ignored.',
       years: 'A song plays and four years appear. Decade applies; style narrows it. Remasters are filtered out so the dates are honest.',
+      duel: 'Two players go head to head while everyone else watches and backs a winner. Every right answer doubles the pot; bank it whenever you like. Get one wrong and the other one takes both the question and the pot. Three in a row earns a freeze that kills their buttons for a question. Ten questions, about three minutes.',
       buzzname: 'The game picks the songs — you never touch the music. A track plays, anyone can BUZZ and the music stops dead. Whoever buzzed says the song and the artist out loud, and it is marked automatically. Both scores double, one of the two scores half, and a wrong answer puts the music back on for everyone else to steal. Needs Spotify.',
       places: 'A place is named and a map appears on every phone — the world, a country, or Tyne and Wear. Tap to drop a pin, move it as much as you like, then lock it in. Closest pin wins, scored like Closest wins. Decade and flavour are ignored; maps and places live in questions.js.',
       logos: 'A logo flashes up on every phone, then four brand names. Symbol marks only — a logo with the name written in it would give the answer away. Decade and flavour are ignored; the brand list is in questions.js.',
@@ -4773,6 +5166,9 @@ const Quiz = {
 
   close() {
     if (!this.active) return;
+    // the duel reveals from duelSettle; close() is for rounds where everybody
+    // answers the same question at once
+    if (this.mode === 'duel') return;
     // this round reveals itself from bnReveal; close() is for rounds where
     // everyone answers the same question at once
     if (this.mode === 'buzzname') return;
@@ -4963,11 +5359,11 @@ const Quiz = {
   TITLES: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
     songs: '🎧 Name the song', tv: '📺 TV theme tunes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces',
-    quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it'
+    quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
-    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question', logos: 'Logo', places: 'Place', buzzname: 'Song'
+    songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question', logos: 'Logo', places: 'Place', buzzname: 'Song', duel: 'Question'
   },
   HOWTO: {
     covers: 'A cover flashes up, then four albums. Pick the right one.',
@@ -4981,7 +5377,8 @@ const Quiz = {
     quickfire: 'Read the question, then four answers appear. Fastest right answer wins it.',
     logos: 'A logo flashes up, then four brands. Pick the right one.',
     places: 'Tap the map to drop a pin. Move it as often as you like, then lock it in. Closest wins.',
-    buzzname: 'Listen, then BUZZ. The music stops and you say the song and the artist. Both scores double.'
+    buzzname: 'Listen, then BUZZ. The music stops and you say the song and the artist. Both scores double.',
+    duel: 'Two of you, head to head. Every right answer doubles the pot — bank it whenever you like, but get one wrong and the other one takes it. Everybody else backs a winner.'
   },
 
   ROUND_NAMES: {
@@ -4995,7 +5392,8 @@ const Quiz = {
     quickfire: 'fastest finger round',
     logos: 'logo round',
     places: 'where is it round',
-    buzzname: 'buzz and name it round'
+    buzzname: 'buzz and name it round',
+    duel: 'duel'
   },
 
   stop() {
@@ -5228,7 +5626,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', buzzer: '🔔 Buzzer round (you judge)'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel', buzzer: '🔔 Buzzer round (you judge)'
   },
 
   load() {
@@ -5313,7 +5711,7 @@ const Night = {
       // typing digits takes longer than tapping one of four options
       // buzzname is not a race against a clock — the song plays until
       // someone buzzes, so this is only the backstop
-      secs: mode === 'guess' ? 20 : mode === 'places' ? 25 : mode === 'buzzname' ? 30 : 10,
+      secs: mode === 'guess' ? 20 : mode === 'places' ? 25 : mode === 'buzzname' ? 30 : mode === 'duel' ? 15 : 10,
       flash: mode === 'faces' ? 2000 : 3000,
       startAt: 'skip',
       crop: 'crop',
@@ -5326,7 +5724,7 @@ const Night = {
      in three separate places, which is exactly what happened here. */
   // buzzname is deliberately absent: it searches Spotify, so an era and a
   // flavour both mean something and both get a picker in the running order
-  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos', 'places'],
+  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos', 'places', 'duel'],
 
   quickAdd(mode) {
     this.plan.push(this.defaultsFor(mode));
@@ -5890,6 +6288,7 @@ const Player = {
         $('guessBox').classList.add('hidden');
         $('guessPrompt').textContent = '';
         $('bnBox').classList.add('hidden');
+        $('duelBox').classList.add('hidden');
         $('quizFeedback').textContent = '';
         $('quizCountdown').textContent = '';
         $('quizRound').textContent = (msg.roundLabel ? msg.roundLabel + ' · ' : '') + (msg.title || 'Quiz round');
@@ -5897,6 +6296,16 @@ const Player = {
         this.setStatus('');
         break;
 
+      case 'duelStart':       this.duelStart(msg); break;
+      case 'duelCalled':      this.duelCalled(msg); break;
+      case 'duelQ':           this.duelQ(msg); break;
+      case 'duelWatch':       this.duelWatch(msg); break;
+      case 'duelResult':      this.duelResult(msg); break;
+      case 'duelWatchResult': this.duelWatchResult(msg); break;
+      case 'duelBanked':      this.duelBanked(msg); break;
+      case 'duelFoeBanked':   this.duelFoeBanked(msg); break;
+      case 'duelFroze':       this.duelFroze(msg); break;
+      case 'duelEnd':         this.duelEnd(msg); break;
       case 'bnYours':   this.bnYours(msg); break;
       case 'bnWaiting': this.bnWaiting(msg); break;
       case 'bnDenied':  this.bnDenied(msg); break;
@@ -6167,6 +6576,214 @@ const Player = {
     window.addEventListener('resize', () => {
       if ($('placeBox') && !$('placeBox').classList.contains('hidden')) { this.fitMap(); this.applyView(); }
     });
+  },
+
+  /* ---- the duel -------------------------------------------------------- */
+
+  duelStart(msg) {
+    this._duelSide = msg.youAre;              // 'a', 'b' or 'watch'
+    this._duelMe = msg.youAre !== 'watch';
+    this._duelN = 0;
+    $('quizPanel').classList.remove('hidden');
+    $('quizOptions').innerHTML = '';
+    $('quizPrompt').classList.add('hidden');
+    $('duelBox').classList.remove('hidden');
+    $('duelBox').classList.remove('frozen');
+    $('duelFaceA').textContent = msg.a.avatar || '🙂';
+    $('duelFaceB').textContent = msg.b.avatar || '🙂';
+    $('duelNameA').textContent = msg.a.name;
+    $('duelNameB').textContent = msg.b.name;
+    $('duelBankA').textContent = '0';
+    $('duelBankB').textContent = '0';
+    $('duelPot').textContent = msg.pot;
+    $('duelSideA').classList.toggle('me', msg.youAre === 'a');
+    $('duelSideB').classList.toggle('me', msg.youAre === 'b');
+    $('duelPrompt').textContent = '';
+    $('duelImg').classList.add('hidden');
+    $('duelOptions').innerHTML = '';
+    $('duelActions').style.display = 'none';
+    $('duelSay').textContent = '';
+
+    if (this._duelMe) {
+      $('duelNote').textContent = 'You are in this one.';
+      $('duelCall').classList.add('hidden');
+    } else {
+      // watchers get a stake: back one of them before a question is asked
+      $('duelNote').textContent = '';
+      $('duelCall').classList.remove('hidden');
+      $('duelCallAsk').textContent = 'Who wins it? Call it right for +20.';
+      $('duelCallBtns').innerHTML =
+        '<button class="btn" onclick="Player.duelCallIt(\'a\')">' + esc(msg.a.name) + '</button>' +
+        '<button class="btn" onclick="Player.duelCallIt(\'b\')">' + esc(msg.b.name) + '</button>';
+    }
+    this.vibe([40, 30, 40]);
+  },
+
+  duelCallIt(who) {
+    if (!this.conn) return;
+    this.conn.send({ type: 'duelCall', who: who });
+  },
+
+  duelCalled(msg) {
+    $('duelCall').classList.add('hidden');
+    $('duelNote').textContent = 'You are backing ' +
+      (msg.who === 'a' ? $('duelNameA').textContent : $('duelNameB').textContent) + '.';
+  },
+
+  duelPotIs(v, grew) {
+    const el = $('duelPot');
+    el.textContent = v;
+    if (grew) { el.classList.remove('grew'); void el.offsetWidth; el.classList.add('grew'); }
+  },
+
+  duelBanksAre(a, b) {
+    $('duelBankA').textContent = a;
+    $('duelBankB').textContent = b;
+  },
+
+  duelQ(msg) {
+    this._duelN = msg.n;
+    this._duelAnswered = false;
+    this._duelAskedAt = Date.now();
+    $('duelCall').classList.add('hidden');
+    $('duelSay').textContent = '';
+    const mine = this._duelSide === 'a';
+    this.duelBanksAre(mine ? msg.banked : msg.foeBanked, mine ? msg.foeBanked : msg.banked);
+    this.duelPotIs(msg.pot, false);
+    $('duelSideA').classList.toggle('holds', msg.yours === (this._duelSide === 'a'));
+    $('duelSideB').classList.toggle('holds', msg.yours === (this._duelSide === 'b'));
+
+    $('duelBox').classList.toggle('frozen', !!msg.frozen);
+    $('duelNote').textContent = msg.frozen
+      ? '❄ Frozen out — this one is not yours to answer.'
+      : msg.yours ? 'You hold the pot.' : msg.foeName + ' holds the pot.';
+
+    $('duelPrompt').textContent = msg.prompt || '';
+    if (msg.img) { $('duelImg').src = msg.img; $('duelImg').classList.remove('hidden'); }
+    else $('duelImg').classList.add('hidden');
+
+    const box = $('duelOptions');
+    box.innerHTML = '';
+    (msg.options || []).forEach((opt, i) => {
+      const b = document.createElement('button');
+      b.className = 'btn opt';
+      b.innerHTML = '<span class="optn">' + (i + 1) + '</span> ' + esc(opt);
+      b.onclick = () => this.duelTap(i, b);
+      box.appendChild(b);
+    });
+
+    $('duelActions').style.display = (msg.canBank || msg.canFreeze) && !msg.frozen ? 'flex' : 'none';
+    $('duelBankBtn').style.display = msg.canBank ? 'block' : 'none';
+    $('duelBankBtn').disabled = false;
+    $('duelBankBtn').textContent = '💰 Bank ' + msg.pot;
+    $('duelFreezeBtn').style.display = msg.canFreeze ? 'block' : 'none';
+    $('duelFreezeBtn').disabled = false;
+    if (!msg.frozen) this.vibe([30]);
+  },
+
+  duelTap(i, btn) {
+    if (this._duelAnswered || !this.conn) return;
+    this._duelAnswered = true;
+    [...$('duelOptions').children].forEach(b => { b.disabled = true; });
+    btn.classList.add('picked');
+    $('duelActions').style.display = 'none';
+    this.conn.send({ type: 'duelAnswer', n: this._duelN, choice: i, ms: Date.now() - this._duelAskedAt });
+  },
+
+  duelBankIt() {
+    if (!this.conn) return;
+    $('duelBankBtn').disabled = true;
+    this.conn.send({ type: 'duelBank' });
+  },
+
+  duelFreezeThem() {
+    if (!this.conn) return;
+    $('duelFreezeBtn').disabled = true;
+    this.conn.send({ type: 'duelFreeze' });
+  },
+
+  duelBanked(msg) {
+    const mine = this._duelSide === 'a';
+    this.duelBanksAre(mine ? msg.banked : $('duelBankA').textContent,
+                      mine ? $('duelBankB').textContent : msg.banked);
+    this.duelPotIs(msg.pot, false);
+    $('duelBankBtn').style.display = 'none';
+    $('duelSay').textContent = 'Banked. It is yours whatever happens now.';
+    this.vibe([60, 40, 60]);
+  },
+
+  duelFoeBanked(msg) {
+    const mine = this._duelSide === 'a';
+    this.duelBanksAre(mine ? $('duelBankA').textContent : msg.foeBanked,
+                      mine ? msg.foeBanked : $('duelBankB').textContent);
+    this.duelPotIs(msg.pot, false);
+    $('duelSay').textContent = msg.who + ' banked it.';
+  },
+
+  duelFroze(msg) {
+    $('duelFreezeBtn').style.display = 'none';
+    $('duelSay').textContent = '❄ ' + msg.who + ' is frozen out of the next one.';
+    this.vibe([80]);
+  },
+
+  duelResult(msg) {
+    const mine = this._duelSide === 'a';
+    this.duelBanksAre(mine ? msg.banked : msg.foeBanked, mine ? msg.foeBanked : msg.banked);
+    this.duelPotIs(msg.pot, msg.mine && !msg.stolen);
+    $('duelBox').classList.remove('frozen');
+    [...$('duelOptions').children].forEach((b, i) => {
+      b.disabled = true;
+      if (i === msg.correct) b.classList.add('right');
+    });
+    $('duelActions').style.display = 'none';
+
+    let line;
+    if (msg.nobody) line = 'Neither of you. It was ' + msg.answer + '.';
+    else if (msg.stolen) line = '💰 Stolen! You took the pot off them.';
+    else if (msg.robbed) line = '😬 ' + msg.winner + ' stole the pot.';
+    else if (msg.autoBanked) line = '🏆 Five in a row — banked automatically.';
+    else if (msg.mine) line = '✅ Yours. The pot doubles.';
+    else line = msg.winner + ' takes it.';
+    if (msg.docked) line += ' (−' + 10 + ' for the wrong answer)';
+    $('duelNote').textContent = line;
+    $('duelSay').textContent = msg.earnedFreeze ? '❄ Three in a row — you have a freeze to spend.' : '';
+    this.vibe(msg.mine ? [60, 40, 60] : [120]);
+  },
+
+  duelWatch(msg) {
+    $('duelCall').classList.add('hidden');
+    this.duelPotIs(msg.pot, false);
+    this.duelBanksAre(msg.aB, msg.bB);
+    $('duelSideA').classList.toggle('holds', msg.control === 'a');
+    $('duelSideB').classList.toggle('holds', msg.control === 'b');
+    $('duelPrompt').textContent = msg.prompt || '';
+    if (msg.img) { $('duelImg').src = msg.img; $('duelImg').classList.remove('hidden'); }
+    else $('duelImg').classList.add('hidden');
+    $('duelOptions').innerHTML = '';
+    $('duelSay').textContent = 'Question ' + msg.n + ' of ' + msg.total;
+  },
+
+  duelWatchResult(msg) {
+    this.duelPotIs(msg.pot, false);
+    this.duelBanksAre(msg.aB, msg.bB);
+    $('duelNote').textContent = msg.nobody ? 'Neither of them. It was ' + msg.answer + '.'
+      : msg.stolen ? '💰 ' + msg.winner + ' steals it!' : msg.winner + ' takes it.';
+  },
+
+  duelEnd(msg) {
+    $('duelOptions').innerHTML = '';
+    $('duelActions').style.display = 'none';
+    $('duelImg').classList.add('hidden');
+    $('duelPrompt').textContent = '';
+    this.duelBanksAre(msg.aScore, msg.bScore);
+    $('duelPot').textContent = '—';
+    $('duelNote').textContent = msg.drawn ? 'A dead heat.' : msg.winner + ' wins the duel.';
+    $('duelSay').textContent = msg.mine ? '🏆 That is yours. ' + msg.aScore + ' plays ' + msg.bScore + '.'
+      : msg.iLost ? 'Beaten this time.'
+      : msg.calledIt ? '🎯 You called it — +' + msg.gotCall + '.'
+      : 'You backed the other one.';
+    this.setScore(msg.score);
+    this.vibe(msg.mine || msg.calledIt ? [60, 40, 60, 40, 120] : [120]);
   },
 
   /* ---- buzz and name it ------------------------------------------------ */
