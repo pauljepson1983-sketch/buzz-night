@@ -465,6 +465,9 @@
   #duelOptions { display: flex; flex-direction: column; gap: 8px }
   #duelActions { display: flex; gap: 8px; margin-top: 12px }
   #duelActions .btn { flex: 1; font-size: .95rem }
+  /* duel options are quiz-opt like every other round, so they inherit the
+     right and wrong colours rather than needing their own */
+  #duelOptions .quiz-opt { width: 100% }
   #duelBankBtn { background: #ffd257; color: #241a04 }
   #duelFreezeBtn { background: #7fdcff; color: #06222b }
   #duelNote { font-weight: 800; margin: 4px 0 }
@@ -6751,6 +6754,7 @@ const Player = {
   duelQ(msg) {
     this._duelN = msg.n;
     this._duelAnswered = false;
+    this._duelPicked = -1;
     this._duelAskedAt = Date.now();
     $('duelCall').classList.add('hidden');
     $('duelSay').textContent = '';
@@ -6794,7 +6798,7 @@ const Player = {
     box.innerHTML = '';
     (options || []).forEach((opt, i) => {
       const b = document.createElement('button');
-      b.className = 'btn opt';
+      b.className = 'quiz-opt';
       b.innerHTML = '<span class="optn">' + (i + 1) + '</span> ' + esc(opt);
       b.onclick = () => this.duelTap(i, b);
       box.appendChild(b);
@@ -6866,6 +6870,7 @@ const Player = {
   duelTap(i, btn) {
     if (this._duelAnswered || !this.conn) return;
     this._duelAnswered = true;
+    this._duelPicked = i;
     [...$('duelOptions').children].forEach(b => { b.disabled = true; });
     btn.classList.add('picked');
     $('duelActions').style.display = 'none';
@@ -6920,6 +6925,7 @@ const Player = {
     [...$('duelOptions').children].forEach((b, i) => {
       b.disabled = true;
       if (i === msg.correct) b.classList.add('right');
+      else if (i === this._duelPicked) b.classList.add('wrong');
     });
     $('duelActions').style.display = 'none';
 
@@ -6984,7 +6990,7 @@ const Player = {
       : msg.iLost ? 'Beaten this time.'
       : msg.calledIt ? '🎯 You called it — +' + msg.gotCall + '.'
       : 'You backed the other one.';
-    this.setScore(msg.score);
+    if (typeof msg.score === 'number') $('pScore').textContent = msg.score + ' pts';
     this.vibe(msg.mine || msg.calledIt ? [60, 40, 60, 40, 120] : [120]);
   },
 
