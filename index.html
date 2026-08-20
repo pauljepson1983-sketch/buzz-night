@@ -4152,7 +4152,15 @@ const Quiz = {
     const bank = (window.PLACES || []), maps = (window.MAPS || {});
     if (bank.length < 4) throw new Error('The place list did not load — check questions.js sits next to index.html.');
     this.available = bank.length;
-    const picks = Seen.rank('places', bank.map(p => ({ ...p, seenKey: p.name, label: p.name }))).slice(0, count);
+    /* Some places sit on two maps on purpose — Cardiff is worth asking on a
+       map of the UK and again on a map of Wales, because they are genuinely
+       different questions. Nothing stopped both being drawn into the SAME
+       round though, which would ask the room where Cardiff is twice in five
+       minutes. One scale per place per round. */
+    const oneEach = new Set();
+    const picks = Seen.rank('places', bank.map(p => ({ ...p, seenKey: p.name, label: p.name })))
+      .filter(p => { const k = p.name.toLowerCase(); if (oneEach.has(k)) return false; oneEach.add(k); return true; })
+      .slice(0, count);
 
     // one request for every map this round needs
     $('quizStatus').textContent = 'Fetching maps…';
@@ -4181,7 +4189,7 @@ const Quiz = {
       out.push({
         kind: 'place', seenKey: p.name, label: p.name, answer: p.name, title: p.name,
         prompt: 'Where is ' + p.name + '?', mapUrl: url, mapName: m.name, mapKey: p.map,
-        tx: at.x, ty: at.y, lat: p.lat, lon: p.lon, zoom: m.zoom || 4
+        tx: at.x, ty: at.y, lat: p.lat, lon: p.lon, r: p.r || 0, zoom: m.zoom || 4
       });
     });
     if (out.length < 1) throw new Error('No maps came back — try again in a moment.');
@@ -5783,16 +5791,45 @@ const Quiz = {
   scorePlaces() {
     const q = this.questions[this.idx];
     const m = (window.MAPS || {})[q.mapKey] || {};
-    const entries = Object.entries(this.answers)
-      .map(([id, a]) => ({ id, x: a.x, y: a.y, off: Math.hypot(a.x - q.tx, a.y - q.ty) }))
-      .sort((a, b) => a.off - b.off);
+
+    /* Ranked on real distance rather than distance across the picture.
+
+       They are not the same thing. A degree of longitude is 111km at the
+       equator and 55km at Newcastle's latitude, so on the world map a pin
+       the same number of pixels away can be twice as far out depending on
+       which way it missed. Ranking by pixels quietly rewarded whoever
+       happened to miss sideways in the tropics.
+
+       Every projection here can be turned back into a latitude and
+       longitude — the flat ones exactly, the curved ones numerically to
+       well inside a kilometre — so the honest measure is available for all
+       of them. Pixels stay as the fallback if that ever fails. */
+    const target = { lat: q.lat, lon: q.lon };
+    const entries = Object.entries(this.answers).map(([id, a]) => {
+      const here = this.mapLatLon(m, a.x, a.y);
+      let km = here ? this.kmBetween(here, target) : null;
+      /* A country is not a pin. Kazakhstan is 1,600 miles across, so being
+         "wrong" by 400km while pointing squarely at it is not wrong at all.
+         Anything inside the place counts as spot on. */
+      if (km != null && q.r) km = Math.max(0, km - q.r);
+      return { id, x: a.x, y: a.y, km: km, off: Math.hypot(a.x - q.tx, a.y - q.ty) };
+    }).sort((a, b) =>
+      (a.km != null && b.km != null) ? a.km - b.km : a.off - b.off);
+
+    /* A good pin is a good pin wherever it landed, so the bonus is judged
+       against the size of the map rather than a fixed number of kilometres:
+       a twentieth of the way down a map of Tyne and Wear is a street, and a
+       twentieth of the way down the world is most of Spain. */
+    const span = (m.n != null && m.s != null) ? (m.n - m.s) * 111 : null;
+    const closeKm = span ? span / 20 : null;
+
     const AWARD = [25, 15, 10];
     entries.forEach((e, i) => {
       const p = Host.players[e.id];
       if (!p) return;
       let pts = i < AWARD.length ? AWARD[i] : 0;
-      // a pin within a twentieth of the map is a good pin wherever it placed
-      if (e.off <= 5) pts += 10;
+      const nailed = (e.km != null && closeKm != null) ? e.km <= closeKm : e.off <= 5;
+      if (nailed) pts += 10;
       p.score += pts;
       p.stats = p.stats || Host.blankStats();
       p.stats.answered++;
@@ -5802,8 +5839,6 @@ const Quiz = {
       this.gains[e.id] = pts;
       this.roundGains[e.id] = (this.roundGains[e.id] || 0) + pts;
       e.pts = pts;
-      const here = this.mapLatLon(m, e.x, e.y);
-      e.km = here ? this.kmBetween(here, { lat: q.lat, lon: q.lon }) : null;
     });
     Host.renderScores();
     Host.saveGame();

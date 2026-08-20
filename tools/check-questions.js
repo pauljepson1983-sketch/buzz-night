@@ -211,6 +211,44 @@ console.log(line(closestCount, 'closest-to facts in ' + Object.keys(CLOSEST).len
 console.log(line(ONEOFFS.length, 'one-off numbers'));
 console.log(line(closestCount + ONEOFFS.length + QUESTIONS.length, 'questions in total'));
 
+/* ---- the map round ----------------------------------------------------
+   A place whose coordinates fall outside its own map cannot be answered —
+   the pin it is asking for is off the picture. buildPlaces drops those
+   silently at build time, so a whole round can quietly come up short
+   without anyone knowing why. Caught here instead. */
+const MAPS = window.MAPS || {}, PLACES = window.PLACES || [];
+PLACES.forEach(p => {
+  const m = MAPS[p.map];
+  if (!m) { problems.push(p.name + ' — no map called "' + p.map + '"'); return; }
+  if (typeof p.lat !== 'number' || typeof p.lon !== 'number') {
+    problems.push(p.name + ' — missing or non-numeric coordinates'); return;
+  }
+  if (m.proj && m.proj !== 'flat') return;   // curved maps need the real formula
+  const x = (p.lon - m.w) / (m.e - m.w) * 100;
+  const y = (m.n - p.lat) / (m.n - m.s) * 100;
+  if (x < 0 || x > 100 || y < 0 || y > 100) {
+    problems.push(p.name + ' — falls outside ' + p.map + ' (x ' + x.toFixed(1) + ', y ' + y.toFixed(1) + ')');
+  } else if (x < 2 || x > 98 || y < 2 || y > 98) {
+    notes.push(p.name + ' sits right on the edge of ' + p.map + ' — hard to pin');
+  }
+});
+/* The same place on two different maps is deliberate — Cardiff is worth
+   asking on a map of the UK and again on a map of Wales, and they are
+   different questions. The same place twice on the SAME map is not. */
+const dupPlace = {};
+PLACES.forEach(p => {
+  const k = p.name.toLowerCase() + '|' + p.map;
+  if (dupPlace[k]) problems.push(p.name + ' — listed twice on the ' + p.map + ' map');
+  dupPlace[k] = true;
+});
+const scales = {};
+PLACES.forEach(p => { const k = p.name.toLowerCase(); (scales[k] = scales[k] || []).push(p.map); });
+Object.keys(scales).filter(k => scales[k].length > 1).forEach(k => {
+  notes.push(PLACES.find(p => p.name.toLowerCase() === k).name +
+    ' is asked at two scales (' + scales[k].join(', ') + ')');
+});
+console.log(line(PLACES.length, 'places across ' + Object.keys(MAPS).length + ' maps'));
+
 if (notes.length) {
   console.log('\nWorth knowing');
   notes.forEach(n => console.log('  · ' + n));
