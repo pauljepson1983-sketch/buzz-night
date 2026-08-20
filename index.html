@@ -4495,6 +4495,15 @@ const Quiz = {
   },
 
   duelName(id) { return (Host.players[id] || {}).name || '?'; },
+
+  /* Still in the room and able to answer. A phone that locks, drops off the
+     wifi or goes in a pocket used to leave the duel waiting out the full
+     clock on every question — ten times over, with everyone watching a
+     countdown for somebody who is not coming back. */
+  duelHere(id) {
+    const p = Host.players[id];
+    return !!p && Host.isPresent(p);
+  },
   duelFoe(id) { return id === this.duelA ? this.duelB : this.duelA; },
   duelIsIn(id) { return id === this.duelA || id === this.duelB; },
 
@@ -4525,16 +4534,37 @@ const Quiz = {
     this.duelHostView();
   },
 
-  // a watcher backing one of them, before the first question goes out
+  /* A watcher backing one of them. The window used to close the instant the
+     first question went out, which after the count-in was about four seconds
+     — not enough to read two names and decide. It now stays open through the
+     first question, so there is a proper moment to pick a side. */
   duelCall(peerId, who) {
     if (!this.active || this.mode !== 'duel') return;
-    if (this.duelIsIn(peerId) || this.idx >= 0) return;
+    if (this.duelIsIn(peerId) || this.idx >= 1) return;
     this.duelCalls[peerId] = who === 'a' ? this.duelA : this.duelB;
     Host.sendTo(peerId, { type: 'duelCalled', who: who });
     this.duelHostView();
   },
 
   duelAsk() {
+    /* If one of them has gone for good there is no duel left to run. Stopping
+       here and handing it to whoever is still standing beats grinding through
+       the remaining questions against an empty chair. */
+    const hereA = this.duelHere(this.duelA), hereB = this.duelHere(this.duelB);
+    if (!hereA || !hereB) {
+      this.duelGoneSince = this.duelGoneSince || Date.now();
+      // a moment's grace: phones drop off and come straight back all the time
+      if (Date.now() - this.duelGoneSince > 12000) {
+        /* Scores stand as they are rather than handing it to whoever is
+           left. They earned what they banked, and a duel decided by whose
+           phone survived would be a worse answer than an early finish. */
+        $('quizHostView').innerHTML = '<b>' + esc(this.duelName(hereA ? this.duelA : this.duelB)) +
+          '</b> is the only one still here — finishing on the scores as they stand.';
+        Sound.say('We seem to have lost somebody. Finishing on the scores as they stand.');
+        return this.duelFinish();
+      }
+    } else this.duelGoneSince = null;
+
     const q = this.questions[this.idx];
     this.duelAnswers = {};
     // a freeze bought last question lands on this one
@@ -4611,9 +4641,11 @@ const Quiz = {
     // sends a typed number instead of an option
     this.duelAnswers[peerId] = { choice: choice, ms: ms, value: value };
     this.duelHostView();
-    // once everyone who is allowed to answer has, there is nothing to wait for
-    const live = [this.duelA, this.duelB].filter(id => id !== this.duelFrozen);
-    if (live.every(id => this.duelAnswers[id])) {
+    /* Once everyone who CAN answer has, there is nothing left to wait for —
+       and someone whose phone has gone quiet is not going to answer, so they
+       do not get to hold the question open. */
+    const live = [this.duelA, this.duelB].filter(id => id !== this.duelFrozen && this.duelHere(id));
+    if (live.length && live.every(id => this.duelAnswers[id])) {
       clearTimeout(this.tick);
       this.later(250, () => this.duelSettle());
     }
@@ -5150,6 +5182,10 @@ const Quiz = {
         this.questions = qs.filter(q => q.img);
         if (!this.questions.length) throw new Error('Could not prepare any ' + noun + 's.');
       }
+      // nothing from a previous duel should leak into this round
+      this.duelA = null; this.duelB = null; this.duelControl = null;
+      this.duelFrozen = null; this.duelPendingFreeze = null; this.duelGoneSince = null;
+      this.duelAnswers = {}; this.duelCalls = {};
       // a new number for this round, so anything still pending from the last
       // one is ignored rather than fired into this one
       this.runId = (this.runId || 0) + 1;
@@ -6902,6 +6938,7 @@ const Player = {
   duelStart(msg) {
     this._duelSide = msg.youAre;              // 'a', 'b' or 'watch'
     this._duelMe = msg.youAre !== 'watch';
+    this._duelCalled = false;
     this._duelN = 0;
     $('quizPanel').classList.remove('hidden');
     $('quizOptions').innerHTML = '';
@@ -6934,7 +6971,7 @@ const Player = {
       // watchers get a stake: back one of them before a question is asked
       $('duelNote').textContent = '';
       $('duelCall').classList.remove('hidden');
-      $('duelCallAsk').textContent = 'Who wins it? Call it right for +20.';
+      $('duelCallAsk').textContent = 'Who wins it? Call it right for +20. You have until the second question.';
       $('duelCallBtns').innerHTML =
         '<button class="btn" onclick="Player.duelCallIt(\'a\')">' + esc(msg.a.name) + '</button>' +
         '<button class="btn" onclick="Player.duelCallIt(\'b\')">' + esc(msg.b.name) + '</button>';
@@ -6948,6 +6985,7 @@ const Player = {
   },
 
   duelCalled(msg) {
+    this._duelCalled = true;
     $('duelCall').classList.add('hidden');
     $('duelNote').textContent = 'You are backing ' +
       (msg.who === 'a' ? $('duelNameA').textContent : $('duelNameB').textContent) + '.';
@@ -7198,7 +7236,9 @@ const Player = {
   },
 
   duelWatch(msg) {
-    $('duelCall').classList.add('hidden');
+    // the call stays open through the first question, so do not snatch the
+    // buttons away the moment it starts
+    if (msg.n > 1 || this._duelCalled) $('duelCall').classList.add('hidden');
     this.duelPotIs(msg.pot, false);
     this.duelBanksAre(msg.aB, msg.bB);
     $('duelSideA').classList.toggle('holds', msg.control === 'a');
