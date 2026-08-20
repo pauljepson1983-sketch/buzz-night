@@ -679,6 +679,7 @@
         <div class="row">
           <button class="btn big green" id="nightGoBtn" onclick="Night.start()">▶ Start the night</button>
           <button class="btn big green hidden" id="nightNextBtn" onclick="Night.go()">▶ Start this round</button>
+          <button class="btn big green hidden" id="nightRetryBtn" onclick="Night.go()">↻ Try this round again</button>
         </div>
         <div class="row mt">
           <button class="btn ghost small" onclick="Night.skip()">Skip round</button>
@@ -5430,16 +5431,19 @@ const Night = {
 
   // resolves when the host presses "Start this round" (or false if they stop)
   holdForGo() {
-    $('nightNextBtn').classList.remove('hidden');
+    // a failed round offers its own button, so do not also offer "start"
+    if (!this.failedRound) $('nightNextBtn').classList.remove('hidden');
     $('nightGoBtn').classList.add('hidden');
     return new Promise(resolve => { this._go = resolve; });
   },
   go() {
     $('nightNextBtn').classList.add('hidden');
+    $('nightRetryBtn').classList.add('hidden');
     if (this._go) { const r = this._go; this._go = null; r(true); }
   },
   releaseGo() {
     $('nightNextBtn').classList.add('hidden');
+    $('nightRetryBtn').classList.add('hidden');
     if (this._go) { const r = this._go; this._go = null; r(false); }
   },
 
@@ -5483,15 +5487,46 @@ const Night = {
     await this.wait(2200);
     if (!this.running) return;
 
-    const ok = await Quiz.runRound(r);
+    let ok = await Quiz.runRound(r);
+
+    /* Spotify asking us to wait is not a reason to throw a round away. It is
+       a reason to wait. The cool-off is seconds, the round is one somebody
+       chose, and skipping it silently is how a planned night turns into half
+       a night. Sit it out once, then have another go. */
+    if (!ok && this.running && Date.now() < (Spot.rateLimitedUntil || 0)) {
+      const secs = Math.ceil((Spot.rateLimitedUntil - Date.now()) / 1000) + 1;
+      $('nightStatus').textContent = 'Round ' + n + ' — Spotify asked us to slow down. Waiting ' + secs + 's, then trying this round again.';
+      Sound.say('Spotify needs a moment. Holding this round.');
+      await this.wait(secs * 1000);
+      if (!this.running) return;
+      $('nightStatus').textContent = 'Round ' + n + ' — trying again…';
+      ok = await Quiz.runRound(r);
+    }
+
     if (!this.running) return;
     if (!ok) {
       // carry the actual reason through instead of a shrug — it is the
       // difference between 'the game is broken' and 'Spotify is logged out'
       const why = ($('quizStatus').textContent || '').replace(/^⚠s*/, '');
+      /* Do not just move on. The host is stood in front of a room and needs
+         to decide: have another go, or drop it and carry on. Waiting for a
+         person is the right default — the night resumes the moment they
+         press something. */
+      this.failedRound = r;
+      $('nightRetryBtn').classList.remove('hidden');
       $('nightStatus').textContent = 'Round ' + n + ' could not be built' +
-        (why && /[a-z]/i.test(why) ? ' — ' + why : '') + ' Skipping to the next.';
-      await this.wait(2500);
+        (why && /[a-z]/i.test(why) ? ' — ' + why : '.') +
+        ' Press "Try this round again", or Skip round to move on.';
+      const again = await this.holdForGo();
+      $('nightRetryBtn').classList.add('hidden');
+      this.failedRound = null;
+      if (!this.running) return;
+      /* Only "try again" advances anything from here. A false means Skip
+         round released this gate, and skip() has already moved the night on
+         itself — calling runNext() here as well would jump two rounds, which
+         is precisely the fault that took the night down before. */
+      if (!again) return;
+      this.idx--;              // runNext() adds one back, landing on this round
       return this.runNext();
     }
     // breathing room on the leaderboard between rounds
