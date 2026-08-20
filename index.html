@@ -215,6 +215,13 @@
   }
   #quizArtWrap.showing { display: block; }
   #quizArt { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* A logo is not an album cover. "cover" crops the symbol to a square and
+     the dark panel behind it swallows anything drawn in black — which is how
+     you end up squinting at a corner of a mark you cannot name. A logo gets
+     the whole symbol, on white, with room around it. */
+  #quizArtWrap.logo { background: #fff; padding: 18px; width: min(78vw, 340px) }
+  #quizArt.logo { object-fit: contain; image-rendering: auto }
   #quizCountdown { font-size: 2.6rem; font-weight: 900; color: var(--gold); min-height: 3rem; }
   #quizCountdown.hurry { color: var(--red); }
   #quizOptions { display: grid; gap: 10px; margin-top: 6px; }
@@ -461,7 +468,8 @@
   @media (prefers-reduced-motion: reduce) { #duelPot.grew { animation: none } }
 
   #duelPrompt { font-size: 1.15rem; font-weight: 800; margin: 8px 0 }
-  #duelImg { max-width: 60%; max-height: 30vh; margin: 6px auto; display: block; border-radius: 12px; background: #fff; padding: 10px }
+  #duelImg { width: min(62vw, 240px); height: min(62vw, 240px); object-fit: contain;
+              margin: 8px auto; display: block; border-radius: 14px; background: #fff; padding: 14px }
   #duelOptions { display: flex; flex-direction: column; gap: 8px }
   #duelActions { display: flex; gap: 8px; margin-top: 12px }
   #duelActions .btn { flex: 1; font-size: .95rem }
@@ -488,6 +496,13 @@
 
   #duelCallBtns { display: flex; gap: 8px }
   #duelCallBtns .btn { flex: 1 }
+  /* Asking whether to wipe the last game, in the page rather than in a
+     browser dialog that can block or be suppressed. */
+  #newGameAsk { margin-top: 12px; padding: 14px 16px; border-radius: 12px;
+                background: rgba(255,193,7,.14); border: 1px solid rgba(255,193,7,.45) }
+  #newGameAsk p { margin: 0 0 10px; font-weight: 700; color: #ffe08a }
+  #newGameAsk .row { display: flex; gap: 8px; flex-wrap: wrap }
+  #newGameAsk .btn { flex: 1; min-width: 150px }
 </style>
 </head>
 <body>
@@ -514,6 +529,18 @@
     ⚡ Start a game
   </button>
   <p class="muted mt" id="quickStartNote" style="font-size:.9rem"></p>
+
+  <!-- Asking about wiping the last game. This used to be a native confirm(),
+       which stops the page dead until it is answered — and a browser will
+       happily suppress one in a window that is not on top, leaving the host
+       pressing a button that appears to do nothing at all. -->
+  <div id="newGameAsk" class="hidden">
+    <p id="newGameAskText"></p>
+    <div class="row">
+      <button class="btn alt" id="newGameKeep">↩ Carry on, keep the scores</button>
+      <button class="btn" id="newGameWipe">Start fresh</button>
+    </div>
+  </div>
 
   <details class="fold mt" id="setupFold">
     <summary>⚙️ Setup &amp; options</summary>
@@ -1150,7 +1177,11 @@ const App = {
      then build a plan, then find Start the night. */
   quickStart() {
     const saved = Host.loadGame();
-    if (saved && !confirm('Start a NEW game? The saved game (' + saved.players.length + ' players) will be wiped.\n\nPress Cancel, then open Setup & options and choose "Carry on last game", to keep the scores.')) return;
+    if (saved) return this.askNewGame(saved, () => this.quickStartGo());
+    this.quickStartGo();
+  },
+
+  quickStartGo() {
     Host.clearGame();
     $('quickStartBtn').disabled = true;
     Host._afterOpen = () => {
@@ -1167,15 +1198,29 @@ const App = {
     Host.create();
   },
 
+  /* Ask in the page, then carry on. Nothing blocks, and both answers are
+     buttons the host can actually see. */
+  askNewGame(saved, go) {
+    const box = $('newGameAsk');
+    $('newGameAskText').textContent = 'There is a saved game with ' + saved.players.length +
+      ' player' + (saved.players.length === 1 ? '' : 's') + '. Starting fresh wipes those scores.';
+    box.classList.remove('hidden');
+    box.scrollIntoView({ block: 'center' });
+    $('newGameWipe').onclick = () => { box.classList.add('hidden'); go(); };
+    $('newGameKeep').onclick = () => { box.classList.add('hidden'); this.resumeRoom(); };
+  },
+
   createRoom() {
     const saved = Host.loadGame();
-    if (saved && !confirm('Start a NEW game? The saved game (' + saved.players.length + ' players) will be wiped.\n\nPress Cancel, then "Carry on last game", to keep the scores.')) return;
-    Host.clearGame();
+    if (saved) return this.askNewGame(saved, () => { Host.clearGame(); Host.create(); });
     Host.create();
   },
   resumeRoom() {
     const saved = Host.loadGame();
-    if (!saved) { alert('No saved game found.'); return; }
+    if (!saved) {
+      $('quickStartNote').textContent = 'There is no saved game on this device to carry on from.';
+      return;
+    }
     Host.create(saved);
   },
   // say what the big button will actually do before they press it, and open
@@ -3815,7 +3860,12 @@ const Quiz = {
 
      Nothing is redacted: a symbol has no text to hide, which is what makes
      this round possible at all where album covers needed a canvas pass. */
-  MIN_LOGO_PX: 64,
+  /* Google hands back whatever the site actually published, so asking for
+     256 is no guarantee of getting it. Sixty-four upscaled to fill a phone is
+     a smudge, which is exactly what made some of these unreadable. Measured
+     across the list: 31 of 36 come back at 128 or better, so this costs five
+     logos and makes the rest sharp. */
+  MIN_LOGO_PX: 128,
 
   async buildLogos(count) {
     const bank = (window.LOGOS || []);
@@ -5054,7 +5104,7 @@ const Quiz = {
       title: this.TITLES[this.mode] || 'Quiz round',
       noun: this.NOUNS[this.mode] || 'Question',
       roundLabel: this.roundLabel || '',
-      img: q.img || null, options: q.options, flashMs: flash, seconds: this.seconds,
+      img: q.img || null, logo: this.mode === 'logos', options: q.options, flashMs: flash, seconds: this.seconds,
       listen: audioRound, leadIn
     });
     // No "this one's for Paul" announcement — it singled people out and read
@@ -6615,6 +6665,8 @@ const Player = {
     // so nobody can sit and compare the picture against the answers
     if (msg.img) {
       $('quizArt').src = msg.img;
+      $('quizArtWrap').classList.toggle('logo', !!msg.logo);
+      $('quizArt').classList.toggle('logo', !!msg.logo);
       $('quizArtWrap').classList.add('showing');
     } else {
       $('quizArtWrap').classList.remove('showing');
