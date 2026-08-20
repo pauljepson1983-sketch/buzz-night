@@ -5503,6 +5503,18 @@ const Night = {
       ok = await Quiz.runRound(r);
     }
 
+    /* One straight retry for anything else. Most build failures are a
+       moment's bad luck — a request that timed out, a search that came back
+       thin — and simply asking again fixes them. Substituting a different
+       round on the first stumble takes the round off the host for no good
+       reason. */
+    if (!ok && this.running) {
+      $('nightStatus').textContent = 'Round ' + n + ' did not build first time — reloading it…';
+      await this.wait(1200);
+      if (!this.running) return;
+      ok = await Quiz.runRound(r);
+    }
+
     if (!this.running) return;
 
     /* Still nothing. Rather than leave a hole in the night, play something
@@ -5517,11 +5529,45 @@ const Night = {
       const why0 = ($('quizStatus').textContent || '').replace(/^⚠\s*/, '');
       const OFFLINE = ['quickfire', 'guess', 'logos', 'places'].filter(m => m !== r.mode);
       const alt = OFFLINE[Math.floor(Math.random() * OFFLINE.length)];
-      $('nightStatus').textContent = 'Round ' + n + ' would not build' +
-        (why0 && /[a-z]/i.test(why0) ? ' — ' + why0 : '.') +
-        ' Playing ' + (Quiz.TITLES[alt] || alt) + ' instead so the night keeps moving.';
-      Sound.say('That one is not playing ball. ' + (Quiz.ROUND_NAMES[alt] || 'Another round') + ' instead.');
-      await this.wait(2600);
+
+      /* Twice failed. The stand-in is a backstop, not a decision made over
+         the host's head: the button is there the whole time, so the round can
+         be reloaded as many times as they like — Spotify coming back, a
+         flaky connection settling — and the countdown only carries the night
+         on if nobody does anything. */
+      this.failedRound = r;
+      $('nightRetryBtn').classList.remove('hidden');
+      const SECS = 12;
+      let left = SECS;
+      const tell = () => {
+        $('nightStatus').textContent = 'Round ' + n + ' would not build' +
+          (why0 && /[a-z]/i.test(why0) ? ' — ' + why0 : '.') +
+          ' Press "Try this round again" to reload it, or ' + (Quiz.TITLES[alt] || alt) +
+          ' starts in ' + left + 's.';
+      };
+      tell();
+      Sound.say('That one is not playing ball. Reload it, or another round starts shortly.');
+      const retry = await new Promise(resolve => {
+        this._go = resolve;   // the button and Skip round both come through here
+        const tick = () => {
+          if (this._go !== resolve) return;          // already decided
+          if (--left <= 0) { this._go = null; resolve('timeout'); return; }
+          tell();
+          this.timer = setTimeout(tick, 1000);
+        };
+        this.timer = setTimeout(tick, 1000);
+      });
+      clearTimeout(this.timer);
+      $('nightRetryBtn').classList.add('hidden');
+      this.failedRound = null;
+      if (!this.running) return;
+      // Skip round released this gate and has already moved the night on
+      if (retry === false) return;
+      if (retry === true) { this.idx--; return this.runNext(); }
+
+      // nobody stepped in — keep the night moving
+      $('nightStatus').textContent = 'Round ' + n + ' — playing ' + (Quiz.TITLES[alt] || alt) + ' instead.';
+      await this.wait(1400);
       if (!this.running) return;
       Host.broadcast({ type: 'roundCard', kicker: r.roundLabel,
         name: Quiz.TITLES[alt] || 'Quiz round', how: Quiz.HOWTO[alt] || '' });
