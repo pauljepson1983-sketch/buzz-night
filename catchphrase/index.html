@@ -46,6 +46,44 @@ button{font-family:inherit;cursor:pointer;border:0}
 #svg{position:absolute;inset:0;width:100%;height:100%}
 #svg .p{opacity:0;transform-box:fill-box;transform-origin:center;transition:opacity .45s ease}
 #svg .p.in{opacity:1}
+/* the picture is never quite still — it drifts, the way the show's did */
+@keyframes bob{50%{transform:translateY(-9px)}}
+@keyframes sway{50%{transform:rotate(3.5deg)}}
+@keyframes throb{50%{transform:scale(1.06)}}
+@keyframes lean{50%{transform:translateX(7px) rotate(-2deg)}}
+#svg .m0{animation:bob 2.6s ease-in-out infinite}
+#svg .m1{animation:sway 3.2s ease-in-out infinite}
+#svg .m2{animation:throb 2.9s ease-in-out infinite}
+#svg .m3{animation:lean 3.5s ease-in-out infinite}
+
+/* The show's puzzles were little cartoons: something acts the phrase out.
+   These are the verbs a part can be given. */
+@keyframes actFall{0%,10%{transform:translateY(-46%) rotate(0)}55%,100%{transform:translateY(0) rotate(200deg)}}
+@keyframes actDrop{0%,10%{transform:translateY(-52%)}50%,100%{transform:translateY(0)}}
+@keyframes actJump{0%,100%{transform:translate(-58%,0)}25%{transform:translate(-20%,-60%)}
+  50%{transform:translate(20%,-60%)}75%{transform:translate(58%,0)}}
+@keyframes actWalk{0%,100%{transform:translateX(-38%)}50%{transform:translateX(38%)}}
+@keyframes actFly{0%{transform:translate(-70%,6%)}100%{transform:translate(70%,-10%)}}
+@keyframes actSpin{100%{transform:rotate(360deg)}}
+@keyframes actShake{0%,100%{transform:rotate(0)}20%{transform:rotate(-9deg)}40%{transform:rotate(9deg)}
+  60%{transform:rotate(-6deg)}80%{transform:rotate(6deg)}}
+@keyframes actTip{0%,55%,100%{transform:rotate(0)}25%,40%{transform:rotate(-58deg)}}
+@keyframes actSink{0%,10%{transform:translateY(-14%)}70%,100%{transform:translateY(34%)}}
+@keyframes actRise{0%,10%{transform:translateY(34%)}70%,100%{transform:translateY(-30%)}}
+@keyframes actGrow{0%,100%{transform:scale(.55)}55%{transform:scale(1.25)}}
+@keyframes actEscape{0%,15%{transform:translate(0,0)}70%,100%{transform:translate(58%,-42%) rotate(20deg)}}
+#svg .act-fall{animation:actFall 2.8s ease-in infinite}
+#svg .act-drop{animation:actDrop 2.2s ease-in infinite}
+#svg .act-jump{animation:actJump 3.4s ease-in-out infinite}
+#svg .act-walk{animation:actWalk 3.6s ease-in-out infinite}
+#svg .act-fly{animation:actFly 4s linear infinite}
+#svg .act-spin{animation:actSpin 4.5s linear infinite}
+#svg .act-shake{animation:actShake 1.6s ease-in-out infinite}
+#svg .act-tip{animation:actTip 3.4s ease-in-out infinite}
+#svg .act-sink{animation:actSink 3.6s ease-in-out infinite}
+#svg .act-rise{animation:actRise 3.6s ease-in-out infinite}
+#svg .act-grow{animation:actGrow 3s ease-in-out infinite}
+#svg .act-escape{animation:actEscape 3.6s ease-in-out infinite}
 #svg .tile{transform-box:fill-box;transform-origin:center;
   transition:opacity .4s ease,transform .55s cubic-bezier(.16,.84,.44,1)}
 #svg .tile.gone{opacity:0;transform:scale(.35) rotate(-14deg)}
@@ -68,6 +106,13 @@ button{font-family:inherit;cursor:pointer;border:0}
   font-weight:900;letter-spacing:1px;text-transform:uppercase;color:var(--gold);
   background:linear-gradient(0deg,rgba(20,8,43,.96),transparent);opacity:0;transition:opacity .3s}
 #answerline.show{opacity:1}
+/* the answer, big enough that nobody can miss it */
+#answerbig{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:6px;background:rgba(20,8,43,.82);text-align:center;padding:16px}
+#answerbig .lab{font-size:clamp(12px,1.8vw,17px);font-weight:800;letter-spacing:3px;color:var(--cyan)}
+#answerbig .ans{font-size:clamp(26px,6.5vw,74px);font-weight:900;line-height:1.05;color:var(--gold);
+  text-transform:uppercase;animation:pop .45s cubic-bezier(.2,1.4,.4,1)}
+@keyframes pop{from{transform:scale(.7);opacity:0}}
 #flash{position:absolute;inset:0;background:var(--green);opacity:0;pointer-events:none;transition:opacity .25s}
 #bellpip{position:absolute;top:10px;right:12px;display:flex;align-items:center;gap:7px;font-weight:800;font-size:14px;
   color:var(--muted);background:rgba(0,0,0,.35);padding:6px 12px;border-radius:999px}
@@ -191,6 +236,7 @@ button{font-family:inherit;cursor:pointer;border:0}
     <svg id="jeps" viewBox="0 0 100 120"><use href="#jepsart"/></svg>
     <div id="bubble"></div>
     <div id="answerline"></div>
+    <div id="answerbig" class="hide"><div class="lab">THE ANSWER WAS</div><div class="ans"></div></div>
   </div>
 </div>
 
@@ -274,6 +320,8 @@ function L(x1, y1, x2, y2, o){ return Object.assign({k:"l", x1, y1, x2, y2}, o);
 function A(x1, y1, x2, y2, bend, o){ return Object.assign({k:"a", x1, y1, x2, y2, bend}, o); } // curve
 function R(x, y, w, h, o){ return Object.assign({k:"r", x, y, w, h}, o); }         // rect, x/y = centre
 function C(x, y, r, o){ return Object.assign({k:"c", x, y, r}, o); }               // circle
+// Mr Jeps himself, dropped into the puzzle to act it out — the way Mr Chips did
+function J(x, y, size, o){ return Object.assign({k:"j", x, y, size}, o); }
 
 const NS = "http://www.w3.org/2000/svg";
 const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
@@ -326,11 +374,21 @@ function drawPart(p){
       rx: p.rx || 6, fill: p.fill || "none", stroke: p.stroke || "none", "stroke-width": p.sw || 8});
     if (rot) node.setAttribute("transform", `rotate(${rot} ${px(p.x)} ${py(p.y)})`);
   }
+  else if (p.k === "j"){
+    node = el("g", {});
+    const u = el("use", {href: "#jepsart"});
+    const s = p.size / 120;                       // the artwork is 100 x 120
+    u.setAttribute("transform",
+      "translate(" + (px(p.x) - 50 * s * flip) + " " + (py(p.y) - 60 * s) + ") scale(" + (s * flip) + " " + s + ")"
+      + (rot ? " rotate(" + rot + " " + (50 * s) + " " + (60 * s) + ")" : ""));
+    node.appendChild(u);
+  }
   else if (p.k === "c"){
     node = el("ellipse", {cx: px(p.x), cy: py(p.y), rx: px(p.r), ry: py(p.r * 1.7857),
       fill: p.fill || "none", stroke: p.stroke || "none", "stroke-width": p.sw || 8});
   }
-  node.classList.add("p");
+  // the .p / .in classes live on the wrapper in loadBoard, never here — putting
+  // them on the part itself leaves it stuck at opacity 0
   return node;
 }
 
@@ -340,12 +398,12 @@ function drawPart(p){
 const GOLD = "#ffce3a", CY = "#3fe0ff", RED = "#ff5252", GRN = "#3ddc84", WHT = "#ffffff", DARK = "#14082b";
 
 const PUZZLES = [
-  {a:"man overboard", p:[ T("BOARD",50,68,150), A(20,52,80,52,-30,{arrow:true}), T("MAN",50,26,130,{rot:196,fill:GOLD}) ]},
+  {a:"man overboard", p:[ T("BOARD",50,72,150), J(50,30,150,{act:"fall"}) ]},
   {a:"once upon a time", p:[ T("1nce",26,50,110), T("upon",48,50,100), T("a",64,50,80), E("🕐",82,50,140) ]},
   {a:"reading between the lines", p:[ L(16,30,84,30,{w:12,stroke:CY}), L(16,72,84,72,{w:12,stroke:CY}), T("READING",50,51,120) ]},
   {a:"water under the bridge", p:[ E("🌉",50,32,210), E("💧",34,66,110), E("💧",50,72,95), E("💧",66,66,110) ]},
   {a:"a bird in the hand", also:["bird in the hand"], p:[ E("✋",50,58,270), E("🐦",50,44,120) ]},
-  {a:"fish out of water", p:[ T("WATER",50,68,140,{fill:CY}), E("🐟",52,30,140,{rot:-28}) ]},
+  {a:"fish out of water", p:[ T("WATER",50,74,140,{fill:CY}), E("🐟",50,34,150,{rot:-28,act:"escape"}) ]},
   {a:"pie in the sky", p:[ E("☁️",26,26,130), E("☁️",74,22,150), E("🥧",50,44,140) ]},
   {a:"under lock and key", p:[ T("UNDER",50,26,120), E("🔒",36,64,170), E("🔑",64,64,170) ]},
   {a:"bread and butter", p:[ E("🍞",32,50,210), T("&",50,50,100,{fill:GOLD}), E("🧈",68,50,180) ]},
@@ -355,21 +413,21 @@ const PUZZLES = [
   {a:"candle in the wind", p:[ E("🕯️",42,56,200,{rot:20}), E("💨",70,44,150) ]},
   {a:"back to back", p:[ T("BACK",29,50,120), T("BACK",71,50,120,{flip:true,fill:GOLD}) ]},
   {a:"in black and white", p:[ T("IN",20,50,110), R(45,50,20,42,{fill:"#000",stroke:"#555",sw:4}), R(72,50,20,42,{fill:WHT}) ]},
-  {a:"turn back the clock", p:[ E("🕐",50,54,240), A(76,22,24,22,26,{arrow:true,stroke:GOLD}) ]},
-  {a:"over the moon", p:[ T("OVER",50,20,110), A(16,58,84,58,-36,{stroke:CY}), E("🌙",50,72,180) ]},
+  {a:"turn back the clock", p:[ A(78,20,22,20,26,{arrow:true,stroke:GOLD}), E("🕐",50,58,240,{act:"spin"}) ]},
+  {a:"over the moon", p:[ E("🌙",50,74,190), J(50,30,140,{act:"jump"}) ]},
   {a:"under the weather", p:[ E("🌧️",50,30,190), T("UNDER",50,74,120) ]},
   {a:"on cloud nine", p:[ T("ON",50,22,100), E("☁️",50,56,300), T("9",50,60,130,{fill:DARK}) ]},
-  {a:"raining cats and dogs", p:[ E("☁️",50,19,140), E("🐱",28,52,110), E("🐶",50,66,115), E("🐱",72,48,105), E("🐶",40,36,90) ]},
-  {a:"head over heels", p:[ T("HEAD",50,26,110,{rot:180}), A(18,50,82,50,-22,{stroke:CY}), T("HEELS",50,74,110) ]},
-  {a:"a piece of cake", also:["piece of cake"], p:[ E("🎂",36,54,220), E("🍰",72,58,150,{rot:22}) ]},
+  {a:"raining cats and dogs", p:[ E("☁️",50,16,150), E("🐱",26,56,120,{act:"drop"}), E("🐶",48,64,120,{act:"drop"}), E("🐱",72,52,120,{act:"drop"}), E("🐶",60,40,110,{act:"drop"}) ]},
+  {a:"head over heels", p:[ T("HEELS",50,80,120), J(50,40,150,{act:"spin"}) ]},
+  {a:"a piece of cake", also:["piece of cake"], p:[ E("🎂",34,56,220), E("🍰",74,54,160,{rot:22,act:"escape"}) ]},
   {a:"break the ice", p:[ T("ICE",50,50,230,{fill:CY}), L(47,14,53,50,{w:14,stroke:DARK}), L(53,50,45,86,{w:14,stroke:DARK}) ]},
   {a:"cost an arm and a leg", p:[ E("💷",50,18,110), E("💪",32,56,190), T("+",50,56,100,{fill:GOLD}), E("🦵",68,56,190) ]},
   {a:"hit the nail on the head", p:[ E("🔨",34,28,180,{rot:40}), E("🔩",52,50,130), E("🗣️",52,76,160) ]},
-  {a:"let the cat out of the bag", p:[ E("👜",56,62,240), E("🐱",40,36,140) ]},
+  {a:"let the cat out of the bag", p:[ E("👜",40,68,240), E("🐱",44,42,140,{act:"escape"}) ]},
   {a:"barking up the wrong tree", p:[ E("🌳",64,52,250), E("🐶",32,62,160), T("✗",64,52,220,{fill:RED}) ]},
   {a:"all your eggs in one basket", also:["put all your eggs in one basket","eggs in one basket"],
     p:[ E("🧺",50,62,260), E("🥚",41,44,95), E("🥚",50,39,95), E("🥚",59,44,95) ]},
-  {a:"burning the candle at both ends", p:[ E("🕯️",50,52,240,{rot:90}), E("🔥",24,52,120), E("🔥",76,52,120) ]},
+  {a:"burning the candle at both ends", p:[ E("🕯️",50,52,240,{rot:90}), E("🔥",22,52,125,{act:"shake"}), E("🔥",78,52,125,{act:"shake"}) ]},
   {a:"the last straw", p:[ L(26,34,26,66,{w:14,stroke:"#e8d9a0"}), L(36,34,36,66,{w:14,stroke:"#e8d9a0"}),
     L(46,34,46,66,{w:14,stroke:"#e8d9a0"}), L(56,34,56,66,{w:14,stroke:"#e8d9a0"}), L(72,34,72,66,{w:16,stroke:GOLD}) ]},
   {a:"a wolf in sheep's clothing", also:["wolf in sheeps clothing","wolf in sheep clothing"],
@@ -377,7 +435,7 @@ const PUZZLES = [
   {a:"hold your horses", p:[ E("✋",30,52,220), E("🐴",62,52,190), E("🐴",80,58,150) ]},
   {a:"down to earth", p:[ T("DOWN",50,20,110), A(50,32,50,52,0,{arrow:true,stroke:CY}), E("🌍",50,72,190) ]},
   {a:"out of the blue", p:[ R(36,50,34,54,{fill:"#2b5cff",rx:14}), T("OUT",66,50,120,{fill:GOLD}) ]},
-  {a:"a drop in the ocean", also:["drop in the ocean"], p:[ E("🌊",50,68,290), E("💧",50,26,90) ]},
+  {a:"a drop in the ocean", also:["drop in the ocean"], p:[ E("🌊",50,74,290), E("💧",50,24,95,{act:"drop"}) ]},
   {a:"music to my ears", p:[ E("🎵",26,46,150), E("🎶",44,36,120), E("👂",72,54,230) ]},
   {a:"an eye for an eye", also:["eye for an eye"], p:[ E("👁️",28,50,180), T("4",50,50,120,{fill:GOLD}), E("👁️",72,50,180) ]},
   {a:"see eye to eye", p:[ E("👁️",28,50,180), T("2",50,50,120,{fill:CY}), E("👁️",72,50,180,{flip:true}) ]},
@@ -388,7 +446,7 @@ const PUZZLES = [
   {a:"bring home the bacon", p:[ E("🥓",24,52,170), A(36,52,62,52,-14,{arrow:true,stroke:GOLD}), E("🏠",78,52,210) ]},
   {a:"a big fish in a small pond", also:["big fish in a small pond"],
     p:[ C(50,54,22,{fill:"#123a55",stroke:CY,sw:8}), E("🐟",50,54,300) ]},
-  {a:"when pigs fly", p:[ E("☁️",22,28,130), E("☁️",78,30,150), E("🐷",50,52,230) ]},
+  {a:"when pigs fly", p:[ E("☁️",22,26,130), E("☁️",78,28,150), E("🐷",50,56,230,{act:"fly"}) ]},
   {a:"cold feet", p:[ E("🦶",50,58,260), E("❄️",32,30,120), E("❄️",68,26,100) ]},
   {a:"green fingers", p:[ E("🌿",50,22,130), T("FINGERS",50,58,150,{fill:GRN}) ]},
   {a:"two peas in a pod", p:[ T("2",26,32,110,{fill:GOLD}), E("🫛",54,56,300) ]},
@@ -399,28 +457,28 @@ const PUZZLES = [
     p:[ E("🪨",26,58,160), E("🐦",60,36,130), E("🐦",74,60,130) ]},
   {a:"burning bridges", p:[ E("🌉",50,48,250), E("🔥",32,66,130), E("🔥",68,66,130) ]},
   {a:"saved by the bell", p:[ E("🔔",56,52,250), E("🛟",26,56,150) ]},
-  {a:"a shot in the dark", also:["shot in the dark"], p:[ R(50,50,74,72,{fill:"#000",rx:12}), E("💥",50,50,140) ]},
+  {a:"a shot in the dark", also:["shot in the dark"], p:[ R(50,50,74,72,{fill:"#000",rx:12}), E("💥",50,50,150,{act:"grow"}) ]},
   {a:"every cloud has a silver lining", p:[ E("☁️",50,42,300), A(26,64,74,64,20,{stroke:"#d8d8e8",w:14}) ]},
   {a:"straight from the horse's mouth", also:["straight from the horses mouth"],
     p:[ E("🐴",26,52,220), A(42,52,84,52,0,{arrow:true,stroke:GOLD}) ]},
   {a:"a watched pot never boils", also:["watched pot never boils"], p:[ E("👀",32,30,160), E("🍲",62,64,220) ]},
   {a:"the early bird catches the worm", also:["early bird catches the worm"],
-    p:[ E("☀️",82,18,120), E("🐦",38,46,180), E("🪱",66,64,140) ]},
+    p:[ E("☀️",84,16,120), E("🪱",68,70,140), E("🐦",36,44,180,{act:"walk"}) ]},
   {a:"a level playing field", also:["level playing field"],
     p:[ R(50,64,72,20,{fill:"#1e7a45",rx:6}), E("📏",50,36,170) ]},
-  {a:"sitting on the fence", p:[ L(16,52,84,52,{w:14,stroke:"#c9a06a"}), L(16,66,84,66,{w:14,stroke:"#c9a06a"}),
-    L(28,40,28,84,{w:14,stroke:"#c9a06a"}), L(72,40,72,84,{w:14,stroke:"#c9a06a"}), E("🧍",50,32,150) ]},
-  {a:"blow your own trumpet", p:[ E("👄",26,52,150), E("💨",42,52,110), E("🎺",68,52,230) ]},
-  {a:"chip off the old block", p:[ R(66,58,30,34,{fill:"#8a5a2b",rx:8}), E("🍟",30,34,150,{rot:-30}) ]},
+  {a:"sitting on the fence", p:[ L(16,56,84,56,{w:14,stroke:"#c9a06a"}), L(16,70,84,70,{w:14,stroke:"#c9a06a"}),
+    L(28,44,28,88,{w:14,stroke:"#c9a06a"}), L(72,44,72,88,{w:14,stroke:"#c9a06a"}), J(50,32,140,{act:"sway"}) ]},
+  {a:"blow your own trumpet", p:[ J(24,54,150), E("💨",44,50,110,{act:"grow"}), E("🎺",70,52,230) ]},
+  {a:"chip off the old block", p:[ R(64,62,30,34,{fill:"#8a5a2b",rx:8}), E("🍟",36,38,150,{rot:-30,act:"escape"}) ]},
   {a:"the tip of the iceberg", also:["tip of the iceberg"],
     p:[ E("🧊",50,26,150), L(8,44,92,44,{w:14,stroke:CY}), E("🧊",50,70,250,{op:.3}) ]},
   {a:"face the music", p:[ E("😀",32,52,230), E("🎵",70,44,170) ]},
-  {a:"rock the boat", p:[ E("🌊",50,76,240), E("⛵",50,44,250,{rot:24}) ]},
+  {a:"rock the boat", p:[ E("🌊",50,80,240), E("⛵",50,44,250,{act:"shake"}) ]},
   {a:"back to square one", p:[ R(68,52,26,44,{stroke:GOLD,sw:10,rx:8}), T("1",68,52,130,{fill:GOLD}),
     A(24,52,54,52,-18,{arrow:true,stroke:CY}) ]},
   {a:"hands down", p:[ E("✋",34,38,180,{rot:180}), E("✋",66,38,180,{rot:180}),
     A(34,58,34,80,0,{arrow:true,stroke:CY}), A(66,58,66,80,0,{arrow:true,stroke:CY}) ]},
-  {a:"spill the beans", p:[ E("🫙",34,36,190,{rot:-50}), E("🫘",52,62,90), E("🫘",64,70,90), E("🫘",74,58,90) ]},
+  {a:"spill the beans", p:[ E("🫙",32,32,190,{act:"tip"}), E("🫘",52,64,95,{act:"drop"}), E("🫘",66,72,95,{act:"drop"}), E("🫘",78,60,95,{act:"drop"}) ]},
   {a:"thick as thieves", p:[ T("THIEVES",50,50,190,{spacing:-12,fill:GOLD}) ]},
   {a:"left out in the cold", p:[ R(66,50,42,50,{stroke:CY,sw:8,rx:12}), T("LEFT",22,50,110), E("❄️",22,20,90) ]},
 
@@ -432,7 +490,7 @@ const PUZZLES = [
   {a:"top banana", p:[ T("TOP",50,22,110), E("🍌",50,60,250) ]},
   {a:"a bad egg", also:["bad egg"], p:[ E("🥚",44,54,240), T("✗",70,38,180,{fill:RED}) ]},
   {a:"egg on your face", p:[ E("😀",44,56,250), E("🥚",64,40,140) ]},
-  {a:"walking on eggshells", p:[ E("🦶",36,36,160), E("🥚",54,66,120), E("🥚",70,60,110) ]},
+  {a:"walking on eggshells", p:[ E("🥚",30,74,120), E("🥚",50,78,120), E("🥚",70,74,120), J(50,40,130,{act:"walk"}) ]},
   {a:"the icing on the cake", also:["icing on the cake"], p:[ T("ICING",50,22,110), E("🎂",50,62,250) ]},
   {a:"selling like hot cakes", also:["sell like hot cakes"], p:[ E("🥞",38,56,220), E("🔥",64,42,140), E("💷",80,64,110) ]},
   {a:"in a nutshell", p:[ T("IN",24,30,100), E("🌰",56,58,290) ]},
@@ -443,26 +501,26 @@ const PUZZLES = [
   {a:"out of the frying pan", p:[ T("OUT",22,26,90), E("🍳",44,52,230), E("🔥",72,62,150) ]},
   {a:"food for thought", p:[ E("🍽️",28,54,200), T("4",50,52,110,{fill:GOLD}), E("🧠",72,52,200) ]},
   {a:"eat humble pie", p:[ E("😔",28,42,160), E("🥧",58,58,250) ]},
-  {a:"let off steam", p:[ T("LET OFF",50,26,105), E("♨️",50,66,210) ]},
+  {a:"let off steam", p:[ J(38,70,150), E("♨️",66,40,190,{act:"rise"}) ]},
   {a:"full of hot air", p:[ E("🎈",46,54,270), E("♨️",76,30,120) ]},
   {a:"skating on thin ice", p:[ E("⛸️",50,32,180), L(10,58,90,58,{w:12,stroke:CY}), L(40,58,46,78,{w:8,stroke:CY}), L(60,58,55,80,{w:8,stroke:CY}) ]},
   {a:"the ball is in your court", also:["ball is in your court"], p:[ R(50,60,64,32,{stroke:CY,sw:8,rx:6}), E("⚽",50,42,180) ]},
   {a:"throw in the towel", p:[ E("✋",22,62,160), A(30,54,66,30,-24,{arrow:true,stroke:GOLD}), T("TOWEL",78,24,90) ]},
   {a:"take the bull by the horns", p:[ E("🐂",52,56,280), E("✋",30,30,140) ]},
   {a:"miss the boat", p:[ E("🧍",20,58,160), E("⛵",70,46,200), A(56,44,86,36,-10,{arrow:true,stroke:CY}) ]},
-  {a:"jump on the bandwagon", p:[ E("🚃",64,60,250), E("🏃",28,44,160), A(38,46,54,52,-16,{arrow:true,stroke:GOLD}) ]},
+  {a:"jump on the bandwagon", p:[ E("🚃",66,64,250), J(34,36,130,{act:"jump"}) ]},
   {a:"cut corners", p:[ R(50,52,40,54,{stroke:GOLD,sw:10,rx:2}), E("✂️",24,24,140), E("✂️",76,80,140) ]},
   {a:"under your nose", p:[ E("👃",50,32,200), T("UNDER",50,68,110) ]},
   {a:"don't count your chickens", also:["dont count your chickens","count your chickens"],
     p:[ E("🐔",34,48,150), E("🐔",58,48,150), T("1 2 3",50,76,90,{fill:RED}), L(28,76,72,76,{w:10,stroke:RED}) ]},
   {a:"a rolling stone gathers no moss", also:["a rolling stone","rolling stone gathers no moss"],
-    p:[ E("🌿",20,44,100), A(20,66,44,66,0,{arrow:true,stroke:CY}), E("🪨",60,58,210,{rot:25}) ]},
-  {a:"bury your head in the sand", p:[ E("🏖️",50,68,300), E("🦵",50,30,150,{rot:180}) ]},
+    p:[ E("🌿",18,72,110), E("🪨",56,56,210,{act:"spin"}) ]},
+  {a:"bury your head in the sand", p:[ E("🏖️",50,74,300), J(50,36,140,{rot:180,act:"sink"}) ]},
   {a:"sweep it under the carpet", also:["sweep under the carpet","brush it under the carpet"],
     p:[ E("🧹",32,36,180,{rot:-25}), R(62,70,42,10,{fill:"#8a5a2b",rx:4}), C(66,63,4,{fill:GOLD}) ]},
   {a:"hit the road", p:[ E("✋",30,34,170), E("🛣️",60,66,250) ]},
   {a:"a drop in the bucket", p:[ E("🪣",50,62,260), E("💧",50,26,90) ]},
-  {a:"kick the bucket", p:[ E("🦵",28,42,180), E("🪣",64,62,230) ]},
+  {a:"kick the bucket", p:[ E("🪣",68,64,230,{act:"shake"}), J(26,52,150) ]},
   {a:"on the same page", p:[ E("📄",32,52,200), T("=",50,52,90,{fill:GOLD}), E("📄",68,52,200) ]},
   {a:"an open book", also:["open book"], p:[ E("📖",50,52,320) ]},
   {a:"turn over a new leaf", p:[ A(24,26,76,26,-18,{arrow:true,stroke:GOLD}), E("🍃",50,58,260) ]},
@@ -486,14 +544,14 @@ const PUZZLES = [
   {a:"money doesn't grow on trees", also:["money doesnt grow on trees","money does not grow on trees"],
     p:[ E("🌳",52,56,280), E("💷",30,30,120), T("✗",30,30,150,{fill:RED}) ]},
   {a:"money down the drain", also:["throwing money down the drain"],
-    p:[ E("💷",50,26,140), A(50,42,50,62,0,{arrow:true,stroke:CY}), E("🕳️",50,78,150) ]},
+    p:[ E("🕳️",50,80,160), E("💷",50,30,150,{act:"drop"}) ]},
   {a:"money talks", p:[ E("💷",36,52,200), E("💬",70,46,190) ]},
   {a:"tighten your belt", p:[ T("BELT",50,50,150,{fill:GOLD}), A(16,50,34,50,0,{arrow:true}), A(84,50,66,50,0,{arrow:true}) ]},
   {a:"break the bank", p:[ T("BANK",50,50,200,{fill:GOLD}), L(46,14,54,50,{w:14,stroke:DARK}), L(54,50,44,86,{w:14,stroke:DARK}) ]},
   {a:"in the red", p:[ T("IN",26,50,110), R(64,50,32,44,{fill:"#c62828",rx:8}) ]},
   {a:"save for a rainy day", p:[ E("🐷",30,60,190), E("🌧️",68,40,210) ]},
   {a:"under one roof", p:[ E("🏠",50,32,200), T("UNDER",50,70,110) ]},
-  {a:"hit the roof", p:[ E("🏠",46,62,240), A(46,46,46,20,0,{arrow:true,stroke:RED}), E("😡",78,26,120) ]},
+  {a:"hit the roof", p:[ E("🏠",46,70,240), J(46,34,140,{act:"rise"}) ]},
   {a:"home and dry", p:[ E("🏠",30,52,220), T("&",50,52,90,{fill:GOLD}), E("☀️",72,52,200) ]},
   {a:"a house of cards", also:["house of cards"], p:[ E("🃏",50,30,170), E("🃏",38,58,180,{rot:-25}), E("🃏",62,58,180,{rot:25}) ]},
   {a:"the writing is on the wall", also:["writing on the wall","the writing on the wall"],
@@ -502,9 +560,9 @@ const PUZZLES = [
   {a:"hit the sack", p:[ E("✋",30,36,160), E("💰",64,62,230) ]},
   {a:"sleep like a log", p:[ E("😴",32,42,180), E("🪵",66,62,230) ]},
   {a:"burn the midnight oil", p:[ E("🕯️",34,54,210), E("🌙",70,32,170) ]},
-  {a:"the crack of dawn", also:["crack of dawn"], p:[ T("DAWN",50,50,190,{fill:GOLD}), L(46,14,54,50,{w:14,stroke:DARK}), L(54,50,44,86,{w:14,stroke:DARK}) ]},
-  {a:"time flies", p:[ E("🕐",38,50,200), E("💨",70,44,150) ]},
-  {a:"against the clock", p:[ E("🏃",26,54,180), E("🕐",64,52,250) ]},
+  {a:"the crack of dawn", also:["crack of dawn"], p:[ T("DAWN",50,44,190,{fill:GOLD}), L(46,10,54,44,{w:14,stroke:DARK}), L(54,44,44,78,{w:14,stroke:DARK}), E("☀️",50,86,110,{act:"rise"}) ]},
+  {a:"time flies", p:[ E("💨",20,54,150), E("🕐",56,48,210,{act:"fly"}) ]},
+  {a:"against the clock", p:[ E("🕐",68,50,250), J(26,58,130,{act:"walk"}) ]},
   {a:"beat the clock", p:[ E("👊",26,48,180), E("🕐",64,52,250) ]},
   {a:"in the nick of time", p:[ T("NICK",24,28,90,{fill:GOLD}), E("🕐",58,54,250) ]},
   {a:"third time lucky", p:[ T("3",26,50,140,{fill:GOLD}), E("🕐",54,52,210), E("🍀",80,62,140) ]},
@@ -514,7 +572,7 @@ const PUZZLES = [
   {a:"crying over spilt milk", also:["cry over spilt milk","dont cry over spilt milk"],
     p:[ E("😢",30,44,180), E("🥛",64,62,210,{rot:-60}) ]},
   {a:"a shoulder to cry on", p:[ E("🫂",34,52,210), E("😢",68,50,200) ]},
-  {a:"keep your chin up", also:["chin up"], p:[ E("😀",50,54,260), A(50,78,50,24,0,{arrow:true,stroke:GOLD}) ]},
+  {a:"keep your chin up", also:["chin up"], p:[ A(20,50,20,20,0,{arrow:true,stroke:GOLD}), J(56,54,170,{act:"rise"}) ]},
   {a:"grin and bear it", p:[ E("😁",32,52,220), E("🐻",68,52,230) ]},
   {a:"a bear hug", also:["bear hug"], p:[ E("🐻",50,56,310), E("🫂",50,50,130) ]},
   {a:"a loan shark", also:["loan shark"], p:[ E("💷",24,42,140), E("🦈",58,56,270) ]},
@@ -539,7 +597,7 @@ const PUZZLES = [
   {a:"water off a duck's back", also:["water off a ducks back"], p:[ E("🦆",44,56,240), E("💧",70,32,120) ]},
   {a:"a sitting duck", also:["sitting duck"], p:[ E("🦆",48,58,290), T("✗",78,28,140,{fill:RED}) ]},
   {a:"get your ducks in a row", also:["ducks in a row"], p:[ E("🦆",24,52,130), E("🦆",42,52,130), E("🦆",60,52,130), E("🦆",78,52,130) ]},
-  {a:"a wild goose chase", also:["wild goose chase"], p:[ E("🦢",68,46,200), E("🏃",28,56,180), A(38,50,58,46,-8,{arrow:true,stroke:CY}) ]},
+  {a:"a wild goose chase", also:["wild goose chase"], p:[ E("🦢",72,42,200), J(28,58,130,{act:"walk"}) ]},
   {a:"flogging a dead horse", also:["flog a dead horse","beating a dead horse"], p:[ E("🐴",46,60,240,{rot:180}), E("✋",76,34,140) ]},
   {a:"long in the tooth", p:[ E("🦷",50,50,200), L(50,62,50,84,{w:22,stroke:WHT}) ]},
   {a:"sweet tooth", p:[ E("🦷",38,54,230), E("🍬",70,50,200) ]},
@@ -561,10 +619,10 @@ const PUZZLES = [
   {a:"a step in the right direction", also:["step in the right direction"], p:[ E("👣",38,58,220), A(56,50,86,50,0,{arrow:true,stroke:GRN}) ]},
   {a:"back to the drawing board", also:["the drawing board"],
     p:[ R(64,54,38,44,{fill:"#f4efff",rx:6}), E("🖊️",64,54,140), A(20,54,42,54,-16,{arrow:true,stroke:CY}) ]},
-  {a:"turn the tables", also:["the tables have turned"], p:[ E("🪑",50,54,260,{rot:180}), A(24,24,76,24,-16,{arrow:true,stroke:GOLD}) ]},
+  {a:"turn the tables", also:["the tables have turned"], p:[ E("🪑",50,54,270,{act:"spin"}) ]},
   {a:"put a sock in it", p:[ E("🧦",50,56,290), T("IN",22,26,90) ]},
-  {a:"pull your socks up", p:[ E("🧦",50,60,240), A(50,44,50,20,0,{arrow:true,stroke:GOLD}) ]},
-  {a:"knock your socks off", p:[ E("🧦",56,56,230,{rot:35}), E("👊",26,42,180) ]},
+  {a:"pull your socks up", p:[ A(22,50,22,20,0,{arrow:true,stroke:GOLD}), E("🧦",56,58,250,{act:"rise"}) ]},
+  {a:"knock your socks off", p:[ E("👊",24,44,180), E("🧦",58,56,230,{rot:35,act:"escape"}) ]},
   {a:"if the shoe fits", also:["if the cap fits"], p:[ E("👞",50,56,290), E("❓",78,28,130) ]},
   {a:"on a shoestring", p:[ E("👟",50,58,280), T("ON",22,26,90) ]},
   {a:"a heart of gold", also:["heart of gold"], p:[ E("❤️",38,54,240), E("🥇",70,52,190) ]},
@@ -574,7 +632,7 @@ const PUZZLES = [
   {a:"off your rocker", p:[ E("🪑",50,58,250,{rot:22}), E("😵",76,28,130) ]},
   {a:"a screw loose", also:["got a screw loose"], p:[ E("🗣️",42,54,240), E("🔩",72,42,150,{rot:35}) ]},
   {a:"the penny dropped", also:["penny drops","the penny drops"],
-    p:[ E("🪙",50,26,120), A(50,40,50,66,0,{arrow:true,stroke:GOLD}), E("🗣️",50,80,130) ]},
+    p:[ J(50,74,150), E("🪙",50,28,130,{act:"drop"}) ]},
   {a:"two sides of the same coin", also:["sides of the same coin"],
     p:[ E("🪙",34,52,200), E("🪙",66,52,200,{flip:true}), T("2",50,22,100,{fill:GOLD}) ]},
   {a:"a flash in the pan", also:["flash in the pan"], p:[ E("🍳",52,60,250), E("💥",42,36,150) ]},
@@ -582,15 +640,15 @@ const PUZZLES = [
   {a:"birds of a feather", p:[ E("🐦",34,50,170), E("🐦",62,52,170), E("🪶",84,32,120) ]},
   {a:"ruffle a few feathers", also:["ruffle some feathers"], p:[ E("🐦",44,56,250), E("🪶",70,32,130), E("🪶",80,48,110) ]},
   {a:"under a cloud", p:[ E("☁️",50,32,260), T("UNDER",50,72,110) ]},
-  {a:"chasing rainbows", p:[ E("🌈",68,42,240), E("🏃",26,58,180) ]},
+  {a:"chasing rainbows", p:[ E("🌈",70,40,240), J(28,60,130,{act:"walk"}) ]},
   {a:"a ray of sunshine", p:[ E("☀️",50,52,320) ]},
   {a:"make hay while the sun shines", p:[ E("🌾",34,60,220), E("☀️",72,32,190) ]},
   {a:"the calm before the storm", p:[ E("😌",30,50,190), E("⛈️",68,52,230) ]},
   {a:"any port in a storm", p:[ E("⛈️",30,34,170), E("⚓",66,60,220) ]},
-  {a:"all at sea", p:[ E("🌊",50,66,300), E("🧍",50,34,140) ]},
-  {a:"in deep water", p:[ T("IN",26,26,100), E("🌊",50,64,320), E("🧍",50,36,130) ]},
+  {a:"all at sea", p:[ E("🌊",50,72,300), J(50,34,130,{act:"sway"}) ]},
+  {a:"in deep water", p:[ E("🌊",50,72,320), J(50,38,130,{act:"sink"}) ]},
   {a:"test the water", also:["test the waters"], p:[ E("🦶",44,36,160), E("💧",56,66,200) ]},
-  {a:"go with the flow", p:[ E("🌊",50,62,300), A(18,32,82,32,0,{arrow:true,stroke:CY}) ]},
+  {a:"go with the flow", p:[ E("🌊",50,68,300), J(40,32,120,{act:"fly"}) ]},
   {a:"against the tide", also:["swim against the tide"], p:[ E("🌊",50,64,300), A(82,32,18,32,0,{arrow:true,stroke:RED}) ]},
   {a:"the coast is clear", p:[ E("🏖️",50,60,280), E("👀",50,26,130) ]}
 ];
@@ -786,13 +844,34 @@ function loadBoard(puz, tilesDown){
   G.serial++;
   G.puz = puz; G.step = 0; G.armed = false; G.buzzer = -1; G.busy = false; G.locked = new Set();
   $("answerline").classList.remove("show");
+  $("answerbig").classList.add("hide");
   $("svg").innerHTML = "";
-  puz.p.forEach(part => {
-    const n = drawPart(part);
-    n.classList.add("in");
-    if (part.op != null) n.style.opacity = part.op;
-    $("svg").appendChild(n);
+
+  // Each part goes in its own wrapper so the wrapper can carry the drifting
+  // animation while the part keeps its own rotation attribute.
+  const art = el("g", {});
+  puz.p.forEach((part, i) => {
+    const w = el("g", {});
+    w.appendChild(drawPart(part));
+    w.setAttribute("class", "p in " + (part.act ? "act-" + part.act : "m" + (i % 4)));
+    w.style.animationDelay = (part.act ? 0 : i * 0.35).toFixed(2) + "s";
+    if (part.op != null) w.style.opacity = part.op;
+    art.appendChild(w);
   });
+  $("svg").appendChild(art);
+
+  // Blow the picture up to fill the whole board. Without this the art sits in
+  // a huddle in the middle and the corner tiles hide nothing at all.
+  try {
+    const bb = art.getBBox();
+    if (bb.width > 0 && bb.height > 0){
+      const s = Math.min((W - 70) / bb.width, (H - 60) / bb.height, 2.6);
+      const cx = bb.x + bb.width / 2, cy = bb.y + bb.height / 2;
+      art.setAttribute("transform",
+        "translate(" + (W / 2) + " " + (H / 2) + ") scale(" + s.toFixed(3) + ") translate(" + (-cx) + " " + (-cy) + ")");
+    }
+  } catch(e){}
+
   G.steps = buildTiles();
   if (!tilesDown){ G.steps.forEach(liftTile); G.step = G.steps.length; }
   refreshPlayers();
@@ -850,7 +929,7 @@ function bonusOver(){
   audio.wrong();
   says("It was " + G.puz.a + "!", true);
   revealAll();
-  later(nextPuzzle, 3200);
+  later(nextPuzzle, 4600);
 }
 
 /* ---- round 2: quickfire ---- */
@@ -1025,6 +1104,12 @@ function revealAll(){
   G.steps.forEach(liftTile);
   $("answerline").textContent = G.puz.a;
   $("answerline").classList.add("show");
+  // the whole picture first, then the answer over the top of it
+  setTimeout(() => {
+    if (!G.puz) return;
+    $("answerbig").querySelector(".ans").textContent = G.puz.a;
+    $("answerbig").classList.remove("hide");
+  }, 1100);
 }
 function timeUp(){
   G.busy = true;
@@ -1032,7 +1117,7 @@ function timeUp(){
   audio.wrong();
   says("It was " + G.puz.a + "!", true);
   revealAll();
-  later(nextPuzzle, 3200);
+  later(nextPuzzle, 4600);
 }
 
 /* ============================================================
@@ -1132,14 +1217,14 @@ function decide(ok){
     refreshPlayers();
     // hold the SPOT ON card, then drop it so the finished picture is on show
     setTimeout(() => $("verdict").classList.add("hide"), 1500);
-    if (G.mode === "main")           later(() => startBonus(i), 3300);
-    else if (G.mode === "bonus")     later(nextPuzzle, 3300);
+    if (G.mode === "main")           later(() => startBonus(i), 4600);
+    else if (G.mode === "bonus")     later(nextPuzzle, 4600);
     else if (G.mode === "super"){                // square claimed — is that a line?
       markCell("claimed");
       const line = winningLine();
       return line ? setTimeout(() => superWin(line), 1600) : setTimeout(backToGrid, 1600);
     }
-    else                             later(nextQuickfire, 2400);
+    else                             later(nextQuickfire, 3200);
   } else {
     $("verdict").classList.add("hide");
     says(pick(JEPS_BAD), true);
