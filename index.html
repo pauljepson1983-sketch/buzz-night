@@ -256,6 +256,27 @@
   #quizOptions.around .opt-c { grid-area: c; margin-right: 8% }
   #quizOptions.around .opt-d { grid-area: d; margin-left: 8% }
   #quizOptions.around .opt-slot { grid-area: pic; min-height: 4px }
+
+  /* Scattered and drifting, for marks with the company name written into
+     them. Lined up in a list, a wordmark is not a question — you read the
+     name off the picture and tap the matching words without knowing a thing.
+     Spread at random and gently moving, you have to actually find it, which
+     puts the seconds back into the question. */
+  #quizOptions.scatter { position: relative; display: block; height: 46vh; min-height: 290px; margin-top: 10px }
+  #quizOptions.scatter .quiz-opt {
+    position: absolute; width: 44%; min-height: 56px; font-size: 1rem;
+    padding: 12px 10px; will-change: transform;
+    animation: optDrift var(--dur, 5s) ease-in-out var(--delay, 0s) infinite alternate;
+  }
+  @keyframes optDrift {
+    from { transform: translate(0, 0) }
+    to   { transform: translate(var(--dx, 6px), var(--dy, -8px)) }
+  }
+  /* Movement is the point, but not at the cost of anyone who cannot cope
+     with it — they still get the scatter, just still. */
+  @media (prefers-reduced-motion: reduce) {
+    #quizOptions.scatter .quiz-opt { animation: none }
+  }
   /* Answer buttons are the thing people jab at in a noisy room, half cut, on
      a phone held one-handed. Comfortably past the 44px minimum tap target,
      with a visible border rather than relying on background alone, and a
@@ -3934,7 +3955,8 @@ const Quiz = {
       const matched = target.group != null ? others.filter(a => a.group === target.group) : [];
       const decoys = this.shuffle(matched.length >= 3 ? matched : others).slice(0, 3);
       const options = this.shuffle([target, ...decoys].map(a => a.label));
-      return { url: target.url, uri: target.uri, dur: target.dur || 0, answer: target.label, seenKey: target.label, options, correct: options.indexOf(target.label) };
+      return { url: target.url, uri: target.uri, dur: target.dur || 0, words: !!target.words,
+               answer: target.label, seenKey: target.label, options, correct: options.indexOf(target.label) };
     });
   },
 
@@ -4112,7 +4134,9 @@ const Quiz = {
         if (w > bestW) { bestW = w; best = url; }
         if (bestW >= 256) break;   // already as good as it gets
       }
-      return bestW >= this.MIN_LOGO_PX ? { label: b.name, seenKey: b.name, url: best } : null;
+      return bestW >= this.MIN_LOGO_PX
+        ? { label: b.name, seenKey: b.name, url: best, words: !!b.words }
+        : null;
     }));
     const kept = sized.filter(Boolean);
     if (kept.length < 4) throw new Error('Only ' + kept.length + ' logos came back big enough to use.');
@@ -5683,7 +5707,8 @@ const Quiz = {
       title: this.TITLES[this.mode] || 'Quiz round',
       noun: this.NOUNS[this.mode] || 'Question',
       roundLabel: this.roundLabel || '',
-      img: q.img || null, logo: this.mode === 'logos', options: q.options, flashMs: flash, seconds: this.seconds,
+      img: q.img || null, logo: this.mode === 'logos', words: !!q.words,
+      options: q.options, flashMs: flash, seconds: this.seconds,
       listen: audioRound, leadIn
     });
     // No "this one's for Paul" announcement — it singled people out and read
@@ -7298,7 +7323,8 @@ const Player = {
       const hasPic = !!msg.img && !!msg.logo;
       $('quizArtWrap').classList.toggle('showing', hasPic);
       if (msg.listen) this.setStatus('🎧 Listen…');
-      this.squareOrColumn($('quizOptions'), msg.options, hasPic);
+      // a mark with the name in it gets the scattered treatment instead
+      this.squareOrColumn($('quizOptions'), msg.options, hasPic && !msg.words, msg.words);
       msg.options.forEach((opt, i) => {
         const b = document.createElement('button');
         b.className = 'quiz-opt opt-' + 'abcd'[i];
@@ -7310,8 +7336,9 @@ const Player = {
         b.onclick = () => this.quizAnswer(i, b);
         $('quizOptions').appendChild(b);
       });
+      if (msg.words) this.scatterOptions($('quizOptions'));
       // the gap the picture sits in, dropped between the two rows
-      if (hasPic) {
+      else if (hasPic) {
         const slot = document.createElement('div');
         slot.className = 'opt-slot';
         $('quizOptions').insertBefore(slot, $('quizOptions').children[2] || null);
@@ -7487,14 +7514,37 @@ const Player = {
   /* Two across is better for four short answers and worse for four long
      ones — "A combined question and exclamation mark" in a half-width box is
      four lines of wrapping. Anything wordy goes back to a single column. */
-  squareOrColumn(box, options, around) {
+  squareOrColumn(box, options, around, scatter) {
     const longest = (options || []).reduce((n, o) => Math.max(n, String(o).length), 0);
     const four = (options || []).length === 4;
+    box.classList.toggle('scatter', !!scatter && four);
+    if (scatter && four) { box.classList.remove('longtext', 'around'); return; }
     box.classList.toggle('longtext', longest > 16 || !four);
     /* Wrapped round the picture only when there IS one and the answers are
        short enough to sit two across; otherwise the layout would shove the
        image off the bottom, which helps nobody. */
     box.classList.toggle('around', !!around && four && longest <= 16);
+  },
+
+  /* Random, but never on top of each other.
+
+     Purely random placement puts two answers over one another often enough
+     to matter, and an answer you cannot tap is worse than a tidy list. Each
+     one gets a quarter of the box and is thrown about inside it, which reads
+     as scattered while staying tappable. */
+  scatterOptions(box) {
+    const cells = this.shuffle([[0, 0], [1, 0], [0, 1], [1, 1]]);
+    [...box.querySelectorAll('.quiz-opt')].forEach((b, i) => {
+      const [cx, cy] = cells[i] || [0, 0];
+      const left = cx * 50 + 2 + Math.random() * 6;      // % across its half
+      const top  = cy * 50 + 3 + Math.random() * 14;     // % down its half
+      b.style.left = left + '%';
+      b.style.top = top + '%';
+      b.style.setProperty('--dx', (Math.random() * 16 - 8).toFixed(1) + 'px');
+      b.style.setProperty('--dy', (Math.random() * 16 - 8).toFixed(1) + 'px');
+      b.style.setProperty('--dur', (3.4 + Math.random() * 2.6).toFixed(1) + 's');
+      b.style.setProperty('--delay', (Math.random() * 1.5).toFixed(1) + 's');
+    });
   },
 
   duelOptions(options) {
