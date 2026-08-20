@@ -248,17 +248,14 @@
 
   /* With a picture on screen the four go round it: two above, two below. */
   #quizOptions.around { grid-template-areas: 'a b' 'pic pic' 'c d'; row-gap: 12px; }
-  #quizOptions.around > :nth-child(1) { grid-area: a }
-  #quizOptions.around > :nth-child(2) { grid-area: b }
-  #quizOptions.around > :nth-child(3) { grid-area: c }
-  #quizOptions.around > :nth-child(4) { grid-area: d }
+  /* Placed by class rather than by position. The picture's slot is a child
+     too, so counting children put two of the four answers in the wrong cell
+     — the sort of thing that looks fine in the CSS and wrong on the phone. */
+  #quizOptions.around .opt-a { grid-area: a; margin-right: 14% }
+  #quizOptions.around .opt-b { grid-area: b; margin-left: 14% }
+  #quizOptions.around .opt-c { grid-area: c; margin-right: 8% }
+  #quizOptions.around .opt-d { grid-area: d; margin-left: 8% }
   #quizOptions.around .opt-slot { grid-area: pic; min-height: 4px }
-  /* the four are deliberately not all the same size or lined up, so the eye
-     has to travel rather than scanning a neat list */
-  #quizOptions.around > :nth-child(1) { margin-right: 14% }
-  #quizOptions.around > :nth-child(2) { margin-left: 14% }
-  #quizOptions.around > :nth-child(3) { margin-right: 8% }
-  #quizOptions.around > :nth-child(4) { margin-left: 8% }
   /* Answer buttons are the thing people jab at in a noisy room, half cut, on
      a phone held one-handed. Comfortably past the 44px minimum tap target,
      with a visible border rather than relying on background alone, and a
@@ -7304,7 +7301,7 @@ const Player = {
       this.squareOrColumn($('quizOptions'), msg.options, hasPic);
       msg.options.forEach((opt, i) => {
         const b = document.createElement('button');
-        b.className = 'quiz-opt';
+        b.className = 'quiz-opt opt-' + 'abcd'[i];
         // numbered so the host can call "everyone still on two?" out loud,
         // and so the choices are distinguishable without reading every word
         b.innerHTML = '<span class="opt-n">' + (i + 1) + '</span><span></span>';
