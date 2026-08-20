@@ -220,7 +220,12 @@
      the dark panel behind it swallows anything drawn in black — which is how
      you end up squinting at a corner of a mark you cannot name. A logo gets
      the whole symbol, on white, with room around it. */
-  #quizArtWrap.logo { background: #fff; padding: 18px; width: min(78vw, 340px) }
+  /* White behind, but no padding. Roughly half these icons already carry
+     their own opaque tile — Puma is a white cat on a black square — and
+     padding those just draws a white border round a picture that did not
+     need one. The ones that ARE transparent still get white behind them,
+     which is the whole point. */
+  #quizArtWrap.logo { background: #fff; padding: 0; width: min(78vw, 340px) }
   #quizArt.logo { object-fit: contain; image-rendering: auto }
   #quizCountdown { font-size: 2.6rem; font-weight: 900; color: var(--gold); min-height: 3rem; }
   #quizCountdown.hurry { color: var(--red); }
@@ -469,7 +474,8 @@
 
   #duelPrompt { font-size: 1.15rem; font-weight: 800; margin: 8px 0 }
   #duelImg { width: min(62vw, 240px); height: min(62vw, 240px); object-fit: contain;
-              margin: 8px auto; display: block; border-radius: 14px; background: #fff; padding: 14px }
+              margin: 8px auto; display: block; border-radius: 14px; background: #fff;
+              padding: 0; overflow: hidden }
   #duelOptions { display: flex; flex-direction: column; gap: 8px }
   #duelActions { display: flex; gap: 8px; margin-top: 12px }
   #duelActions .btn { flex: 1; font-size: .95rem }
