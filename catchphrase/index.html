@@ -638,7 +638,8 @@ function lev(a, b){
   return prev[n];
 }
 function matches(guess, puz){
-  const cands = [puz.a].concat(puz.also || []);
+  // "also" came from the old bank, "alts" from the decks — accept either
+  const cands = [puz.a].concat(puz.also || []).concat(puz.alts || []);
   const g = norm(guess), gl = loose(guess);
   if (!g) return false;
   for (const c of cands){

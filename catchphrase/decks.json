@@ -182,6 +182,90 @@
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Poland.svg?width=1200",
     "lic": "Public domain",
     "by": "See below."
+   },
+   {
+    "a": "Finland",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Finland.svg?width=1200",
+    "lic": "Public domain",
+    "by": "Unknown"
+   },
+   {
+    "a": "Belgium",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Belgium.svg?width=1200",
+    "lic": "Public domain",
+    "by": "Dbenbenn and others"
+   },
+   {
+    "a": "Austria",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Austria.svg?width=1200",
+    "lic": "Public domain",
+    "by": "Bundesministerium für Landesverteidigung"
+   },
+   {
+    "a": "Iceland",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Iceland.svg?width=1200",
+    "lic": "Public domain",
+    "by": "Original: Matthías Þórðarson Vector: Árni Dagur and Magasjuk"
+   },
+   {
+    "a": "Israel",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Israel.svg?width=1200",
+    "lic": "Public domain",
+    "by": "Israel Belkind and Fanny Abramovitch (original) “The Provisi"
+   },
+   {
+    "a": "Egypt",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Egypt.svg?width=1200",
+    "lic": "Public domain",
+    "by": "See File history below for details."
+   },
+   {
+    "a": "Nigeria",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Nigeria.svg?width=1200",
+    "lic": "Public domain",
+    "by": "Jon Harald Søby ."
+   },
+   {
+    "a": "Vietnam",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Vietnam.svg?width=1200",
+    "lic": "Public domain",
+    "by": "See File history below for details."
+   },
+   {
+    "a": "Thailand",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Thailand.svg?width=1200",
+    "lic": "Public domain",
+    "by": "Zscout370"
+   },
+   {
+    "a": "South Korea",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_South_Korea.svg?width=1200",
+    "lic": "Public domain",
+    "by": "Original: Government of the Republic of Korea Vector: Great "
+   },
+   {
+    "a": "Chile",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Chile.svg?width=1200",
+    "lic": "Public domain",
+    "by": "See file history below for details."
+   },
+   {
+    "a": "Peru",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Peru.svg?width=1200",
+    "lic": "Public domain",
+    "by": "David Benbennick"
+   },
+   {
+    "a": "Cuba",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Cuba.svg?width=1200",
+    "lic": "Public domain",
+    "by": "Miguel Teurbe Tolón and Narciso López"
+   },
+   {
+    "a": "Ukraine",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_Ukraine.svg?width=1200",
+    "lic": "Public domain",
+    "by": "Government of Ukraine"
    }
   ]
  },
@@ -193,19 +277,29 @@
     "a": "Winston Churchill",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Sir_Winston_Churchill_-_19086236948_(restored).jpg?width=1200",
     "lic": "Public domain",
-    "by": "Yousuf Karsh"
+    "by": "Yousuf Karsh",
+    "alts": [
+     "churchill"
+    ]
    },
    {
     "a": "Marie Curie",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Marie_Curie_c._1920s.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Henri Manuel"
+    "by": "Henri Manuel",
+    "alts": [
+     "curie",
+     "madame curie"
+    ]
    },
    {
     "a": "Charles Darwin",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Charles_Darwin_seated_crop.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Charles_Darwin_seated.jpg : Henry Maull (1829–1914) and John"
+    "by": "Charles_Darwin_seated.jpg : Henry Maull (1829–1914) and John",
+    "alts": [
+     "darwin"
+    ]
    },
    {
     "a": "Cleopatra",
@@ -217,19 +311,28 @@
     "a": "Nelson Mandela",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Nelson_Mandela_1994.jpg?width=1200",
     "lic": "CC BY-SA 2.0",
-    "by": "Kingkongphoto & www.celebrity-photos.com from Laurel"
+    "by": "Kingkongphoto & www.celebrity-photos.com from Laurel",
+    "alts": [
+     "mandela"
+    ]
    },
    {
     "a": "Albert Einstein",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Albert_Einstein_Head_cleaned.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Oren Jack Turner"
+    "by": "Oren Jack Turner",
+    "alts": [
+     "einstein"
+    ]
    },
    {
     "a": "Queen Victoria",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Queen_Victoria_by_Bassano.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Alexander Bassano"
+    "by": "Alexander Bassano",
+    "alts": [
+     "victoria"
+    ]
    },
    {
     "a": "Napoleon",
@@ -241,49 +344,74 @@
     "a": "Abraham Lincoln",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Abraham_Lincoln_1863_Portrait_(3x4_cropped).jpg?width=1200",
     "lic": "Public domain",
-    "by": "Alexander Gardner"
+    "by": "Alexander Gardner",
+    "alts": [
+     "lincoln"
+    ]
    },
    {
     "a": "William Shakespeare",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/William_Shakespeare_by_John_Taylor%2C_edited.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Attributed to John Taylor"
+    "by": "Attributed to John Taylor",
+    "alts": [
+     "shakespeare"
+    ]
    },
    {
     "a": "Isaac Newton",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Portrait_of_Sir_Isaac_Newton%2C_1689_(brightened).jpg?width=1200",
     "lic": "Public domain",
-    "by": "Godfrey Kneller"
+    "by": "Godfrey Kneller",
+    "alts": [
+     "newton"
+    ]
    },
    {
     "a": "Florence Nightingale",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Florence_Nightingale_(H_Hering_NPG_x82368).jpg?width=1200",
     "lic": "Public domain",
-    "by": "Henry Hering (1814-1893)"
+    "by": "Henry Hering (1814-1893)",
+    "alts": [
+     "nightingale"
+    ]
    },
    {
     "a": "Mahatma Gandhi",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Mahatma-Gandhi%2C_studio%2C_1931.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Elliott & Fry"
+    "by": "Elliott & Fry",
+    "alts": [
+     "gandhi"
+    ]
    },
    {
     "a": "Martin Luther King Jr.",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Martin_Luther_King%2C_Jr..jpg?width=1200",
     "lic": "Public domain",
-    "by": "Bernie Faingold"
+    "by": "Bernie Faingold",
+    "alts": [
+     "martin luther king"
+    ]
    },
    {
     "a": "Amelia Earhart",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Amelia_Earhart_standing_under_nose_of_her_Lockheed_Model_10-E_Electra%2C_small_(cropped).jpg?width=1200",
     "lic": "Public domain",
-    "by": "Underwood & Underwood (active 1880 – c. 1950) [1]"
+    "by": "Underwood & Underwood (active 1880 – c. 1950) [1]",
+    "alts": [
+     "earhart"
+    ]
    },
    {
     "a": "Leonardo da Vinci",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Francesco_Melzi_-_Portrait_of_Leonardo.png?width=1200",
     "lic": "Public domain",
-    "by": "Attributed to Francesco Melzi"
+    "by": "Attributed to Francesco Melzi",
+    "alts": [
+     "da vinci",
+     "leonardo"
+    ]
    },
    {
     "a": "Henry VIII",
@@ -307,43 +435,64 @@
     "a": "Alexander Fleming",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Synthetic_Production_of_Penicillin_TR1468.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Official photographer"
+    "by": "Official photographer",
+    "alts": [
+     "fleming"
+    ]
    },
    {
     "a": "Emmeline Pankhurst",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Emmeline_Pankhurst%2C_seated_(1913).jpg?width=1200",
     "lic": "Public domain",
-    "by": "Adam Cuerden"
+    "by": "Adam Cuerden",
+    "alts": [
+     "pankhurst"
+    ]
    },
    {
     "a": "Charles Dickens",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Dickens_Gurney_head.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Jeremiah Gurney"
+    "by": "Jeremiah Gurney",
+    "alts": [
+     "dickens"
+    ]
    },
    {
     "a": "Jane Austen",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/CassandraAusten-JaneAusten(c.1810)_hires.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Cassandra Austen"
+    "by": "Cassandra Austen",
+    "alts": [
+     "austen"
+    ]
    },
    {
     "a": "Ludwig van Beethoven",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Joseph_Karl_Stieler's_Beethoven_mit_dem_Manuskript_der_Missa_solemnis.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Joseph Karl Stieler"
+    "by": "Joseph Karl Stieler",
+    "alts": [
+     "beethoven"
+    ]
    },
    {
     "a": "Wolfgang Amadeus Mozart",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/The_Mozart_Family_-_Wolfgang_Amadeus_Mozart_headshot.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Johann Nepomuk della Croce"
+    "by": "Johann Nepomuk della Croce",
+    "alts": [
+     "mozart"
+    ]
    },
    {
     "a": "Vincent van Gogh",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Vincent_van_Gogh_-_Self-Portrait_-_Google_Art_Project_(454045).jpg?width=1200",
     "lic": "Public domain",
-    "by": "Vincent van Gogh"
+    "by": "Vincent van Gogh",
+    "alts": [
+     "van gogh"
+    ]
    },
    {
     "a": "Anne Frank",
@@ -355,19 +504,142 @@
     "a": "Neil Armstrong",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Neil_Armstrong_pose.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Unknown author Unknown author"
+    "by": "Unknown author Unknown author",
+    "alts": [
+     "armstrong"
+    ]
    },
    {
     "a": "James Cook",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Captainjamescookportrait.jpg?width=1200",
     "lic": "Public domain",
-    "by": "Nathaniel Dance-Holland"
+    "by": "Nathaniel Dance-Holland",
+    "alts": [
+     "captain cook",
+     "cook"
+    ]
    },
    {
     "a": "Boudica",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Queen_Boudica_by_John_Opie.jpg?width=1200",
     "lic": "Public domain",
     "by": "John Opie"
+   },
+   {
+    "a": "Alan Turing",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Alan_turing_header.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Elliott & Fry",
+    "alts": [
+     "turing"
+    ]
+   },
+   {
+    "a": "Ada Lovelace",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Ada_Lovelace_daguerreotype_by_Antoine_Claudet_1843_-_cropped.png?width=1200",
+    "lic": "Public domain",
+    "by": "Antoine Claudet",
+    "alts": [
+     "lovelace"
+    ]
+   },
+   {
+    "a": "Michael Faraday",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Michael_Faraday_sitting_crop.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Unknown author Unknown author",
+    "alts": [
+     "faraday"
+    ]
+   },
+   {
+    "a": "Sitting Bull",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Sitting_Bull_by_D_F_Barry_ca_1883_Dakota_Territory.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "David F. Barry, Photographer, Bismarck, Dakota Territory"
+   },
+   {
+    "a": "Genghis Khan",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/YuanEmperorAlbumGenghisPortrait.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Unknown author Unknown author",
+    "alts": [
+     "genghis"
+    ]
+   },
+   {
+    "a": "Julius Caesar",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Retrato_de_Julio_C%C3%A9sar_(26724093101)_(cropped).jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Ángel M. Felicísimo from Mérida, España",
+    "alts": [
+     "caesar"
+    ]
+   },
+   {
+    "a": "Joan of Arc",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Joan_of_Arc_miniature_graded.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "-",
+    "alts": [
+     "joan"
+    ]
+   },
+   {
+    "a": "Christopher Columbus",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Portrait_of_a_Man%2C_Said_to_be_Christopher_Columbus.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Sebastiano del Piombo",
+    "alts": [
+     "columbus"
+    ]
+   },
+   {
+    "a": "Louis Pasteur",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Louis_Pasteur%2C_foto_av_Paul_Nadar%2C_Crisco_edit.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Paul Nadar",
+    "alts": [
+     "pasteur"
+    ]
+   },
+   {
+    "a": "Alexander Graham Bell",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Alexander_Graham_Bell_1895_NPG_77_363.jpg?width=1200",
+    "lic": "CC0",
+    "by": "Unknown author Unknown author",
+    "alts": [
+     "graham bell",
+     "bell"
+    ]
+   },
+   {
+    "a": "Thomas Edison",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Thomas_Edison2.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Louis Bachrach, Bachrach Studios , restored by Michel Vuijls",
+    "alts": [
+     "edison"
+    ]
+   },
+   {
+    "a": "Wilbur Wright",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Orville_Wright_1905-crop.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Orville Wright and Wilbur Wright (credited as photographers)",
+    "alts": [
+     "wright brothers",
+     "the wright brothers"
+    ]
+   },
+   {
+    "a": "Emily Davison",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Emily_Wilding_Davison_by_Andrew_William_Dron.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Andrew William Dron (1864-1935); [ 1 ] Restored by Adam Cuer",
+    "alts": [
+     "davison"
+    ]
    }
   ]
  },
@@ -397,7 +669,11 @@
     "a": "Sydney Opera House",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Sydney_Australia._(21339175489).jpg?width=1200",
     "lic": "CC0",
-    "by": "Bernard Spragg. NZ from Christchurch, New Zealand"
+    "by": "Bernard Spragg. NZ from Christchurch, New Zealand",
+    "alts": [
+     "the opera house",
+     "opera house"
+    ]
    },
    {
     "a": "Angkor Wat",
@@ -421,13 +697,19 @@
     "a": "Great Wall of China",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/The_Great_Wall_of_China_at_Jinshanling-edit.jpg?width=1200",
     "lic": "CC BY-SA 3.0",
-    "by": "Severin.stalder"
+    "by": "Severin.stalder",
+    "alts": [
+     "the great wall"
+    ]
    },
    {
     "a": "Statue of Liberty",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Front_view_of_Statue_of_Liberty_(cropped).jpg?width=1200",
     "lic": "CC0",
-    "by": "AskALotl"
+    "by": "AskALotl",
+    "alts": [
+     "the statue of liberty"
+    ]
    },
    {
     "a": "Machu Picchu",
@@ -445,7 +727,12 @@
     "a": "Great Pyramid of Giza",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Great_Pyramid_of_Giza_-_Pyramid_of_Khufu.jpg?width=1200",
     "lic": "CC BY-SA 4.0",
-    "by": "Douwe C. van der Zee"
+    "by": "Douwe C. van der Zee",
+    "alts": [
+     "the pyramids",
+     "pyramids",
+     "pyramid"
+    ]
    },
    {
     "a": "Mount Rushmore",
@@ -463,7 +750,11 @@
     "a": "Leaning Tower of Pisa",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Italy_-_Pisa_-_Leaning_Tower.jpg?width=1200",
     "lic": "CC BY-SA 3.0 de",
-    "by": "Arne Müseler"
+    "by": "Arne Müseler",
+    "alts": [
+     "tower of pisa",
+     "the leaning tower"
+    ]
    },
    {
     "a": "Sagrada Família",
@@ -505,7 +796,12 @@
     "a": "Acropolis of Athens",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/1029_Acropolis_of_Athens_in_Greece_at_night_Photo_by_Giles_Laurent.jpg?width=1200",
     "lic": "CC BY-SA 4.0",
-    "by": "Giles Laurent"
+    "by": "Giles Laurent",
+    "alts": [
+     "the acropolis",
+     "acropolis",
+     "parthenon"
+    ]
    },
    {
     "a": "Brandenburg Gate",
@@ -530,6 +826,109 @@
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Mont-Saint-Michel_vu_du_ciel.jpg?width=1200",
     "lic": "CC BY-SA 4.0",
     "by": "Amaustan"
+   },
+   {
+    "a": "Tower of London",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Tower_of_London_from_the_Shard_(8515883950).jpg?width=1200",
+    "lic": "CC BY 2.0",
+    "by": "[Duncan] from Nottingham, UK"
+   },
+   {
+    "a": "York Minster",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/York_Minster_(2797690).jpg?width=1200",
+    "lic": "CC0",
+    "by": "FEGreene"
+   },
+   {
+    "a": "Durham Cathedral",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Durham_MMB_02_Cathedral.jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "mattbuck ( category )"
+   },
+   {
+    "a": "Hadrian’s Wall",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Hadrians_Wall_map.svg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Hadrians_Wall_map.png : Created by NormanEinstein, September",
+    "alts": [
+     "hadrians wall"
+    ]
+   },
+   {
+    "a": "Giant’s Causeway",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Causeway-code_poet-4.jpg?width=1200",
+    "lic": "CC BY-SA 2.0",
+    "by": "code poet on flickr.",
+    "alts": [
+     "giants causeway",
+     "the giants causeway"
+    ]
+   },
+   {
+    "a": "Loch Ness",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/LochNessUrquhart.jpg?width=1200",
+    "lic": "CC BY-SA 2.0",
+    "by": "Sam Fentress"
+   },
+   {
+    "a": "Blackpool Tower",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Blackpool_Tower_05082017_(cropped).jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "Nathanemmison"
+   },
+   {
+    "a": "Angel of the North",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Angel_of_the_North_2010.jpg?width=1200",
+    "lic": "CC BY-SA 2.0",
+    "by": "saw2th",
+    "alts": [
+     "the angel of the north"
+    ]
+   },
+   {
+    "a": "Forth Bridge",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Forth_Bridge_2022.jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "MrMasterKeyboard"
+   },
+   {
+    "a": "Cliffs of Dover",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/White_Cliffs_of_Dover_02.JPG?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Immanuel Giel",
+    "alts": [
+     "white cliffs of dover",
+     "the white cliffs"
+    ]
+   },
+   {
+    "a": "Snowdon",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Snowdon_massif.jpg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "-"
+   },
+   {
+    "a": "Ben Nevis",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/BenNevis2005.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Thincat"
+   },
+   {
+    "a": "Windsor Castle",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Windsor_Castle_at_Sunset_-_Nov_2006.jpg?width=1200",
+    "lic": "CC BY 2.5",
+    "by": "Diliff"
+   },
+   {
+    "a": "Roman Baths (Bath)",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Roman_Baths_in_Bath_Spa%2C_England_-_July_2006.jpg?width=1200",
+    "lic": "CC BY 2.5",
+    "by": "Diliff",
+    "alts": [
+     "roman baths",
+     "the roman baths",
+     "Roman Baths"
+    ]
    }
   ]
  },
@@ -559,13 +958,19 @@
     "a": "Emperor penguin",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Aptenodytes_forsteri_-Snow_Hill_Island%2C_Antarctica_-adults_and_juvenile-8.jpg?width=1200",
     "lic": "CC BY 2.0",
-    "by": "Ian Duffy from UK"
+    "by": "Ian Duffy from UK",
+    "alts": [
+     "penguin"
+    ]
    },
    {
     "a": "African bush elephant",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/178_Male_African_bush_elephant_in_Etosha_National_Park_Photo_by_Giles_Laurent.jpg?width=1200",
     "lic": "CC BY-SA 4.0",
-    "by": "Giles Laurent"
+    "by": "Giles Laurent",
+    "alts": [
+     "elephant"
+    ]
    },
    {
     "a": "Koala",
@@ -577,7 +982,10 @@
     "a": "Giant panda",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Grosser_Panda.JPG?width=1200",
     "lic": "CC BY-SA 3.0",
-    "by": "J. Patrick Fischer"
+    "by": "J. Patrick Fischer",
+    "alts": [
+     "panda"
+    ]
    },
    {
     "a": "Kangaroo",
@@ -601,7 +1009,10 @@
     "a": "Common dolphin",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Common_dolphin_noaa.jpg?width=1200",
     "lic": "Public domain",
-    "by": "NOAA NMFS"
+    "by": "NOAA NMFS",
+    "alts": [
+     "dolphin"
+    ]
    },
    {
     "a": "Octopus",
@@ -613,7 +1024,10 @@
     "a": "Barn owl",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/American_Barn_Owl_(Tyto_furcata_guatemalae)%2C_Orange_Walk.jpg?width=1200",
     "lic": "CC BY-SA 4.0",
-    "by": "Charles J. Sharp"
+    "by": "Charles J. Sharp",
+    "alts": [
+     "owl"
+    ]
    },
    {
     "a": "Flamingo",
@@ -643,19 +1057,28 @@
     "a": "Atlantic puffin",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Puffin_(Fratercula_arctica).jpg?width=1200",
     "lic": "CC BY-SA 4.0",
-    "by": "Charles J. Sharp"
+    "by": "Charles J. Sharp",
+    "alts": [
+     "puffin"
+    ]
    },
    {
     "a": "European badger",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/European_badger_(Meles_meles_taxus)_Drenthe.jpg?width=1200",
     "lic": "CC BY-SA 4.0",
-    "by": "Charles J. Sharp"
+    "by": "Charles J. Sharp",
+    "alts": [
+     "badger"
+    ]
    },
    {
     "a": "Red squirrel",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Squirrel_posing.jpg?width=1200",
     "lic": "CC BY 2.0",
-    "by": "Peter Trimming"
+    "by": "Peter Trimming",
+    "alts": [
+     "squirrel"
+    ]
    },
    {
     "a": "Rabbit",
@@ -704,6 +1127,116 @@
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Toucans_(Ramphastidae).jpg?width=1200",
     "lic": "Public domain",
     "by": "These images belongs to their respective owners."
+   },
+   {
+    "a": "Grey wolf",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Eurasian_wolf_2.jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "User:Mas3cf",
+    "alts": [
+     "wolf"
+    ]
+   },
+   {
+    "a": "Brown bear",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/2010-kodiak-bear-1.jpg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Yathin S Krishnappa",
+    "alts": [
+     "bear"
+    ]
+   },
+   {
+    "a": "Raccoon",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Raccoon_in_Central_Park_(35264).jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "Rhododendrites"
+   },
+   {
+    "a": "Otter",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Fischotter%2C_Lutra_Lutra.JPG?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Bernard Landgraf"
+   },
+   {
+    "a": "Bald eagle",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Bald_eagle_about_to_fly_in_Alaska_(2016).jpg?width=1200",
+    "lic": "CC BY 2.0",
+    "by": "Andy Morffew from Itchen Abbas, Hampshire, UK",
+    "alts": [
+     "eagle"
+    ]
+   },
+   {
+    "a": "Ostrich",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Struthio_Diversity.jpg?width=1200",
+    "lic": "CC BY 2.0",
+    "by": "PaleoNeolitic (montage creator) Diego Delso ninara"
+   },
+   {
+    "a": "Crocodile",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Nile_crocodile_head.jpg?width=1200",
+    "lic": "CC BY 2.0",
+    "by": "Leigh Bedford"
+   },
+   {
+    "a": "Tortoise",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/A._gigantea_Aldabra_Giant_Tortoise.jpg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Childzy at en.wikipedia"
+   },
+   {
+    "a": "Jellyfish",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Jelly_cc11.jpg?width=1200",
+    "lic": "CC BY-SA 2.0",
+    "by": "Dan90266"
+   },
+   {
+    "a": "Lobster",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/KreeftbijDenOsse.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Bart Braun"
+   },
+   {
+    "a": "Bumblebee",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Bombus_lapidarius_-_Melilotus_officinalis_-_Tallinn.jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "Ivar Leidus"
+   },
+   {
+    "a": "Ladybird",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Coccinella-septempunctata-15-fws.jpg?width=1200",
+    "lic": "CC0",
+    "by": "Francisco Welter-Schultes"
+   },
+   {
+    "a": "Frog",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Red-eyed_Leaf_Frog_(49661076226).jpg?width=1200",
+    "lic": "CC BY 2.0",
+    "by": "Charlie Jackson"
+   },
+   {
+    "a": "Deer",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Family_Cervidae_five_species.jpg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "This image is a derivative work of the following images: Fil"
+   },
+   {
+    "a": "Highland cattle",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Cow_on_Pupers.jpg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Nilfanion",
+    "alts": [
+     "cow",
+     "highland cow",
+     "cattle"
+    ]
+   },
+   {
+    "a": "Donkey",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Donkey_in_Clovelly%2C_North_Devon%2C_England.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Adrian Pingstone"
    }
   ]
  },
@@ -733,7 +1266,13 @@
     "a": "Full breakfast",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Full_English_breakfast_(cropped).jpg?width=1200",
     "lic": "CC BY-SA 3.0 at",
-    "by": "Joadl"
+    "by": "Joadl",
+    "alts": [
+     "full english",
+     "english breakfast",
+     "fry up",
+     "cooked breakfast"
+    ]
    },
    {
     "a": "Croissant",
@@ -854,6 +1393,82 @@
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Asparagus_soup_(spargelsuppe).jpg?width=1200",
     "lic": "CC BY-SA 4.0",
     "by": "Petar Milošević"
+   },
+   {
+    "a": "Cornish pasty",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Cornish_Pasty_(cropped).jpeg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "David Johnson [1]",
+    "alts": [
+     "pasty"
+    ]
+   },
+   {
+    "a": "Scone",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Scone_varieties.jpg?width=1200",
+    "lic": "CC BY-SA 2.5",
+    "by": "User:Dave souza"
+   },
+   {
+    "a": "Trifle",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Trifle_4layer.jpg?width=1200",
+    "lic": "CC BY 3.0",
+    "by": "Dlublink"
+   },
+   {
+    "a": "Bangers and mash",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Sausage_and_mash_with_peas.jpg?width=1200",
+    "lic": "CC BY-SA 2.0",
+    "by": "anokarina",
+    "alts": [
+     "sausage and mash"
+    ]
+   },
+   {
+    "a": "Toad in the hole",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Toad_in_the_hole.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Robert Gibert"
+   },
+   {
+    "a": "Yorkshire pudding",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Yorkshire_Puddings_on_plate.jpg?width=1200",
+    "lic": "CC BY 2.0",
+    "by": "Sam Greenhalgh",
+    "alts": [
+     "yorkshire puddings",
+     "yorkshires"
+    ]
+   },
+   {
+    "a": "Baked beans",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Baked_beans_in_tomato_sauce.jpg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Mk2010"
+   },
+   {
+    "a": "Cupcake",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Cupcakes%2C_chocolate_and_strawberry_flavour.jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "Marc-Lautenbacher"
+   },
+   {
+    "a": "Sandwich",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Bacon%2C_lettuce%2C_tomato%2C_and_avocado.jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "Jami430"
+   },
+   {
+    "a": "Noodle",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Dalian_Liaoning_China_Noodlemaker-01.jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "CEphoto, Uwe Aranas"
+   },
+   {
+    "a": "Cucumber",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/ARS_cucumber.jpg?width=1200",
+    "lic": "Public domain",
+    "by": "Stephen Ausmus, USDA ARS"
    }
   ]
  },
@@ -919,7 +1534,12 @@
     "a": "Incandescent light bulb",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Gluehlampe_01_KMJ.png?width=1200",
     "lic": "CC BY-SA 3.0",
-    "by": "KMJ , alpha masking by Edokter"
+    "by": "KMJ , alpha masking by Edokter",
+    "alts": [
+     "light bulb",
+     "lightbulb",
+     "bulb"
+    ]
    },
    {
     "a": "Paper clip",
@@ -955,7 +1575,11 @@
     "a": "Cork (material)",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Cork.jpg?width=1200",
     "lic": "CC BY-SA 2.5",
-    "by": "-"
+    "by": "-",
+    "alts": [
+     "cork",
+     "Cork"
+    ]
    },
    {
     "a": "Feather",
@@ -991,7 +1615,70 @@
     "a": "Cone (botany)",
     "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Pinus_coulteri_MHNT_Cone.jpg?width=1200",
     "lic": "CC BY-SA 4.0",
-    "by": "Didier Descouens"
+    "by": "Didier Descouens",
+    "alts": [
+     "Cone"
+    ]
+   },
+   {
+    "a": "Kiwifruit",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Actinidia_fruits.jpg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Crowhurst et al."
+   },
+   {
+    "a": "Zip tie",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Cable_ties.jpg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Silverxxx ( talk ) Original uploader was Silverxxx at en.wik"
+   },
+   {
+    "a": "Wool",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Royal_Winter_Fair_Wool_2.jpg?width=1200",
+    "lic": "CC BY 2.0",
+    "by": "Rob"
+   },
+   {
+    "a": "Bicycle chain",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Bicycle_chains.JPG?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Keanu @ no:wp"
+   },
+   {
+    "a": "Coin",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Kiloware.JPG?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "Michael Sander"
+   },
+   {
+    "a": "Matchstick",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Friction_d'une_allumette.jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "Yann SEGALEN"
+   },
+   {
+    "a": "Candle",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/LA2_Skultuna_kontorsljusstake.jpg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "LA2"
+   },
+   {
+    "a": "Clothes peg",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/Clothes_pegs_2016-05-25_02.jpg?width=1200",
+    "lic": "CC BY-SA 4.0",
+    "by": "Santeri Viinamäki"
+   },
+   {
+    "a": "Lego",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/LEGO_logo.svg?width=1200",
+    "lic": "Public domain",
+    "by": "The Lego Group"
+   },
+   {
+    "a": "Chess",
+    "img": "https://commons.wikimedia.org/wiki/Special:FilePath/ChessSet.jpg?width=1200",
+    "lic": "CC BY-SA 3.0",
+    "by": "Alan Light"
    }
   ]
  },
@@ -1029,7 +1716,8 @@
    {
     "a": "Self-Portrait with a Straw Hat (obverse: The Potato Peeler)",
     "alts": [
-     "Vincent van Gogh"
+     "Vincent van Gogh",
+     "Self-Portrait with a Straw Hat"
     ],
     "img": "https://images.metmuseum.org/CRDImages/ep/original/DT1502_cropped2.jpg",
     "lic": "CC0",
@@ -1056,7 +1744,8 @@
    {
     "a": "Madame X (Virginie Amélie Avegno Gautreau)",
     "alts": [
-     "John Singer Sargent"
+     "John Singer Sargent",
+     "Madame X"
     ],
     "img": "https://images.metmuseum.org/CRDImages/ad/original/DP-29006-001.jpg",
     "lic": "CC0",
@@ -1137,7 +1826,8 @@
    {
     "a": "Juan de Pareja (ca. 1608–1670)",
     "alts": [
-     "Velázquez (Diego Rodríguez de Silva y Velázquez)"
+     "Velázquez (Diego Rodríguez de Silva y Velázquez)",
+     "Juan de Pareja"
     ],
     "img": "https://images.metmuseum.org/CRDImages/ep/original/DP-14286-001.jpg",
     "lic": "CC0",
