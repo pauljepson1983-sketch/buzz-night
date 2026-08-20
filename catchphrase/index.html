@@ -1,0 +1,1502 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Say What You Spot — with Mr Jeps</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{
+  --bg:#14082b; --panel:#2a1758; --text:#f4efff; --muted:#a99cc9;
+  --gold:#ffce3a; --cyan:#3fe0ff; --pink:#ff4fa3; --green:#3ddc84; --red:#ff5252;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  margin:0; background:radial-gradient(1200px 700px at 50% -10%,#3a1c73 0%,var(--bg) 60%);
+  color:var(--text); font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+button{font-family:inherit;cursor:pointer;border:0}
+.hide{display:none !important}
+
+#title{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+  background:radial-gradient(900px 600px at 50% 20%,#3a1c73,var(--bg) 70%);padding:20px;text-align:center}
+#title h1{margin:0;font-size:clamp(34px,7vw,72px);letter-spacing:-1px;line-height:.95;
+  background:linear-gradient(180deg,#fff,var(--gold));-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 4px 0 rgba(0,0,0,.35))}
+#title .tag{color:var(--cyan);font-size:clamp(15px,2.6vw,22px);font-weight:600;margin:0}
+.setup{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.chip{background:var(--panel);color:var(--text);padding:12px 20px;border-radius:999px;font-size:17px;font-weight:600;border:2px solid transparent}
+.chip.on{border-color:var(--gold);color:var(--gold)}
+.big{background:linear-gradient(180deg,var(--gold),#e0a500);color:#2a1758;font-size:24px;font-weight:800;
+  padding:18px 46px;border-radius:999px;box-shadow:0 6px 0 #a97b00}
+.big:active{transform:translateY(4px);box-shadow:0 2px 0 #a97b00}
+.tiny{color:var(--muted);font-size:13px;max-width:470px;line-height:1.55;margin:0}
+
+#bar{display:flex;align-items:center;gap:10px;padding:10px 14px;flex:0 0 auto}
+#round{font-weight:800;color:var(--gold);font-size:15px;letter-spacing:.5px}
+#pot{margin-left:auto;font-weight:800;color:var(--cyan);font-size:15px}
+
+#stagewrap{flex:1 1 auto;display:flex;align-items:center;justify-content:center;padding:0 12px;min-height:0;position:relative}
+#board{width:100%;max-width:min(96vw,calc((100vh - 250px) * 1.7857));aspect-ratio:1000/560;
+  background:linear-gradient(180deg,#1d0f3d,#160a30);border:4px solid var(--panel);border-radius:18px;
+  box-shadow:0 0 0 3px rgba(255,206,58,.25),0 18px 50px rgba(0,0,0,.5);position:relative;overflow:hidden}
+#svg{position:absolute;inset:0;width:100%;height:100%}
+#svg .p{opacity:0;transform-box:fill-box;transform-origin:center;transition:opacity .45s ease}
+#svg .p.in{opacity:1}
+#svg .tile{transform-box:fill-box;transform-origin:center;
+  transition:opacity .4s ease,transform .55s cubic-bezier(.16,.84,.44,1)}
+#svg .tile.gone{opacity:0;transform:scale(.35) rotate(-14deg)}
+#svg .tilenum{transform-box:fill-box;transform-origin:center;
+  transition:opacity .3s ease,transform .55s cubic-bezier(.16,.84,.44,1)}
+#svg .tilenum.gone{opacity:0;transform:scale(.35)}
+
+/* the 5x5 super board */
+#grid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:repeat(5,1fr);
+  gap:6px;padding:8px}
+.cell{border-radius:10px;background:var(--panel);border:3px solid rgba(255,206,58,.35);
+  display:flex;align-items:center;justify-content:center;font-weight:900;color:var(--gold);
+  font-size:clamp(15px,3.6vw,40px);cursor:pointer;transition:.2s}
+.cell.centre{border-color:var(--pink);border-width:4px}
+.cell.claimed{background:var(--green);color:#0c2b18;border-color:var(--green);cursor:default}
+.cell.missed{background:#4a1020;color:#ff8a8a;border-color:#7a1a30;cursor:default}
+.cell.win{animation:pulse .45s ease 4}
+
+#answerline{position:absolute;left:0;right:0;bottom:0;padding:10px;text-align:center;font-size:clamp(18px,3.6vw,38px);
+  font-weight:900;letter-spacing:1px;text-transform:uppercase;color:var(--gold);
+  background:linear-gradient(0deg,rgba(20,8,43,.96),transparent);opacity:0;transition:opacity .3s}
+#answerline.show{opacity:1}
+#flash{position:absolute;inset:0;background:var(--green);opacity:0;pointer-events:none;transition:opacity .25s}
+#bellpip{position:absolute;top:10px;right:12px;display:flex;align-items:center;gap:7px;font-weight:800;font-size:14px;
+  color:var(--muted);background:rgba(0,0,0,.35);padding:6px 12px;border-radius:999px}
+#bellpip.live{color:#14082b;background:var(--green);animation:pulse .7s ease infinite}
+#bellpip.money{color:#14082b;background:var(--gold);animation:none;font-size:19px}
+@keyframes pulse{50%{transform:scale(1.07)}}
+
+#jeps{position:absolute;left:10px;bottom:8px;width:clamp(58px,8vw,96px);pointer-events:none}
+#jeps.hop{animation:hop .55s ease}
+@keyframes hop{40%{transform:translateY(-14px) rotate(-6deg)}70%{transform:translateY(0) rotate(4deg)}}
+#bubble{position:absolute;left:clamp(74px,10vw,114px);bottom:30px;background:#fff;color:#2a1758;
+  font-weight:800;font-size:clamp(12px,1.9vw,18px);padding:9px 15px;border-radius:14px;opacity:0;transform:translateY(6px);
+  transition:.25s;max-width:56%;line-height:1.25}
+#bubble.show{opacity:1;transform:none}
+#bubble:after{content:"";position:absolute;left:-8px;bottom:12px;border:8px solid transparent;border-right-color:#fff}
+
+#players{display:flex;gap:10px;padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom));
+  flex:0 0 auto;justify-content:center}
+.pl{flex:1 1 0;max-width:280px;background:var(--panel);border-radius:16px;padding:12px 10px;text-align:center;
+  border:3px solid transparent;transition:.15s}
+.pl .nm{font-weight:800;font-size:clamp(14px,2.4vw,19px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl .sc{font-weight:900;font-size:clamp(19px,3.4vw,27px);color:var(--gold)}
+.pl .key{font-size:11px;color:var(--muted);letter-spacing:1px}
+.pl.armed{border-color:var(--green);box-shadow:0 0 22px rgba(61,220,132,.35)}
+.pl.buzzed{border-color:var(--cyan);background:#123a55;box-shadow:0 0 30px var(--cyan)}
+.pl.out{opacity:.35}
+
+#ask{position:fixed;inset:0;z-index:50;background:rgba(10,4,24,.9);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;padding:20px}
+#ask .who{font-size:clamp(22px,5vw,40px);font-weight:900;color:var(--cyan)}
+#ask input{font-family:inherit;font-size:clamp(20px,4vw,30px);font-weight:700;padding:14px 18px;border-radius:14px;
+  border:3px solid var(--gold);background:#1d0f3d;color:var(--text);width:min(560px,92vw);text-align:center}
+#ask input:focus{outline:0;box-shadow:0 0 24px rgba(255,206,58,.5)}
+#clock{font-size:44px;font-weight:900;color:var(--gold)}
+#clock.low{color:var(--red)}
+
+#verdict{position:fixed;inset:0;z-index:55;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;background:rgba(10,4,24,.92);text-align:center;padding:20px}
+#verdict .msg{font-size:clamp(26px,6vw,52px);font-weight:900}
+#verdict .sub{font-size:clamp(16px,3vw,24px);color:var(--muted)}
+#override{display:flex;gap:12px}
+#override button{padding:14px 26px;border-radius:999px;font-weight:800;font-size:17px}
+#giveit{background:var(--green);color:#0c2b18}
+#nope{background:var(--panel);color:var(--text)}
+
+/* ---- lobby (host) ---- */
+#lobby{position:fixed;inset:0;z-index:58;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;background:radial-gradient(900px 600px at 50% 20%,#3a1c73,var(--bg) 70%);padding:20px;text-align:center}
+#lobby h2{margin:0;font-size:clamp(20px,3.6vw,30px);color:var(--gold)}
+#code{font-size:clamp(40px,9vw,86px);font-weight:900;letter-spacing:8px;color:var(--cyan);line-height:1}
+#qrBox{background:#fff;padding:10px;border-radius:12px;min-height:20px}
+#joinUrl{font-size:clamp(13px,2.4vw,18px);color:var(--text);word-break:break-all;max-width:92vw}
+#joined{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;min-height:44px}
+.tag2{background:var(--panel);border:2px solid var(--green);color:var(--text);padding:9px 16px;border-radius:999px;font-weight:800}
+#lobbyBtns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+#solo{background:var(--panel);color:var(--text);padding:14px 22px;border-radius:999px;font-weight:700;font-size:15px}
+#netnote{color:var(--muted);font-size:13px;max-width:460px;line-height:1.5;margin:0}
+
+/* ---- phone ---- */
+#phone{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;background:var(--bg);
+  padding:16px;padding-bottom:max(16px,env(safe-area-inset-bottom));gap:12px}
+#phTop{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+#phName{font-weight:800;font-size:18px}
+#phScore{margin-left:auto;font-weight:900;color:var(--gold);font-size:20px}
+#phMsg{text-align:center;color:var(--muted);font-size:16px;font-weight:600;flex:0 0 auto;min-height:24px}
+#buzzer{flex:1 1 auto;width:100%;border-radius:28px;font-size:clamp(34px,11vw,64px);font-weight:900;
+  background:#3a2a5e;color:#6f5f95;box-shadow:0 10px 0 #241546;transition:.12s}
+#buzzer.live{background:linear-gradient(180deg,#ff6b9d,var(--pink));color:#fff;box-shadow:0 10px 0 #a8215f}
+#buzzer.live:active{transform:translateY(7px);box-shadow:0 3px 0 #a8215f}
+#phAsk{flex:1 1 auto;display:flex;flex-direction:column;gap:12px;justify-content:center}
+#phAsk input{font-family:inherit;font-size:24px;font-weight:700;padding:16px;border-radius:14px;
+  border:3px solid var(--gold);background:#1d0f3d;color:var(--text);width:100%;text-align:center}
+#phAsk input:focus{outline:0}
+#phSend{background:var(--green);color:#0c2b18;font-size:22px;font-weight:900;padding:18px;border-radius:16px}
+#phMic{background:var(--panel);color:var(--text);font-size:20px;font-weight:800;padding:22px;border-radius:16px;
+  border:3px solid var(--muted)}
+#phMic.listening{background:var(--pink);color:#fff;border-color:#fff;animation:pulse .9s ease infinite}
+#phMic:disabled{opacity:.5}
+#phSend.ready{animation:pulse .8s ease infinite;box-shadow:0 0 26px rgba(61,220,132,.7)}
+#phClock{text-align:center;font-size:34px;font-weight:900;color:var(--gold)}
+#phGrid{flex:1 1 auto;display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+#phGrid button{background:var(--panel);color:var(--gold);border:2px solid rgba(255,206,58,.35);
+  border-radius:10px;font-weight:900;font-size:20px}
+#phGrid button.claimed{background:var(--green);color:#0c2b18}
+#phGrid button.missed{background:#4a1020;color:#ff8a8a}
+#phGrid button.centre{border-color:var(--pink);border-width:3px}
+#phJoin{position:fixed;inset:0;z-index:71;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:16px;background:radial-gradient(900px 600px at 50% 20%,#3a1c73,var(--bg) 70%);padding:24px;text-align:center}
+#phJoin input{font-family:inherit;font-size:24px;font-weight:700;padding:16px;border-radius:14px;
+  border:3px solid var(--gold);background:#1d0f3d;color:var(--text);width:min(360px,86vw);text-align:center}
+</style>
+</head>
+<body>
+
+<div id="title">
+  <svg viewBox="0 0 100 120" width="90" aria-hidden="true"><use href="#jepsart"/></svg>
+  <h1>SAY WHAT<br>YOU SPOT</h1>
+  <p class="tag">with Mr Jeps</p>
+  <div class="setup" id="pcount">
+    <button class="chip" data-n="2">2 players</button>
+    <button class="chip on" data-n="3">3 players</button>
+  </div>
+  <div class="setup" id="names"></div>
+  <button class="big" id="start">START</button>
+  <p class="tiny">Tiles lift one at a time. When the <b>bell</b> rings, hit your key — or tap your name — then type what you spot.
+  Win one and you play the <b>Bonus</b>, where the money drops with every tile. Then <b>Quickfire</b>: no bell, 90 seconds.
+  Whoever leads plays the <b>Super Catchphrase</b> — five squares in a line, and a line through M pays double.</p>
+</div>
+
+<div id="bar">
+  <span id="round">ROUND 1</span>
+  <span id="pot">PUZZLE 1</span>
+</div>
+
+<div id="stagewrap">
+  <div id="board">
+    <svg id="svg" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="grid" class="hide"></div>
+    <div id="flash"></div>
+    <div id="bellpip">🔔 WAIT…</div>
+    <svg id="jeps" viewBox="0 0 100 120"><use href="#jepsart"/></svg>
+    <div id="bubble"></div>
+    <div id="answerline"></div>
+  </div>
+</div>
+
+<div id="players"></div>
+
+<div id="ask" class="hide">
+  <div class="who" id="askwho"></div>
+  <input id="guess" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="type it…">
+  <div id="clock">6</div>
+</div>
+
+<div id="lobby" class="hide">
+  <h2>Grab a phone and scan this</h2>
+  <div id="qrBox"></div>
+  <div id="joinUrl">…</div>
+  <p style="margin:0;color:var(--muted);font-size:14px">or go to the address above and enter room</p>
+  <div id="code">----</div>
+  <div id="joined"></div>
+  <div id="lobbyBtns">
+    <button class="big" id="startNet">START</button>
+    <button id="solo">Play on this laptop instead</button>
+  </div>
+  <p id="netnote">Phones must be on the same wi-fi as this laptop.</p>
+</div>
+
+<div id="phJoin" class="hide">
+  <svg viewBox="0 0 100 120" width="76" aria-hidden="true"><use href="#jepsart"/></svg>
+  <h2 style="margin:0;color:var(--gold)">Say What You Spot</h2>
+  <input id="phNameIn" placeholder="your name" maxlength="14" autocomplete="off">
+  <button class="big" id="phGo">JOIN</button>
+  <p id="phErr" style="color:var(--red);font-weight:700;margin:0"></p>
+</div>
+
+<div id="phone" class="hide">
+  <div id="phTop">
+    <span id="phName"></span>
+    <span id="phScore">£0</span>
+  </div>
+  <div id="phMsg">Waiting for the game…</div>
+  <button id="buzzer">BUZZ</button>
+  <div id="phAsk" class="hide">
+    <div id="phClock">6</div>
+    <button id="phMic">🎤 Listening…</button>
+    <input id="phGuess" placeholder="…or type it" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <button id="phSend">SEND</button>
+  </div>
+  <div id="phGrid" class="hide"></div>
+</div>
+
+<div id="verdict" class="hide">
+  <div class="msg" id="vmsg"></div>
+  <div class="sub" id="vsub"></div>
+  <div id="override" class="hide">
+    <button id="giveit">Allow it (Y)</button>
+    <button id="nope">No (N)</button>
+  </div>
+</div>
+
+<svg width="0" height="0" style="position:absolute"><defs><g id="jepsart">
+  <rect x="46" y="4" width="8" height="16" rx="4" fill="#ffce3a"/><circle cx="50" cy="6" r="7" fill="#ff4fa3"/>
+  <rect x="14" y="18" width="72" height="58" rx="16" fill="#ffce3a" stroke="#c99400" stroke-width="3"/>
+  <rect x="24" y="30" width="52" height="26" rx="10" fill="#14082b"/>
+  <circle cx="38" cy="43" r="7" fill="#3fe0ff"/><circle cx="62" cy="43" r="7" fill="#3fe0ff"/>
+  <rect x="34" y="62" width="32" height="7" rx="3.5" fill="#c99400"/>
+  <rect x="26" y="80" width="48" height="30" rx="10" fill="#e8b81f" stroke="#c99400" stroke-width="3"/>
+  <rect x="4" y="40" width="12" height="30" rx="6" fill="#e8b81f"/><rect x="84" y="40" width="12" height="30" rx="6" fill="#e8b81f"/>
+</g></defs></svg>
+
+<script>
+"use strict";
+/* ============================================================
+   RENDERER
+   Stage is 0-100 across and 0-100 down, mapped to a 1000x560 SVG.
+   ============================================================ */
+const W = 1000, H = 560;
+const px = x => x / 100 * W, py = y => y / 100 * H;
+
+function T(s, x, y, size, o){ return Object.assign({k:"t", s, x, y, size}, o); }   // text
+function E(s, x, y, size, o){ return Object.assign({k:"e", s, x, y, size}, o); }   // emoji
+function L(x1, y1, x2, y2, o){ return Object.assign({k:"l", x1, y1, x2, y2}, o); } // line
+function A(x1, y1, x2, y2, bend, o){ return Object.assign({k:"a", x1, y1, x2, y2, bend}, o); } // curve
+function R(x, y, w, h, o){ return Object.assign({k:"r", x, y, w, h}, o); }         // rect, x/y = centre
+function C(x, y, r, o){ return Object.assign({k:"c", x, y, r}, o); }               // circle
+
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+function drawPart(p){
+  let node;
+  const rot = p.rot || 0;
+  const flip = p.flip ? -1 : 1;
+
+  if (p.k === "t" || p.k === "e"){
+    node = el("text", {
+      x: px(p.x), y: py(p.y),
+      "font-size": p.size,
+      "text-anchor": "middle",
+      "dominant-baseline": "central",
+      fill: p.fill || (p.k === "e" ? "#fff" : "var(--text)"),
+      "font-weight": p.k === "e" ? 400 : (p.weight || 900),
+      "font-family": p.k === "e"
+        ? "'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif"
+        : "'Segoe UI',system-ui,sans-serif",
+      "letter-spacing": p.spacing || 0
+    });
+    node.textContent = p.s;
+    if (rot || p.flip) node.setAttribute("transform",
+      `rotate(${rot} ${px(p.x)} ${py(p.y)}) translate(${px(p.x)} ${py(p.y)}) scale(${flip} 1) translate(${-px(p.x)} ${-py(p.y)})`);
+  }
+  else if (p.k === "l"){
+    node = el("line", {x1: px(p.x1), y1: py(p.y1), x2: px(p.x2), y2: py(p.y2),
+      stroke: p.stroke || "var(--text)", "stroke-width": p.w || 8, "stroke-linecap": "round"});
+    if (p.dash) node.setAttribute("stroke-dasharray", p.dash);
+  }
+  else if (p.k === "a"){
+    const x1 = px(p.x1), y1 = py(p.y1), x2 = px(p.x2), y2 = py(p.y2);
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const cx = mx - dy / len * py(p.bend || 0), cy = my + dx / len * py(p.bend || 0);
+    node = el("g", {});
+    node.appendChild(el("path", {d: `M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}`, fill: "none",
+      stroke: p.stroke || "var(--cyan)", "stroke-width": p.w || 9, "stroke-linecap": "round"}));
+    if (p.arrow){
+      const ang = Math.atan2(y2 - cy, x2 - cx), s = p.head || 26;
+      const a1 = ang + 2.6, a2 = ang - 2.6;
+      node.appendChild(el("path", {
+        d: `M${x2} ${y2} L${x2 + Math.cos(a1) * s} ${y2 + Math.sin(a1) * s} M${x2} ${y2} L${x2 + Math.cos(a2) * s} ${y2 + Math.sin(a2) * s}`,
+        fill: "none", stroke: p.stroke || "var(--cyan)", "stroke-width": p.w || 9, "stroke-linecap": "round"}));
+    }
+  }
+  else if (p.k === "r"){
+    node = el("rect", {x: px(p.x - p.w / 2), y: py(p.y - p.h / 2), width: px(p.w), height: py(p.h),
+      rx: p.rx || 6, fill: p.fill || "none", stroke: p.stroke || "none", "stroke-width": p.sw || 8});
+    if (rot) node.setAttribute("transform", `rotate(${rot} ${px(p.x)} ${py(p.y)})`);
+  }
+  else if (p.k === "c"){
+    node = el("ellipse", {cx: px(p.x), cy: py(p.y), rx: px(p.r), ry: py(p.r * 1.7857),
+      fill: p.fill || "none", stroke: p.stroke || "none", "stroke-width": p.sw || 8});
+  }
+  node.classList.add("p");
+  return node;
+}
+
+/* ============================================================
+   THE PUZZLE BANK
+   ============================================================ */
+const GOLD = "#ffce3a", CY = "#3fe0ff", RED = "#ff5252", GRN = "#3ddc84", WHT = "#ffffff", DARK = "#14082b";
+
+const PUZZLES = [
+  {a:"man overboard", p:[ T("BOARD",50,68,150), A(20,52,80,52,-30,{arrow:true}), T("MAN",50,26,130,{rot:196,fill:GOLD}) ]},
+  {a:"once upon a time", p:[ T("1nce",26,50,110), T("upon",48,50,100), T("a",64,50,80), E("🕐",82,50,140) ]},
+  {a:"reading between the lines", p:[ L(16,30,84,30,{w:12,stroke:CY}), L(16,72,84,72,{w:12,stroke:CY}), T("READING",50,51,120) ]},
+  {a:"water under the bridge", p:[ E("🌉",50,32,210), E("💧",34,66,110), E("💧",50,72,95), E("💧",66,66,110) ]},
+  {a:"a bird in the hand", also:["bird in the hand"], p:[ E("✋",50,58,270), E("🐦",50,44,120) ]},
+  {a:"fish out of water", p:[ T("WATER",50,68,140,{fill:CY}), E("🐟",52,30,140,{rot:-28}) ]},
+  {a:"pie in the sky", p:[ E("☁️",26,26,130), E("☁️",74,22,150), E("🥧",50,44,140) ]},
+  {a:"under lock and key", p:[ T("UNDER",50,26,120), E("🔒",36,64,170), E("🔑",64,64,170) ]},
+  {a:"bread and butter", p:[ E("🍞",32,50,210), T("&",50,50,100,{fill:GOLD}), E("🧈",68,50,180) ]},
+  {a:"a storm in a teacup", also:["storm in a teacup"], p:[ E("☕",50,62,260), E("⛈️",50,28,140) ]},
+  {a:"hand in glove", p:[ E("🧤",58,54,250), E("✋",42,48,160) ]},
+  {a:"cap in hand", p:[ E("✋",55,58,260), E("🧢",47,38,140) ]},
+  {a:"candle in the wind", p:[ E("🕯️",42,56,200,{rot:20}), E("💨",70,44,150) ]},
+  {a:"back to back", p:[ T("BACK",29,50,120), T("BACK",71,50,120,{flip:true,fill:GOLD}) ]},
+  {a:"in black and white", p:[ T("IN",20,50,110), R(45,50,20,42,{fill:"#000",stroke:"#555",sw:4}), R(72,50,20,42,{fill:WHT}) ]},
+  {a:"turn back the clock", p:[ E("🕐",50,54,240), A(76,22,24,22,26,{arrow:true,stroke:GOLD}) ]},
+  {a:"over the moon", p:[ T("OVER",50,20,110), A(16,58,84,58,-36,{stroke:CY}), E("🌙",50,72,180) ]},
+  {a:"under the weather", p:[ E("🌧️",50,30,190), T("UNDER",50,74,120) ]},
+  {a:"on cloud nine", p:[ T("ON",50,22,100), E("☁️",50,56,300), T("9",50,60,130,{fill:DARK}) ]},
+  {a:"raining cats and dogs", p:[ E("☁️",50,19,140), E("🐱",28,52,110), E("🐶",50,66,115), E("🐱",72,48,105), E("🐶",40,36,90) ]},
+  {a:"head over heels", p:[ T("HEAD",50,26,110,{rot:180}), A(18,50,82,50,-22,{stroke:CY}), T("HEELS",50,74,110) ]},
+  {a:"a piece of cake", also:["piece of cake"], p:[ E("🎂",36,54,220), E("🍰",72,58,150,{rot:22}) ]},
+  {a:"break the ice", p:[ T("ICE",50,50,230,{fill:CY}), L(47,14,53,50,{w:14,stroke:DARK}), L(53,50,45,86,{w:14,stroke:DARK}) ]},
+  {a:"cost an arm and a leg", p:[ E("💷",50,18,110), E("💪",32,56,190), T("+",50,56,100,{fill:GOLD}), E("🦵",68,56,190) ]},
+  {a:"hit the nail on the head", p:[ E("🔨",34,28,180,{rot:40}), E("🔩",52,50,130), E("🗣️",52,76,160) ]},
+  {a:"let the cat out of the bag", p:[ E("👜",56,62,240), E("🐱",40,36,140) ]},
+  {a:"barking up the wrong tree", p:[ E("🌳",64,52,250), E("🐶",32,62,160), T("✗",64,52,220,{fill:RED}) ]},
+  {a:"all your eggs in one basket", also:["put all your eggs in one basket","eggs in one basket"],
+    p:[ E("🧺",50,62,260), E("🥚",41,44,95), E("🥚",50,39,95), E("🥚",59,44,95) ]},
+  {a:"burning the candle at both ends", p:[ E("🕯️",50,52,240,{rot:90}), E("🔥",24,52,120), E("🔥",76,52,120) ]},
+  {a:"the last straw", p:[ L(26,34,26,66,{w:14,stroke:"#e8d9a0"}), L(36,34,36,66,{w:14,stroke:"#e8d9a0"}),
+    L(46,34,46,66,{w:14,stroke:"#e8d9a0"}), L(56,34,56,66,{w:14,stroke:"#e8d9a0"}), L(72,34,72,66,{w:16,stroke:GOLD}) ]},
+  {a:"a wolf in sheep's clothing", also:["wolf in sheeps clothing","wolf in sheep clothing"],
+    p:[ E("🐑",52,56,270), E("🐺",52,44,140) ]},
+  {a:"hold your horses", p:[ E("✋",30,52,220), E("🐴",62,52,190), E("🐴",80,58,150) ]},
+  {a:"down to earth", p:[ T("DOWN",50,20,110), A(50,32,50,52,0,{arrow:true,stroke:CY}), E("🌍",50,72,190) ]},
+  {a:"out of the blue", p:[ R(36,50,34,54,{fill:"#2b5cff",rx:14}), T("OUT",66,50,120,{fill:GOLD}) ]},
+  {a:"a drop in the ocean", also:["drop in the ocean"], p:[ E("🌊",50,68,290), E("💧",50,26,90) ]},
+  {a:"music to my ears", p:[ E("🎵",26,46,150), E("🎶",44,36,120), E("👂",72,54,230) ]},
+  {a:"an eye for an eye", also:["eye for an eye"], p:[ E("👁️",28,50,180), T("4",50,50,120,{fill:GOLD}), E("👁️",72,50,180) ]},
+  {a:"see eye to eye", p:[ E("👁️",28,50,180), T("2",50,50,120,{fill:CY}), E("👁️",72,50,180,{flip:true}) ]},
+  {a:"on the ball", p:[ T("ON",50,22,110), E("⚽",50,60,240) ]},
+  {a:"behind bars", p:[ E("😀",50,52,250), L(30,14,30,90,{w:14,stroke:"#9aa"}), L(42,14,42,90,{w:14,stroke:"#9aa"}),
+    L(54,14,54,90,{w:14,stroke:"#9aa"}), L(66,14,66,90,{w:14,stroke:"#9aa"}) ]},
+  {a:"over the hill", p:[ T("OVER",50,18,105), A(16,60,84,60,-34,{stroke:CY}), E("⛰️",50,72,210) ]},
+  {a:"bring home the bacon", p:[ E("🥓",24,52,170), A(36,52,62,52,-14,{arrow:true,stroke:GOLD}), E("🏠",78,52,210) ]},
+  {a:"a big fish in a small pond", also:["big fish in a small pond"],
+    p:[ C(50,54,22,{fill:"#123a55",stroke:CY,sw:8}), E("🐟",50,54,300) ]},
+  {a:"when pigs fly", p:[ E("☁️",22,28,130), E("☁️",78,30,150), E("🐷",50,52,230) ]},
+  {a:"cold feet", p:[ E("🦶",50,58,260), E("❄️",32,30,120), E("❄️",68,26,100) ]},
+  {a:"green fingers", p:[ E("🌿",50,22,130), T("FINGERS",50,58,150,{fill:GRN}) ]},
+  {a:"two peas in a pod", p:[ T("2",26,32,110,{fill:GOLD}), E("🫛",54,56,300) ]},
+  {a:"in the doghouse", p:[ T("IN",22,28,100), E("🏠",56,58,260), E("🐶",56,56,130) ]},
+  {a:"put your foot in it", p:[ E("🦶",50,38,180), E("🪣",50,70,210) ]},
+  {a:"the world is your oyster", p:[ E("🦪",50,58,320), E("🌍",50,50,170) ]},
+  {a:"kill two birds with one stone", also:["two birds with one stone","two birds one stone"],
+    p:[ E("🪨",26,58,160), E("🐦",60,36,130), E("🐦",74,60,130) ]},
+  {a:"burning bridges", p:[ E("🌉",50,48,250), E("🔥",32,66,130), E("🔥",68,66,130) ]},
+  {a:"saved by the bell", p:[ E("🔔",56,52,250), E("🛟",26,56,150) ]},
+  {a:"a shot in the dark", also:["shot in the dark"], p:[ R(50,50,74,72,{fill:"#000",rx:12}), E("💥",50,50,140) ]},
+  {a:"every cloud has a silver lining", p:[ E("☁️",50,42,300), A(26,64,74,64,20,{stroke:"#d8d8e8",w:14}) ]},
+  {a:"straight from the horse's mouth", also:["straight from the horses mouth"],
+    p:[ E("🐴",26,52,220), A(42,52,84,52,0,{arrow:true,stroke:GOLD}) ]},
+  {a:"a watched pot never boils", also:["watched pot never boils"], p:[ E("👀",32,30,160), E("🍲",62,64,220) ]},
+  {a:"the early bird catches the worm", also:["early bird catches the worm"],
+    p:[ E("☀️",82,18,120), E("🐦",38,46,180), E("🪱",66,64,140) ]},
+  {a:"a level playing field", also:["level playing field"],
+    p:[ R(50,64,72,20,{fill:"#1e7a45",rx:6}), E("📏",50,36,170) ]},
+  {a:"sitting on the fence", p:[ L(16,52,84,52,{w:14,stroke:"#c9a06a"}), L(16,66,84,66,{w:14,stroke:"#c9a06a"}),
+    L(28,40,28,84,{w:14,stroke:"#c9a06a"}), L(72,40,72,84,{w:14,stroke:"#c9a06a"}), E("🧍",50,32,150) ]},
+  {a:"blow your own trumpet", p:[ E("👄",26,52,150), E("💨",42,52,110), E("🎺",68,52,230) ]},
+  {a:"chip off the old block", p:[ R(66,58,30,34,{fill:"#8a5a2b",rx:8}), E("🍟",30,34,150,{rot:-30}) ]},
+  {a:"the tip of the iceberg", also:["tip of the iceberg"],
+    p:[ E("🧊",50,26,150), L(8,44,92,44,{w:14,stroke:CY}), E("🧊",50,70,250,{op:.3}) ]},
+  {a:"face the music", p:[ E("😀",32,52,230), E("🎵",70,44,170) ]},
+  {a:"rock the boat", p:[ E("🌊",50,76,240), E("⛵",50,44,250,{rot:24}) ]},
+  {a:"back to square one", p:[ R(68,52,26,44,{stroke:GOLD,sw:10,rx:8}), T("1",68,52,130,{fill:GOLD}),
+    A(24,52,54,52,-18,{arrow:true,stroke:CY}) ]},
+  {a:"hands down", p:[ E("✋",34,38,180,{rot:180}), E("✋",66,38,180,{rot:180}),
+    A(34,58,34,80,0,{arrow:true,stroke:CY}), A(66,58,66,80,0,{arrow:true,stroke:CY}) ]},
+  {a:"spill the beans", p:[ E("🫙",34,36,190,{rot:-50}), E("🫘",52,62,90), E("🫘",64,70,90), E("🫘",74,58,90) ]},
+  {a:"thick as thieves", p:[ T("THIEVES",50,50,190,{spacing:-12,fill:GOLD}) ]},
+  {a:"left out in the cold", p:[ R(66,50,42,50,{stroke:CY,sw:8,rx:12}), T("LEFT",22,50,110), E("❄️",22,20,90) ]},
+
+  {a:"the apple of my eye", also:["apple of my eye"], p:[ E("👁️",50,52,320), E("🍎",50,52,120) ]},
+  {a:"a bad apple", also:["bad apple","one bad apple"], p:[ E("🍎",48,54,260), E("🪱",64,40,110) ]},
+  {a:"cool as a cucumber", p:[ E("🥒",42,54,230,{rot:-20}), E("❄️",72,34,120) ]},
+  {a:"a hot potato", also:["hot potato"], p:[ E("🥔",44,56,230), E("🔥",70,42,140) ]},
+  {a:"a couch potato", also:["couch potato"], p:[ E("🛋️",50,62,290), E("🥔",50,46,130) ]},
+  {a:"top banana", p:[ T("TOP",50,22,110), E("🍌",50,60,250) ]},
+  {a:"a bad egg", also:["bad egg"], p:[ E("🥚",44,54,240), T("✗",70,38,180,{fill:RED}) ]},
+  {a:"egg on your face", p:[ E("😀",44,56,250), E("🥚",64,40,140) ]},
+  {a:"walking on eggshells", p:[ E("🦶",36,36,160), E("🥚",54,66,120), E("🥚",70,60,110) ]},
+  {a:"the icing on the cake", also:["icing on the cake"], p:[ T("ICING",50,22,110), E("🎂",50,62,250) ]},
+  {a:"selling like hot cakes", also:["sell like hot cakes"], p:[ E("🥞",38,56,220), E("🔥",64,42,140), E("💷",80,64,110) ]},
+  {a:"in a nutshell", p:[ T("IN",24,30,100), E("🌰",56,58,290) ]},
+  {a:"a hard nut to crack", also:["hard nut to crack"], p:[ E("🌰",42,58,220), E("🔨",68,34,170,{rot:40}) ]},
+  {a:"a pinch of salt", also:["take it with a pinch of salt"], p:[ E("🧂",58,56,250), E("✋",28,42,160) ]},
+  {a:"worth its weight in gold", p:[ E("⚖️",36,52,210), E("🥇",70,52,190) ]},
+  {a:"born with a silver spoon", also:["silver spoon"], p:[ E("👶",34,54,210), E("🥄",68,50,200) ]},
+  {a:"out of the frying pan", p:[ T("OUT",22,26,90), E("🍳",44,52,230), E("🔥",72,62,150) ]},
+  {a:"food for thought", p:[ E("🍽️",28,54,200), T("4",50,52,110,{fill:GOLD}), E("🧠",72,52,200) ]},
+  {a:"eat humble pie", p:[ E("😔",28,42,160), E("🥧",58,58,250) ]},
+  {a:"let off steam", p:[ T("LET OFF",50,26,105), E("♨️",50,66,210) ]},
+  {a:"full of hot air", p:[ E("🎈",46,54,270), E("♨️",76,30,120) ]},
+  {a:"skating on thin ice", p:[ E("⛸️",50,32,180), L(10,58,90,58,{w:12,stroke:CY}), L(40,58,46,78,{w:8,stroke:CY}), L(60,58,55,80,{w:8,stroke:CY}) ]},
+  {a:"the ball is in your court", also:["ball is in your court"], p:[ R(50,60,64,32,{stroke:CY,sw:8,rx:6}), E("⚽",50,42,180) ]},
+  {a:"throw in the towel", p:[ E("✋",22,62,160), A(30,54,66,30,-24,{arrow:true,stroke:GOLD}), T("TOWEL",78,24,90) ]},
+  {a:"take the bull by the horns", p:[ E("🐂",52,56,280), E("✋",30,30,140) ]},
+  {a:"miss the boat", p:[ E("🧍",20,58,160), E("⛵",70,46,200), A(56,44,86,36,-10,{arrow:true,stroke:CY}) ]},
+  {a:"jump on the bandwagon", p:[ E("🚃",64,60,250), E("🏃",28,44,160), A(38,46,54,52,-16,{arrow:true,stroke:GOLD}) ]},
+  {a:"cut corners", p:[ R(50,52,40,54,{stroke:GOLD,sw:10,rx:2}), E("✂️",24,24,140), E("✂️",76,80,140) ]},
+  {a:"under your nose", p:[ E("👃",50,32,200), T("UNDER",50,68,110) ]},
+  {a:"don't count your chickens", also:["dont count your chickens","count your chickens"],
+    p:[ E("🐔",34,48,150), E("🐔",58,48,150), T("1 2 3",50,76,90,{fill:RED}), L(28,76,72,76,{w:10,stroke:RED}) ]},
+  {a:"a rolling stone gathers no moss", also:["a rolling stone","rolling stone gathers no moss"],
+    p:[ E("🌿",20,44,100), A(20,66,44,66,0,{arrow:true,stroke:CY}), E("🪨",60,58,210,{rot:25}) ]},
+  {a:"bury your head in the sand", p:[ E("🏖️",50,68,300), E("🦵",50,30,150,{rot:180}) ]},
+  {a:"sweep it under the carpet", also:["sweep under the carpet","brush it under the carpet"],
+    p:[ E("🧹",32,36,180,{rot:-25}), R(62,70,42,10,{fill:"#8a5a2b",rx:4}), C(66,63,4,{fill:GOLD}) ]},
+  {a:"hit the road", p:[ E("✋",30,34,170), E("🛣️",60,66,250) ]},
+  {a:"a drop in the bucket", p:[ E("🪣",50,62,260), E("💧",50,26,90) ]},
+  {a:"kick the bucket", p:[ E("🦵",28,42,180), E("🪣",64,62,230) ]},
+  {a:"on the same page", p:[ E("📄",32,52,200), T("=",50,52,90,{fill:GOLD}), E("📄",68,52,200) ]},
+  {a:"an open book", also:["open book"], p:[ E("📖",50,52,320) ]},
+  {a:"turn over a new leaf", p:[ A(24,26,76,26,-18,{arrow:true,stroke:GOLD}), E("🍃",50,58,260) ]},
+  {a:"let sleeping dogs lie", p:[ E("🐶",48,58,260), E("😴",74,34,130) ]},
+  {a:"a cat nap", also:["cat nap","catnap"], p:[ E("🐱",42,56,240), E("😴",72,34,130) ]},
+  {a:"curiosity killed the cat", p:[ E("❓",24,32,150), E("🐱",56,56,270) ]},
+  {a:"like herding cats", also:["herding cats"], p:[ E("🧍",14,60,110), E("🐱",34,44,120), E("🐱",56,64,120), E("🐱",76,42,120) ]},
+  {a:"a fly on the wall", also:["fly on the wall"], p:[ R(50,52,62,60,{fill:"#6b4a2f",rx:4}), E("🪰",56,46,130) ]},
+  {a:"no smoke without fire", also:["theres no smoke without fire","there is no smoke without fire"],
+    p:[ E("💨",36,32,160), E("🔥",64,66,190) ]},
+  {a:"playing with fire", also:["play with fire"], p:[ E("✋",28,40,150), E("🔥",58,58,250) ]},
+  {a:"fight fire with fire", p:[ E("🔥",30,52,200), T("vs",50,52,80,{fill:GOLD}), E("🔥",70,52,200) ]},
+  {a:"a burning question", also:["burning question"], p:[ E("❓",50,44,290), E("🔥",50,78,140) ]},
+  {a:"hold your tongue", p:[ E("✋",30,50,190), E("👅",66,54,210) ]},
+  {a:"bite your tongue", p:[ E("🦷",32,42,150), E("👅",62,58,230) ]},
+  {a:"a slip of the tongue", also:["slip of the tongue"], p:[ E("🍌",26,38,140), E("👅",58,60,240) ]},
+  {a:"keep it under your hat", also:["under your hat"], p:[ E("🎩",50,34,220), T("UNDER",50,72,100) ]},
+  {a:"old hat", p:[ T("OLD",28,50,110), E("🎩",68,54,250) ]},
+  {a:"at the drop of a hat", p:[ E("🎩",50,32,190), A(50,50,50,76,0,{arrow:true,stroke:CY}) ]},
+  {a:"wear many hats", p:[ E("🎩",50,26,110), E("🎩",50,48,140), E("🎩",50,72,170) ]},
+  {a:"money doesn't grow on trees", also:["money doesnt grow on trees","money does not grow on trees"],
+    p:[ E("🌳",52,56,280), E("💷",30,30,120), T("✗",30,30,150,{fill:RED}) ]},
+  {a:"money down the drain", also:["throwing money down the drain"],
+    p:[ E("💷",50,26,140), A(50,42,50,62,0,{arrow:true,stroke:CY}), E("🕳️",50,78,150) ]},
+  {a:"money talks", p:[ E("💷",36,52,200), E("💬",70,46,190) ]},
+  {a:"tighten your belt", p:[ T("BELT",50,50,150,{fill:GOLD}), A(16,50,34,50,0,{arrow:true}), A(84,50,66,50,0,{arrow:true}) ]},
+  {a:"break the bank", p:[ T("BANK",50,50,200,{fill:GOLD}), L(46,14,54,50,{w:14,stroke:DARK}), L(54,50,44,86,{w:14,stroke:DARK}) ]},
+  {a:"in the red", p:[ T("IN",26,50,110), R(64,50,32,44,{fill:"#c62828",rx:8}) ]},
+  {a:"save for a rainy day", p:[ E("🐷",30,60,190), E("🌧️",68,40,210) ]},
+  {a:"under one roof", p:[ E("🏠",50,32,200), T("UNDER",50,70,110) ]},
+  {a:"hit the roof", p:[ E("🏠",46,62,240), A(46,46,46,20,0,{arrow:true,stroke:RED}), E("😡",78,26,120) ]},
+  {a:"home and dry", p:[ E("🏠",30,52,220), T("&",50,52,90,{fill:GOLD}), E("☀️",72,52,200) ]},
+  {a:"a house of cards", also:["house of cards"], p:[ E("🃏",50,30,170), E("🃏",38,58,180,{rot:-25}), E("🃏",62,58,180,{rot:25}) ]},
+  {a:"the writing is on the wall", also:["writing on the wall","the writing on the wall"],
+    p:[ R(50,52,66,50,{fill:"#6b4a2f",rx:4}), T("WRITING",50,52,110,{fill:WHT}) ]},
+  {a:"hit the hay", p:[ E("✋",30,36,160), E("🌾",62,64,230) ]},
+  {a:"hit the sack", p:[ E("✋",30,36,160), E("💰",64,62,230) ]},
+  {a:"sleep like a log", p:[ E("😴",32,42,180), E("🪵",66,62,230) ]},
+  {a:"burn the midnight oil", p:[ E("🕯️",34,54,210), E("🌙",70,32,170) ]},
+  {a:"the crack of dawn", also:["crack of dawn"], p:[ T("DAWN",50,50,190,{fill:GOLD}), L(46,14,54,50,{w:14,stroke:DARK}), L(54,50,44,86,{w:14,stroke:DARK}) ]},
+  {a:"time flies", p:[ E("🕐",38,50,200), E("💨",70,44,150) ]},
+  {a:"against the clock", p:[ E("🏃",26,54,180), E("🕐",64,52,250) ]},
+  {a:"beat the clock", p:[ E("👊",26,48,180), E("🕐",64,52,250) ]},
+  {a:"in the nick of time", p:[ T("NICK",24,28,90,{fill:GOLD}), E("🕐",58,54,250) ]},
+  {a:"third time lucky", p:[ T("3",26,50,140,{fill:GOLD}), E("🕐",54,52,210), E("🍀",80,62,140) ]},
+  {a:"the eleventh hour", also:["eleventh hour"], p:[ E("🕚",50,52,320) ]},
+  {a:"call it a day", p:[ E("📞",30,50,200), E("☀️",68,52,210) ]},
+  {a:"the last laugh", also:["last laugh"], p:[ T("LAST",28,50,110), E("😂",66,54,250) ]},
+  {a:"crying over spilt milk", also:["cry over spilt milk","dont cry over spilt milk"],
+    p:[ E("😢",30,44,180), E("🥛",64,62,210,{rot:-60}) ]},
+  {a:"a shoulder to cry on", p:[ E("🫂",34,52,210), E("😢",68,50,200) ]},
+  {a:"keep your chin up", also:["chin up"], p:[ E("😀",50,54,260), A(50,78,50,24,0,{arrow:true,stroke:GOLD}) ]},
+  {a:"grin and bear it", p:[ E("😁",32,52,220), E("🐻",68,52,230) ]},
+  {a:"a bear hug", also:["bear hug"], p:[ E("🐻",50,56,310), E("🫂",50,50,130) ]},
+  {a:"a loan shark", also:["loan shark"], p:[ E("💷",24,42,140), E("🦈",58,56,270) ]},
+  {a:"fishing for compliments", also:["fish for compliments"], p:[ E("🎣",32,50,210), E("💬",70,46,190) ]},
+  {a:"a different kettle of fish", also:["different kettle of fish"], p:[ E("🫖",32,54,230), E("🐟",68,52,210) ]},
+  {a:"plenty more fish in the sea", p:[ E("🐟",28,42,120), E("🐟",52,58,120), E("🐟",76,40,120), E("🌊",50,78,190) ]},
+  {a:"packed like sardines", p:[ E("🐟",34,40,110), E("🐟",50,40,110), E("🐟",66,40,110), E("🐟",34,62,110), E("🐟",50,62,110), E("🐟",66,62,110) ]},
+  {a:"a whale of a time", p:[ E("🐳",42,56,290), E("🕐",78,30,130) ]},
+  {a:"crocodile tears", p:[ E("🐊",40,54,230), E("💧",70,42,120), E("💧",78,58,100) ]},
+  {a:"the elephant in the room", also:["elephant in the room"], p:[ R(50,52,70,58,{stroke:CY,sw:8,rx:10}), E("🐘",50,54,230) ]},
+  {a:"an elephant never forgets", also:["elephants never forget"], p:[ E("🐘",42,56,270), E("🧠",76,32,140) ]},
+  {a:"a memory like a sieve", p:[ E("🧠",38,44,200), E("🕳️",70,64,160) ]},
+  {a:"the black sheep", also:["black sheep"], p:[ E("🐑",30,52,180), E("🐑",52,52,180), R(76,52,15,25,{fill:"#000",rx:6}), E("🐑",76,52,175) ]},
+  {a:"counting sheep", also:["count sheep"], p:[ E("🐑",30,48,150), E("🐑",52,52,150), E("🐑",74,48,150), T("1 2 3",50,80,80,{fill:GOLD}) ]},
+  {a:"a lone wolf", also:["lone wolf"], p:[ T("1",22,26,110,{fill:GOLD}), E("🐺",54,54,300) ]},
+  {a:"top dog", p:[ T("TOP",50,22,110), E("🐶",50,60,260) ]},
+  {a:"every dog has its day", p:[ E("🐶",40,56,250), E("☀️",74,30,150) ]},
+  {a:"sick as a parrot", p:[ E("🦜",48,56,280), E("🤒",78,30,130) ]},
+  {a:"as the crow flies", p:[ E("🐦",24,44,150), A(30,44,84,44,0,{arrow:true,stroke:CY}) ]},
+  {a:"a little bird told me", also:["little bird told me"],
+    p:[ E("🐦",30,42,140), E("💬",56,44,170), E("👂",80,62,160) ]},
+  {a:"water off a duck's back", also:["water off a ducks back"], p:[ E("🦆",44,56,240), E("💧",70,32,120) ]},
+  {a:"a sitting duck", also:["sitting duck"], p:[ E("🦆",48,58,290), T("✗",78,28,140,{fill:RED}) ]},
+  {a:"get your ducks in a row", also:["ducks in a row"], p:[ E("🦆",24,52,130), E("🦆",42,52,130), E("🦆",60,52,130), E("🦆",78,52,130) ]},
+  {a:"a wild goose chase", also:["wild goose chase"], p:[ E("🦢",68,46,200), E("🏃",28,56,180), A(38,50,58,46,-8,{arrow:true,stroke:CY}) ]},
+  {a:"flogging a dead horse", also:["flog a dead horse","beating a dead horse"], p:[ E("🐴",46,60,240,{rot:180}), E("✋",76,34,140) ]},
+  {a:"long in the tooth", p:[ E("🦷",50,50,200), L(50,62,50,84,{w:22,stroke:WHT}) ]},
+  {a:"sweet tooth", p:[ E("🦷",38,54,230), E("🍬",70,50,200) ]},
+  {a:"by the skin of your teeth", also:["by the skin of my teeth"], p:[ E("🦷",50,54,270), E("🍌",78,30,130) ]},
+  {a:"turn a blind eye", p:[ E("👁️",50,54,300), L(24,24,76,84,{w:16,stroke:RED}) ]},
+  {a:"a bird's eye view", also:["birds eye view","a birds eye view"],
+    p:[ E("🐦",30,26,140), E("👁️",62,34,150), A(62,46,62,74,0,{arrow:true,stroke:CY}), E("🏠",62,84,120) ]},
+  {a:"head in the clouds", p:[ E("☁️",50,34,300), E("🗣️",50,32,140), T("HEAD",50,74,100) ]},
+  {a:"a weight off your shoulders", also:["weight off your shoulders"], p:[ E("🏋️",44,60,220), A(66,44,84,22,-10,{arrow:true,stroke:GRN}) ]},
+  {a:"the cold shoulder", also:["cold shoulder","give the cold shoulder"], p:[ E("🫂",42,56,250), E("❄️",74,30,130) ]},
+  {a:"twist my arm", also:["twist your arm"], p:[ E("💪",48,54,270), A(20,30,44,34,0,{arrow:true,stroke:GOLD}) ]},
+  {a:"a slap on the wrist", also:["slap on the wrist"], p:[ E("✋",34,42,200), E("🤚",64,60,200) ]},
+  {a:"rule of thumb", p:[ E("👍",50,54,300), E("📏",22,28,130) ]},
+  {a:"all fingers and thumbs", p:[ E("👍",30,50,180), E("✋",56,54,220), E("👍",78,48,170) ]},
+  {a:"itchy feet", p:[ E("🦶",50,56,270), E("🪶",76,30,130) ]},
+  {a:"drag your feet", p:[ E("🦶",56,62,240), A(84,64,34,64,0,{arrow:true,stroke:CY}) ]},
+  {a:"find your feet", p:[ E("🦶",56,58,250), E("🔍",26,38,170) ]},
+  {a:"stand on your own two feet", also:["stand on your own feet"], p:[ E("🦶",38,58,200), E("🦶",62,58,200), T("2",50,24,110,{fill:GOLD}) ]},
+  {a:"a step in the right direction", also:["step in the right direction"], p:[ E("👣",38,58,220), A(56,50,86,50,0,{arrow:true,stroke:GRN}) ]},
+  {a:"back to the drawing board", also:["the drawing board"],
+    p:[ R(64,54,38,44,{fill:"#f4efff",rx:6}), E("🖊️",64,54,140), A(20,54,42,54,-16,{arrow:true,stroke:CY}) ]},
+  {a:"turn the tables", also:["the tables have turned"], p:[ E("🪑",50,54,260,{rot:180}), A(24,24,76,24,-16,{arrow:true,stroke:GOLD}) ]},
+  {a:"put a sock in it", p:[ E("🧦",50,56,290), T("IN",22,26,90) ]},
+  {a:"pull your socks up", p:[ E("🧦",50,60,240), A(50,44,50,20,0,{arrow:true,stroke:GOLD}) ]},
+  {a:"knock your socks off", p:[ E("🧦",56,56,230,{rot:35}), E("👊",26,42,180) ]},
+  {a:"if the shoe fits", also:["if the cap fits"], p:[ E("👞",50,56,290), E("❓",78,28,130) ]},
+  {a:"on a shoestring", p:[ E("👟",50,58,280), T("ON",22,26,90) ]},
+  {a:"a heart of gold", also:["heart of gold"], p:[ E("❤️",38,54,240), E("🥇",70,52,190) ]},
+  {a:"heart on your sleeve", also:["wear your heart on your sleeve"], p:[ E("👕",52,58,290), E("❤️",64,44,110) ]},
+  {a:"a change of heart", p:[ E("❤️",56,54,250), A(20,26,46,34,0,{arrow:true,stroke:GOLD}) ]},
+  {a:"lost your marbles", also:["lose your marbles"], p:[ E("🧠",34,42,180), C(64,60,5,{fill:CY}), C(74,66,5,{fill:GOLD}), C(70,52,5,{fill:"#ff4fa3"}) ]},
+  {a:"off your rocker", p:[ E("🪑",50,58,250,{rot:22}), E("😵",76,28,130) ]},
+  {a:"a screw loose", also:["got a screw loose"], p:[ E("🗣️",42,54,240), E("🔩",72,42,150,{rot:35}) ]},
+  {a:"the penny dropped", also:["penny drops","the penny drops"],
+    p:[ E("🪙",50,26,120), A(50,40,50,66,0,{arrow:true,stroke:GOLD}), E("🗣️",50,80,130) ]},
+  {a:"two sides of the same coin", also:["sides of the same coin"],
+    p:[ E("🪙",34,52,200), E("🪙",66,52,200,{flip:true}), T("2",50,22,100,{fill:GOLD}) ]},
+  {a:"a flash in the pan", also:["flash in the pan"], p:[ E("🍳",52,60,250), E("💥",42,36,150) ]},
+  {a:"light as a feather", also:["as light as a feather"], p:[ E("🪶",50,52,300) ]},
+  {a:"birds of a feather", p:[ E("🐦",34,50,170), E("🐦",62,52,170), E("🪶",84,32,120) ]},
+  {a:"ruffle a few feathers", also:["ruffle some feathers"], p:[ E("🐦",44,56,250), E("🪶",70,32,130), E("🪶",80,48,110) ]},
+  {a:"under a cloud", p:[ E("☁️",50,32,260), T("UNDER",50,72,110) ]},
+  {a:"chasing rainbows", p:[ E("🌈",68,42,240), E("🏃",26,58,180) ]},
+  {a:"a ray of sunshine", p:[ E("☀️",50,52,320) ]},
+  {a:"make hay while the sun shines", p:[ E("🌾",34,60,220), E("☀️",72,32,190) ]},
+  {a:"the calm before the storm", p:[ E("😌",30,50,190), E("⛈️",68,52,230) ]},
+  {a:"any port in a storm", p:[ E("⛈️",30,34,170), E("⚓",66,60,220) ]},
+  {a:"all at sea", p:[ E("🌊",50,66,300), E("🧍",50,34,140) ]},
+  {a:"in deep water", p:[ T("IN",26,26,100), E("🌊",50,64,320), E("🧍",50,36,130) ]},
+  {a:"test the water", also:["test the waters"], p:[ E("🦶",44,36,160), E("💧",56,66,200) ]},
+  {a:"go with the flow", p:[ E("🌊",50,62,300), A(18,32,82,32,0,{arrow:true,stroke:CY}) ]},
+  {a:"against the tide", also:["swim against the tide"], p:[ E("🌊",50,64,300), A(82,32,18,32,0,{arrow:true,stroke:RED}) ]},
+  {a:"the coast is clear", p:[ E("🏖️",50,60,280), E("👀",50,26,130) ]}
+];
+
+/* ============================================================
+   SOUND  (all generated — no files to load)
+   ============================================================ */
+let AC = null;
+const audio = {
+  on(){ if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === "suspended") AC.resume(); },
+  blip(freq, dur, type, vol){
+    if (!AC) return;
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.type = type || "sine"; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, AC.currentTime);
+    g.gain.linearRampToValueAtTime(vol || .18, AC.currentTime + .01);
+    g.gain.exponentialRampToValueAtTime(.0001, AC.currentTime + dur);
+    o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + dur + .02);
+  },
+  tick(){ this.blip(1400, .05, "square", .05); },
+  bell(){ this.blip(1046, .55, "triangle", .22); setTimeout(() => this.blip(1568, .7, "triangle", .2), 130); },
+  buzz(i){ this.blip([440, 587, 740][i % 3], .18, "sawtooth", .2); },
+  right(){ [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.blip(f, .3, "triangle", .2), i * 90)); },
+  wrong(){ this.blip(150, .35, "sawtooth", .2); setTimeout(() => this.blip(110, .45, "sawtooth", .2), 130); },
+  drop(){ this.blip(320, .18, "square", .1); setTimeout(() => this.blip(240, .22, "square", .1), 90); }
+};
+
+/* ============================================================
+   ANSWER MATCHING
+   ============================================================ */
+const STOP = /\b(a|an|the|your|you're|youre|my|his|her|their|its|it's|one's|ones)\b/g;
+function norm(s){
+  return (s || "").toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9\s']/g, " ")
+    .replace(/'/g, "")
+    .replace(/\s+/g, " ").trim();
+}
+// knock a word back to its stem so "breaking"/"break" and "birds"/"bird" agree
+function stem(w){
+  if (w.length > 6 && w.endsWith("ing")) return w.slice(0, -3);
+  if (w.length > 6 && w.endsWith("ed"))  return w.slice(0, -2);
+  if (w.length > 3 && w.endsWith("s"))   return w.slice(0, -1);
+  return w;
+}
+function loose(s){
+  return norm(s).replace(STOP, " ").split(/\s+/).filter(Boolean).map(stem).join(" ");
+}
+function lev(a, b){
+  const m = a.length, n = b.length;
+  if (!m || !n) return Math.max(m, n);
+  let prev = Array.from({length: n + 1}, (_, i) => i), cur = new Array(n + 1);
+  for (let i = 1; i <= m; i++){
+    cur[0] = i;
+    for (let j = 1; j <= n; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    [prev, cur] = [cur, prev];
+  }
+  return prev[n];
+}
+function matches(guess, puz){
+  const cands = [puz.a].concat(puz.also || []);
+  const g = norm(guess), gl = loose(guess);
+  if (!g) return false;
+  for (const c of cands){
+    const t = norm(c), tl = loose(c);
+    if (g === t || gl === tl) return true;
+    if (g.replace(/\s/g, "") === t.replace(/\s/g, "")) return true;
+    // only forgive typos, and only on longer answers — otherwise "on the wall"
+    // sneaks past "on the ball" on a single letter
+    const tol = Math.floor(tl.length / 8);
+    if (tol && lev(gl, tl) <= tol) return true;
+  }
+  return false;
+}
+
+/* ============================================================
+   GAME STATE
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const KEYS = ["a", "l", "m"];
+const G = {
+  players: [], n: 3, pool: [], puz: null, mode: "main",
+  round: null, roundNo: 0, left: 0, value: 100,
+  step: 0, steps: [], armed: false, locked: new Set(),
+  timer: null, askTimer: null, buzzer: -1, busy: false, serial: 0,
+  pot: 0, bonusPlayer: -1, qfLeft: 0, qfTimer: null,
+  superPlayer: -1, cells: [], pickIdx: -1, started: false
+};
+
+// Every timer is stamped with the current puzzle's serial number and cancels the
+// one before it, so a stray timeout can never reach into the next puzzle.
+function later(fn, ms){
+  clearTimeout(G.timer);
+  const s = G.serial;
+  G.timer = setTimeout(() => { if (s === G.serial) fn(); }, ms);
+}
+
+const JEPS_WAIT = ["Say what you spot!", "Have a look at this…", "Eyes down!"];
+const JEPS_GOOD = ["Spot on!", "Lovely stuff!", "That's the one!"];
+const JEPS_BAD  = ["Not that one — look again!", "Ooh, close. Not it though.", "Nope! Anyone else?"];
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+function says(txt, hop){
+  $("bubble").textContent = txt; $("bubble").classList.add("show");
+  if (hop){ $("jeps").classList.remove("hop"); void $("jeps").offsetWidth; $("jeps").classList.add("hop"); }
+  clearTimeout(says.t); says.t = setTimeout(() => $("bubble").classList.remove("show"), 2600);
+}
+function shuffle(a){ for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+/* ---- setup screen ---- */
+function drawNames(){
+  $("names").innerHTML = "";
+  for (let i = 0; i < G.n; i++){
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.textContent = G.players[i] ? G.players[i].name : "Player " + (i + 1);
+    b.onclick = () => {
+      const v = prompt("Name for player " + (i + 1) + "?", b.textContent);
+      if (v && v.trim()){ b.textContent = v.trim().slice(0, 14); G.players[i].name = b.textContent; }
+    };
+    $("names").appendChild(b);
+  }
+}
+function makePlayers(){
+  G.players = [];
+  for (let i = 0; i < G.n; i++) G.players.push({name: "Player " + (i + 1), score: 0});
+  drawNames();
+}
+$("pcount").onclick = e => {
+  const b = e.target.closest("[data-n]"); if (!b) return;
+  G.n = +b.dataset.n;
+  [...$("pcount").children].forEach(c => c.classList.toggle("on", c === b));
+  makePlayers();
+};
+makePlayers();
+
+function drawPlayers(){
+  $("players").innerHTML = "";
+  G.players.forEach((p, i) => {
+    const d = document.createElement("div");
+    d.className = "pl";
+    d.innerHTML = '<div class="nm"></div><div class="sc"></div><div class="key"></div>';
+    d.querySelector(".key").textContent = p.conn ? "PHONE" : (KEYS[i] ? "KEY " + KEYS[i].toUpperCase() : "");
+    d.querySelector(".nm").textContent = p.name;
+    d.querySelector(".sc").textContent = "£" + p.score;
+    d.onclick = () => buzz(i);
+    $("players").appendChild(d);
+  });
+}
+function refreshPlayers(){
+  [...$("players").children].forEach((d, i) => {
+    const canBuzz = G.armed && G.buzzer < 0 && !G.locked.has(i)
+      && (G.mode !== "bonus" || i === G.bonusPlayer);
+    d.querySelector(".sc").textContent = "£" + G.players[i].score;
+    d.classList.toggle("armed", canBuzz);
+    d.classList.toggle("buzzed", G.buzzer === i);
+    d.classList.toggle("out", G.locked.has(i));
+  });
+  Net.pushState();
+}
+
+/* ============================================================
+   ROUNDS
+   ============================================================ */
+const ROUNDS = [
+  {type:"main",      puzzles:6,  value:100, label:"ROUND 1 · £100 A PUZZLE"},
+  {type:"quickfire", seconds:90, value:50,  label:"QUICKFIRE · £50 · NO BELL"},
+  {type:"super",     seconds:90,            label:"SUPER CATCHPHRASE"}
+];
+// the 5x5 endgame: claim five in a row, down or across the diagonal
+const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXY";
+const CENTRE = 12;                         // square M, the one that pays double
+const LINES = (() => {
+  const out = [];
+  for (let r = 0; r < 5; r++) out.push([0,1,2,3,4].map(c => r * 5 + c));
+  for (let c = 0; c < 5; c++) out.push([0,1,2,3,4].map(r => r * 5 + c));
+  out.push([0, 6, 12, 18, 24]);
+  out.push([4, 8, 12, 16, 20]);
+  return out;
+})();
+const LINE_PRIZE = 2000, JACKPOT_PRIZE = 5000;
+// the bonus pot falls with every tile that lifts, so guessing early pays
+const BONUS_LADDER = [1000, 800, 650, 500, 400, 300, 200, 150, 100];
+
+function takePuzzle(){
+  if (!G.pool.length) G.pool = shuffle(PUZZLES.map((_, i) => i));
+  return PUZZLES[G.pool.pop()];
+}
+
+// board setup shared by every round. tilesDown=false shows the picture straight away.
+function loadBoard(puz, tilesDown){
+  G.serial++;
+  G.puz = puz; G.step = 0; G.armed = false; G.buzzer = -1; G.busy = false; G.locked = new Set();
+  $("answerline").classList.remove("show");
+  $("svg").innerHTML = "";
+  puz.p.forEach(part => {
+    const n = drawPart(part);
+    n.classList.add("in");
+    if (part.op != null) n.style.opacity = part.op;
+    $("svg").appendChild(n);
+  });
+  G.steps = buildTiles();
+  if (!tilesDown){ G.steps.forEach(liftTile); G.step = G.steps.length; }
+  refreshPlayers();
+}
+
+function startRound(n){
+  G.roundNo = n;
+  if (n >= ROUNDS.length) return finish();
+  G.round = ROUNDS[n];
+  G.value = G.round.value;
+  G.left  = G.round.puzzles || 0;
+  $("round").textContent = G.round.label;
+  if (G.round.type === "quickfire") return startQuickfire();
+  if (G.round.type === "super") return startSuper();
+  nextPuzzle();
+}
+
+/* ---- round 1: main ---- */
+function nextPuzzle(){
+  if (G.round.type === "quickfire") return nextQuickfire();
+  if (G.left <= 0) return startRound(G.roundNo + 1);
+  G.left--;
+  G.mode = "main";
+  loadBoard(takePuzzle(), true);
+  $("round").textContent = G.round.label;
+  $("pot").textContent = "PUZZLE " + (G.round.puzzles - G.left) + " OF " + G.round.puzzles;
+  $("bellpip").className = ""; $("bellpip").textContent = "🔔 WAIT…";
+  says(pick(JEPS_WAIT), true);
+  later(revealStep, 900);
+}
+
+/* ---- the bonus catchphrase ---- */
+function startBonus(i){
+  G.mode = "bonus"; G.bonusPlayer = i;
+  loadBoard(takePuzzle(), true);
+  G.armed = true;                        // they can call it whenever they like
+  G.pot = BONUS_LADDER[0];
+  $("round").textContent = "BONUS · " + G.players[i].name;
+  $("pot").textContent = "GUESS EARLY, WIN MORE";
+  $("bellpip").className = "money"; $("bellpip").textContent = "£" + G.pot;
+  says("Bonus! The longer you leave it, the less it's worth.", true);
+  refreshPlayers();
+  later(bonusStep, 1400);
+}
+function bonusStep(){
+  if (G.step >= G.steps.length) return later(() => { if (!G.busy) bonusOver(); }, 5000);
+  liftTile(G.steps[G.step]); G.step++;
+  G.pot = BONUS_LADDER[Math.min(G.step - 1, BONUS_LADDER.length - 1)];
+  $("bellpip").textContent = "£" + G.pot;
+  audio.drop();
+  later(bonusStep, 5000);
+}
+function bonusOver(){
+  G.busy = true;
+  audio.wrong();
+  says("It was " + G.puz.a + "!", true);
+  revealAll();
+  later(nextPuzzle, 3200);
+}
+
+/* ---- round 2: quickfire ---- */
+// one clock, shared by quickfire and the super board
+function clockTick(){
+  G.qfLeft--;
+  $("pot").textContent = G.qfLeft + "s LEFT";
+  if (G.qfLeft <= 0){ clockPause(); G.mode === "super" ? endSuper() : endQuickfire(); }
+}
+function clockPause(){ clearInterval(G.qfTimer); G.qfTimer = null; }
+function clockResume(){
+  if ((G.mode !== "quickfire" && G.mode !== "super") || G.qfTimer || G.qfLeft <= 0) return;
+  G.qfTimer = setInterval(clockTick, 1000);
+}
+function startQuickfire(){
+  G.mode = "quickfire";
+  G.qfLeft = G.round.seconds;
+  says("Quickfire! No bell — buzz the second you spot it.", true);
+  nextQuickfire();
+}
+function nextQuickfire(){
+  if (G.qfLeft <= 0) return;
+  G.mode = "quickfire";
+  loadBoard(takePuzzle(), false);        // whole picture at once, no bell
+  G.armed = true;
+  $("round").textContent = G.round.label;
+  $("pot").textContent = G.qfLeft + "s LEFT";
+  $("bellpip").className = "live"; $("bellpip").textContent = "BUZZ ANY TIME";
+  refreshPlayers();
+  clockResume();
+}
+function endQuickfire(){
+  G.serial++;                            // cancel anything still pending
+  G.busy = true; G.armed = false;
+  clockPause();
+  audio.bell();
+  says("Time!", true);
+  revealAll();
+  refreshPlayers();
+  setTimeout(() => startRound(G.roundNo + 1), 2600);
+}
+
+/* ---- round 3: the super catchphrase ---- */
+function startSuper(){
+  G.mode = "super";
+  G.qfLeft = G.round.seconds;
+  // the leader plays it, exactly as on the show
+  G.superPlayer = G.players.reduce((best, p, i) => p.score > G.players[best].score ? i : best, 0);
+  G.cells = LETTERS.split("").map(letter => ({letter, state: "free"}));
+  G.busy = false; G.armed = false; G.buzzer = -1;
+  $("round").textContent = "SUPER CATCHPHRASE · " + G.players[G.superPlayer].name;
+  $("bellpip").className = "money"; $("bellpip").textContent = "5 IN A LINE";
+  says("Five in a line — through M pays double!", true);
+  drawGrid();
+  showGrid(true);
+  refreshPlayers();          // tells the phones this is a pick-a-square round
+  clockResume();
+}
+function drawGrid(){
+  Net.pushGrid();
+  $("grid").innerHTML = "";
+  G.cells.forEach((c, i) => {
+    const d = document.createElement("div");
+    d.className = "cell " + c.state + (i === CENTRE ? " centre" : "");
+    d.textContent = c.letter;
+    d.onclick = () => pickCell(i);
+    $("grid").appendChild(d);
+  });
+}
+function showGrid(on){
+  $("grid").classList.toggle("hide", !on);
+  $("svg").style.opacity = on ? 0 : 1;
+  if (on){ $("answerline").classList.remove("show"); clockResume(); }
+}
+function pickCell(i){
+  if (G.mode !== "super" || G.busy || G.qfLeft <= 0) return;
+  if (G.cells[i].state !== "free") return;
+  G.pickIdx = i;
+  G.busy = true;
+  clockPause();
+  showGrid(false);
+  loadBoard(takePuzzle(), false);        // whole picture, they have already committed
+  G.busy = true; G.mode = "super"; G.buzzer = G.superPlayer;
+  audio.buzz(0);
+  ask(G.superPlayer, 7, "Square " + G.cells[i].letter + " — say what you spot!");
+}
+function markCell(state){
+  G.cells[G.pickIdx].state = state;
+  drawGrid();
+}
+function winningLine(){
+  return LINES.find(line => line.every(i => G.cells[i].state === "claimed"));
+}
+function backToGrid(){
+  if (G.qfLeft <= 0) return endSuper();
+  G.busy = false;
+  Net.pushGrid();
+  refreshPlayers();
+  showGrid(true);
+  $("bellpip").textContent = G.cells.filter(c => c.state === "claimed").length + "/5 IN A LINE";
+}
+function superWin(line){
+  G.busy = true; clockPause();
+  const jackpot = line.includes(CENTRE);
+  const prize = jackpot ? JACKPOT_PRIZE : LINE_PRIZE;
+  G.players[G.superPlayer].score += prize;
+  line.forEach(i => $("grid").children[i].classList.add("win"));
+  refreshPlayers();
+  audio.right();
+  says(jackpot ? "Through M — double money!" : "That's a line!", true);
+  $("verdict").classList.remove("hide");
+  $("vmsg").textContent = jackpot ? "JACKPOT LINE!" : "THAT'S A LINE!";
+  $("vmsg").style.color = "var(--gold)";
+  $("vsub").textContent = G.players[G.superPlayer].name + " wins £" + prize;
+  $("override").classList.add("hide");
+  setTimeout(() => { $("verdict").classList.add("hide"); finish(); }, 3400);
+}
+function endSuper(){
+  G.serial++;
+  G.busy = true; clockPause();
+  showGrid(true);
+  audio.wrong();
+  says("No line this time!", true);
+  setTimeout(finish, 2200);
+}
+
+/* ============================================================
+   THE BOARD
+   ============================================================ */
+// nine gold tiles over the picture, lifted one at a time in random order
+function buildTiles(){
+  const cells = [];
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) cells.push([r, c]);
+  shuffle(cells);
+  return cells.map(([r, c]) => {
+    const g = el("g", {});
+    const x = c * (W / 3), y = r * (H / 3);
+    const rect = el("rect", {x: x + 3, y: y + 3, width: W / 3 - 6, height: H / 3 - 6, rx: 10,
+      fill: "#2a1758", stroke: "#ffce3a", "stroke-width": 4});
+    rect.classList.add("tile");
+    const num = el("text", {x: x + W / 6, y: y + H / 6, "text-anchor": "middle", "dominant-baseline": "central",
+      "font-size": 74, "font-weight": 900, fill: "#ffce3a", opacity: .55,
+      "font-family": "'Segoe UI',system-ui,sans-serif"});
+    num.textContent = r * 3 + c + 1;      // numbered by position, lifted in random order
+    num.classList.add("tilenum");
+    g.appendChild(rect); g.appendChild(num);
+    $("svg").appendChild(g);
+    return g;
+  });
+}
+function liftTile(g){
+  g.querySelector(".tile").classList.add("gone");
+  g.querySelector(".tilenum").classList.add("gone");
+}
+function revealStep(){
+  if (G.busy) return;
+  if (G.step >= G.steps.length) return later(() => { if (!G.busy) timeUp(); }, 6000);
+  liftTile(G.steps[G.step]);
+  audio.tick();
+  G.step++;
+  if (G.step >= 5 && !G.armed) ringBell();     // five of nine before the bell
+  later(revealStep, 1100);
+}
+function ringBell(){
+  G.armed = true;
+  audio.bell();
+  $("bellpip").className = "live"; $("bellpip").textContent = "🔔 BUZZ NOW!";
+  refreshPlayers();
+}
+function revealAll(){
+  clearTimeout(G.timer);
+  G.steps.forEach(liftTile);
+  $("answerline").textContent = G.puz.a;
+  $("answerline").classList.add("show");
+}
+function timeUp(){
+  G.busy = true;
+  clearTimeout(G.timer);
+  audio.wrong();
+  says("It was " + G.puz.a + "!", true);
+  revealAll();
+  later(nextPuzzle, 3200);
+}
+
+/* ============================================================
+   BUZZING AND ANSWERING
+   ============================================================ */
+function buzz(i){
+  if (!G.armed || G.buzzer >= 0 || G.busy || G.locked.has(i)) return;
+  if (G.mode === "bonus" && i !== G.bonusPlayer) return;
+  clearTimeout(G.timer);
+  clockPause();
+  G.buzzer = i; G.busy = true;
+  audio.buzz(i);
+  refreshPlayers();
+  ask(i);
+}
+document.addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+  if ($("ask").classList.contains("hide") && !$("override").classList.contains("hide")){
+    if (k === "y") return decide(true);
+    if (k === "n") return decide(false);
+  }
+  if (!$("ask").classList.contains("hide")) return;      // typing
+  if (G.mode === "super"){                               // A-Y picks a square
+    const idx = LETTERS.indexOf(k.toUpperCase());
+    if (idx >= 0){ e.preventDefault(); pickCell(idx); }
+    return;
+  }
+  const i = KEYS.indexOf(k);
+  if (i >= 0 && i < G.n){ e.preventDefault(); buzz(i); }
+});
+
+function ask(i, secs, label){
+  $("askwho").textContent = label || (G.players[i].name + " — say what you spot!");
+  $("guess").value = "";
+  $("ask").classList.remove("hide");
+  // focus synchronously as well, or iOS will not raise the keyboard
+  $("guess").focus();
+  setTimeout(() => $("guess").focus(), 50);
+  // a phone player has to speak it, read it back and tap submit, so they get
+  // longer; the host clock is only a backstop so the game can never hang
+  const onPhone = !!(G.players[i] && G.players[i].conn && G.players[i].online);
+  const theirs = onPhone ? Math.max(secs || 6, 10) : (secs || 6);
+  Net.ask(i, theirs, label || "Say what you spot!");
+  let t = onPhone ? theirs + 3 : theirs;
+  $("clock").textContent = t; $("clock").classList.remove("low");
+  clearInterval(G.askTimer);
+  G.askTimer = setInterval(() => {
+    t--;
+    $("clock").textContent = t;
+    if (t <= 2) $("clock").classList.add("low");
+    if (t <= 0){ clearInterval(G.askTimer); submit(); }
+  }, 1000);
+}
+$("guess").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); submit(); } });
+
+function submit(text, alts){
+  clearInterval(G.askTimer);
+  const g = text != null ? text : $("guess").value;
+  $("ask").classList.add("hide");
+  Net.closeAsk();
+  // a spoken answer arrives as several guesses; any one of them counts
+  const tries = [g].concat(alts || []).filter(Boolean);
+  if (tries.some(t => matches(t, G.puz))) return decide(true);
+  showVerdict(false, g);
+}
+function showVerdict(ok, guessText, won){
+  $("verdict").classList.remove("hide");
+  if (ok){
+    $("vmsg").textContent = "SPOT ON!";
+    $("vmsg").style.color = "var(--green)";
+    $("vsub").textContent = G.puz.a.toUpperCase() + (won ? "  ·  £" + won : "");
+    $("override").classList.add("hide");
+  } else {
+    $("vmsg").textContent = "Not quite…";
+    $("vmsg").style.color = "var(--red)";
+    $("vsub").textContent = guessText ? '"' + guessText + '" — close enough?' : "No answer given";
+    $("override").classList.remove("hide");
+    audio.wrong();
+  }
+}
+$("giveit").onclick = () => decide(true);
+$("nope").onclick = () => decide(false);
+
+function decide(ok){
+  $("override").classList.add("hide");
+  const i = G.buzzer;
+  if (ok){
+    G.busy = true;
+    // on the super board a square pays nothing on its own — the line is the prize
+    const won = G.mode === "bonus" ? G.pot : G.mode === "super" ? 0 : G.value;
+    if (won) G.players[i].score += won;
+    audio.right();
+    showVerdict(true, "", won);
+    $("flash").style.opacity = ".22"; setTimeout(() => $("flash").style.opacity = 0, 260);
+    says(pick(JEPS_GOOD), true);
+    revealAll();
+    refreshPlayers();
+    // hold the SPOT ON card, then drop it so the finished picture is on show
+    setTimeout(() => $("verdict").classList.add("hide"), 1500);
+    if (G.mode === "main")           later(() => startBonus(i), 3300);
+    else if (G.mode === "bonus")     later(nextPuzzle, 3300);
+    else if (G.mode === "super"){                // square claimed — is that a line?
+      markCell("claimed");
+      const line = winningLine();
+      return line ? setTimeout(() => superWin(line), 1600) : setTimeout(backToGrid, 1600);
+    }
+    else                             later(nextQuickfire, 2400);
+  } else {
+    $("verdict").classList.add("hide");
+    says(pick(JEPS_BAD), true);
+    G.buzzer = -1;
+    if (G.mode === "super"){                    // square is spent, line or no line
+      markCell("missed");
+      return setTimeout(backToGrid, 1400);
+    }
+    if (G.mode === "bonus"){                    // wrong: another tile goes, pot drops
+      G.busy = false; refreshPlayers();
+      return later(bonusStep, 600);
+    }
+    if (G.mode === "quickfire"){                // no lockout in quickfire — buzz again
+      G.busy = false; G.armed = true;
+      refreshPlayers(); clockResume();
+      return;
+    }
+    G.locked.add(i);
+    if (G.locked.size >= G.n){ refreshPlayers(); return timeUp(); }
+    // clear busy BEFORE telling the phones, or the pass-on never reaches them
+    G.busy = false;
+    refreshPlayers();
+    later(revealStep, 800);
+  }
+}
+
+/* ============================================================
+   PHONES AS BUZZERS  (PeerJS — same broker Buzz Night uses)
+   ============================================================ */
+const PEER_PREFIX = "saywhatyouspot-v1-";
+const CAPTURE_MS = 260;          // rank near-simultaneous buzzes before anyone answers
+
+const Net = {
+  peer: null, room: null, on: false, pending: null, pendTimer: null,
+
+  code(){ let c = ""; for (let i = 0; i < 4; i++) c += "BCDFGHJKLMNPQRSTVWXZ"[Math.floor(Math.random() * 20)]; return c; },
+  joinUrl(){ return location.origin + location.pathname + "?room=" + this.room; },
+
+  host(){
+    this.room = this.code();
+    $("lobby").classList.remove("hide");
+    $("code").textContent = this.room;
+    $("joinUrl").textContent = this.joinUrl();
+    try { $("qrBox").innerHTML = ""; new QRCode($("qrBox"), {text: this.joinUrl(), width: 170, height: 170}); }
+    catch(e){ $("qrBox").textContent = "(no QR — use the link)"; }
+
+    // a phone cannot reach "localhost" — that address means this laptop only
+    if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)){
+      $("netnote").innerHTML = "<b>Phones can't join on this address.</b> Open this page on the laptop " +
+        "using its network address instead (looks like http://192.168.x.x:8137), then the QR code will work.";
+      $("netnote").style.color = "var(--gold)";
+    }
+    if (typeof Peer === "undefined"){
+      $("netnote").textContent = "No internet, so phones can't join. Use the laptop button below.";
+      return;
+    }
+    this.peer = new Peer(PEER_PREFIX + this.room);
+    this.peer.on("open", () => { this.on = true; });
+    this.peer.on("error", e => {
+      $("netnote").textContent = "Connection trouble (" + e.type + "). You can still play on the laptop.";
+    });
+    this.peer.on("connection", conn => this.arrived(conn));
+    setInterval(() => this.pingAll(), 4000);
+  },
+
+  arrived(conn){
+    conn.on("data", msg => this.fromPhone(conn, msg));
+    conn.on("close", () => {
+      const p = G.players.find(p => p.conn === conn);
+      if (p) p.online = false;
+      this.drawLobby(); refreshPlayers();
+    });
+  },
+
+  fromPhone(conn, msg){
+    if (msg.type === "join"){
+      // a phone that drops and comes back keeps its name, score and seat
+      let p = G.players.find(p => p.device && p.device === msg.device)
+           || G.players.find(p => p.name.toLowerCase() === (msg.name || "").toLowerCase());
+      if (!p){
+        if (G.players.length >= 6) return conn.send({type:"full"});
+        p = {name: (msg.name || "Player").slice(0, 14), score: 0, rtt: 60};
+        G.players.push(p);
+      }
+      p.conn = conn; p.device = msg.device; p.online = true;
+      conn.send({type:"you", name: p.name, score: p.score});
+      this.drawLobby();
+      if (G.started){ drawPlayers(); refreshPlayers(); }
+      return;
+    }
+    const i = G.players.findIndex(p => p.conn === conn);
+    if (i < 0) return;
+    if (msg.type === "pong"){ G.players[i].rtt = Date.now() - msg.t; return; }
+    if (msg.type === "buzz")   return this.buzzIn(i);
+    if (msg.type === "answer"){ $("ask").classList.add("hide"); return submit(msg.text, msg.alts); }
+    if (msg.type === "pick")    return pickCell(msg.i);
+  },
+
+  // hold the door open a moment so the fastest thumb wins, not the fastest wi-fi
+  buzzIn(i){
+    if (!G.armed || G.buzzer >= 0 || G.busy || G.locked.has(i)) return;
+    if (G.mode === "bonus" && i !== G.bonusPlayer) return;
+    const adjusted = Date.now() - (G.players[i].rtt || 60) / 2;
+    if (!this.pending){
+      this.pending = [{i, adjusted}];
+      this.pendTimer = setTimeout(() => {
+        const best = this.pending.sort((a, b) => a.adjusted - b.adjusted)[0];
+        this.pending = null;
+        if (best) buzz(best.i);
+      }, CAPTURE_MS);
+    } else if (!this.pending.some(b => b.i === i)) this.pending.push({i, adjusted});
+  },
+
+  pingAll(){ const t = Date.now(); this.each(p => p.conn.send({type:"ping", t})); },
+  each(fn){ G.players.forEach(p => { if (p.conn && p.online) try { fn(p); } catch(e){} }); },
+  to(i, msg){ const p = G.players[i]; if (p && p.conn && p.online) try { p.conn.send(msg); } catch(e){} },
+
+  drawLobby(){
+    $("joined").innerHTML = "";
+    G.players.forEach(p => {
+      const d = document.createElement("span");
+      d.className = "tag2";
+      d.textContent = p.name + (p.online ? "" : " (dropped)");
+      $("joined").appendChild(d);
+    });
+    $("startNet").textContent = G.players.length ? "START (" + G.players.length + ")" : "START";
+  },
+
+  // tell every phone what it may do right now
+  pushState(){
+    if (!G.started) return;
+    G.players.forEach((p, i) => {
+      if (!p.conn || !p.online) return;
+      const can = G.armed && G.buzzer < 0 && !G.busy && !G.locked.has(i)
+        && (G.mode !== "bonus" || i === G.bonusPlayer) && G.mode !== "super";
+      let msg = "Watch the board…";
+      if (G.mode === "super") msg = i === G.superPlayer ? "Pick a square!" : "Watching…";
+      else if (G.locked.has(i)) msg = "Out this one — sit tight";
+      else if (G.mode === "bonus" && i !== G.bonusPlayer) msg = "Bonus round — watching";
+      else if (can) msg = "BUZZ!";
+      try { p.conn.send({type:"state", can, msg, score: p.score}); } catch(e){}
+    });
+  },
+  ask(i, secs, label){ this.to(i, {type:"ask", secs, label}); },
+  closeAsk(){ this.each(p => p.conn.send({type:"closeAsk"})); },
+  pushGrid(){
+    if (G.mode !== "super") return;
+    const cells = G.cells.map(c => c.state);
+    G.players.forEach((p, i) => {
+      if (!p.conn || !p.online) return;
+      try { p.conn.send({type:"grid", cells, active: i === G.superPlayer && !G.busy}); } catch(e){}
+    });
+  }
+};
+
+/* ---- the phone ---- */
+const Phone = {
+  conn: null, name: "",
+  start(room){
+    $("title").classList.add("hide");
+    $("phJoin").classList.remove("hide");
+    const saved = localStorage.getItem("sws_name") || "";
+    $("phNameIn").value = saved;
+    $("phGo").onclick = () => {
+      const n = $("phNameIn").value.trim();
+      if (!n) return $("phErr").textContent = "Pop your name in first";
+      localStorage.setItem("sws_name", n);
+      this.name = n;
+      this.connect(room);
+    };
+    $("phNameIn").addEventListener("keydown", e => { if (e.key === "Enter") $("phGo").click(); });
+  },
+  device(){
+    let d = localStorage.getItem("sws_device");
+    if (!d){ d = Math.random().toString(36).slice(2); localStorage.setItem("sws_device", d); }
+    return d;
+  },
+  connect(room){
+    $("phErr").textContent = "Connecting…";
+    const peer = new Peer();
+    peer.on("open", () => {
+      this.conn = peer.connect(PEER_PREFIX + room, {reliable: true});
+      this.conn.on("open", () => {
+        this.conn.send({type:"join", name: this.name, device: this.device()});
+        $("phJoin").classList.add("hide");
+        $("phone").classList.remove("hide");
+        $("phName").textContent = this.name;
+      });
+      this.conn.on("data", m => this.msg(m));
+      this.conn.on("close", () => { $("phMsg").textContent = "Lost the host — reopen the link"; this.live(false); });
+    });
+    peer.on("error", e => { $("phErr").textContent = "Could not connect (" + e.type + "). Check the room code."; });
+  },
+  live(on){ $("buzzer").classList.toggle("live", on); this.can = on; },
+  msg(m){
+    if (m.type === "ping") return this.conn.send({type:"pong", t: m.t});
+    if (m.type === "you"){ $("phName").textContent = m.name; $("phScore").textContent = "£" + m.score; return; }
+    if (m.type === "full"){ $("phErr").textContent = "That game is full."; return; }
+    if (m.type === "state"){
+      $("phScore").textContent = "£" + (m.score || 0);
+      $("phMsg").textContent = m.msg;
+      this.live(!!m.can);
+      $("phAsk").classList.add("hide");
+      if ($("phGrid").classList.contains("hide")) $("buzzer").classList.remove("hide");
+      return;
+    }
+    if (m.type === "ask"){
+      $("buzzer").classList.add("hide");
+      $("phGrid").classList.add("hide");
+      $("phAsk").classList.remove("hide");
+      $("phMsg").textContent = m.label || "Say what you spot!";
+      $("phGuess").value = "";
+      this._sent = false;
+      this.listen();
+      let t = m.secs || 6;
+      $("phClock").textContent = t;
+      clearInterval(this._t);
+      this._t = setInterval(() => {
+        t--; $("phClock").textContent = t;
+        if (t <= 0){ clearInterval(this._t); this.send(); }
+      }, 1000);
+      return;
+    }
+    if (m.type === "closeAsk"){ clearInterval(this._t); $("phAsk").classList.add("hide"); $("buzzer").classList.remove("hide"); return; }
+    if (m.type === "grid"){
+      $("buzzer").classList.add("hide");
+      $("phAsk").classList.add("hide");
+      $("phGrid").classList.remove("hide");
+      $("phGrid").innerHTML = "";
+      m.cells.forEach((state, i) => {
+        const b = document.createElement("button");
+        b.textContent = LETTERS[i];
+        b.className = state + (i === CENTRE ? " centre" : "");
+        b.disabled = !m.active || state !== "free";
+        b.onclick = () => this.conn.send({type:"pick", i});
+        $("phGrid").appendChild(b);
+      });
+      return;
+    }
+  },
+  /* Say it out loud — the browser recogniser, same as Buzz Night's naming round.
+     It hands back several guesses and the right one is often not the first, so
+     every alternative is sent and the host tries the lot. */
+  listen(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const mic = $("phMic");
+    this._alts = []; this._heard = "";
+    $("phSend").classList.remove("ready");
+    $("phSend").textContent = "SUBMIT";
+    mic.classList.remove("listening");
+    if (!window.isSecureContext){
+      mic.textContent = "🎤 needs https — type it";
+      mic.disabled = true; $("phGuess").focus(); return;
+    }
+    if (!SR){
+      mic.textContent = "🎤 no speech on this phone — type it";
+      mic.disabled = true; $("phGuess").focus(); return;
+    }
+    let rec;
+    try { rec = new SR(); } catch(e){ mic.textContent = "🎤 type it"; mic.disabled = true; return; }
+    rec.lang = "en-GB";
+    rec.interimResults = true;
+    rec.maxAlternatives = 5;
+    rec.continuous = false;
+    this._rec = rec;
+    mic.disabled = false;
+    mic.textContent = "🎤 Listening…";
+    mic.classList.add("listening");
+
+    rec.onresult = ev => {
+      const last = ev.results[ev.results.length - 1];
+      $("phGuess").value = (last[0] || {}).transcript || "";
+      if (!last.isFinal) return;
+      const alts = [];
+      for (let i = 0; i < last.length; i++) alts.push(last[i].transcript);
+      // heard, not sent — they read it back and decide
+      this._alts = alts;
+      this._heard = alts[0] || "";
+      this.ready();
+    };
+    rec.onerror = e => {
+      mic.classList.remove("listening");
+      mic.textContent = e.error === "not-allowed" ? "🎤 mic blocked — type it" : "🎤 tap to try again";
+      $("phGuess").focus();
+    };
+    rec.onend = () => {
+      mic.classList.remove("listening");
+      if (!this._sent) mic.textContent = "🎤 tap to speak again";
+    };
+    // a beat before opening the mic, so it does not catch the bell or the host
+    setTimeout(() => { try { rec.start(); } catch(e){} }, 350);
+  },
+  // it has heard something: stop the mic, show it back, wait to be told to send
+  ready(){
+    try { this._rec && this._rec.stop(); } catch(e){}
+    $("phMic").classList.remove("listening");
+    $("phMic").textContent = "🎤 say it again";
+    $("phSend").classList.add("ready");
+    $("phSend").textContent = "SUBMIT";
+    $("phMsg").textContent = "Happy with that? Tap SUBMIT";
+  },
+  send(){
+    if (this._sent) return;
+    this._sent = true;
+    clearInterval(this._t);
+    try { this._rec && this._rec.stop(); } catch(e){}
+    $("phMic").classList.remove("listening");
+    $("phSend").classList.remove("ready");
+    const typed = $("phGuess").value;
+    // the extra guesses only belong to what was actually heard — if they have
+    // typed over it, send their words alone rather than a lucky old alternative
+    const alts = typed.trim() === (this._heard || "").trim() ? (this._alts || []) : [];
+    this.conn.send({type:"answer", text: typed, alts});
+    $("phAsk").classList.add("hide");
+    $("phMsg").textContent = "Sent — fingers crossed";
+  }
+};
+$("phMic").onclick = () => Phone.listen();
+$("buzzer").onclick = () => { if (Phone.can){ Phone.live(false); Phone.conn.send({type:"buzz"}); $("phMsg").textContent = "Buzzed!"; } };
+$("phSend").onclick = () => Phone.send();
+$("phGuess") && $("phGuess").addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); Phone.send(); } });
+
+/* ---- start / finish ---- */
+function beginGame(){
+  G.started = true;
+  G.n = G.players.length;
+  audio.on();
+  $("title").classList.add("hide");
+  $("lobby").classList.add("hide");
+  G.pool = shuffle(PUZZLES.map((_, i) => i));
+  G.players.forEach(p => p.score = 0);
+  drawPlayers();
+  startRound(0);
+}
+$("startNet").onclick = () => { if (G.players.length) beginGame(); };
+$("solo").onclick = () => { makePlayers(); beginGame(); };
+
+$("start").onclick = () => {
+  audio.on();
+  $("title").classList.add("hide");
+  G.players = [];                       // phones fill the seats from here
+  Net.host();
+  Net.drawLobby();
+};
+
+// a phone opening the invite link lands straight on its buzzer
+const ROOM = new URLSearchParams(location.search).get("room");
+if (ROOM) Phone.start(ROOM.toUpperCase());
+function finish(){
+  const best = [...G.players].sort((a, b) => b.score - a.score);
+  $("verdict").classList.remove("hide");
+  $("vmsg").textContent = best[0].name + " wins!";
+  $("vmsg").style.color = "var(--gold)";
+  $("vsub").textContent = best.map(p => p.name + " £" + p.score).join("  ·  ");
+  $("override").classList.add("hide");
+  says("What a game!", true);
+}
+</script>
+</body>
+</html>
