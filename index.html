@@ -5565,9 +5565,28 @@ const Night = {
       if (retry === false) return;
       if (retry === true) { this.idx--; return this.runNext(); }
 
-      // nobody stepped in — keep the night moving
-      $('nightStatus').textContent = 'Round ' + n + ' — playing ' + (Quiz.TITLES[alt] || alt) + ' instead.';
-      await this.wait(1400);
+      /* Nobody stepped in. Something fills the slot now so the room is not
+         left waiting — but the round itself is NOT thrown away. A music round
+         is the point of the evening, and Spotify being briefly unavailable is
+         no reason to lose one. It goes to the back of the running order and
+         is played later, by which time a logged-out Spotify has usually been
+         reconnected and a rate limit has long since cleared.
+
+         Three goes at it. Past that, something is wrong that waiting will not
+         mend, and quietly re-queueing forever would be its own kind of
+         broken. */
+      const tries = (r._deferred || 0) + 1;
+      if (tries <= 3) {
+        this.plan.push({ ...r, _deferred: tries, roundLabel: '' });
+        this.render();
+        $('nightStatus').textContent = 'Round ' + n + ' — ' + (Quiz.TITLES[r.mode] || 'that round') +
+          ' moved to the end of the night, we will come back to it. Playing ' +
+          (Quiz.TITLES[alt] || alt) + ' for now.';
+        Sound.say('We will come back to that one later. ' + (Quiz.ROUND_NAMES[alt] || 'Another round') + ' for now.');
+      } else {
+        $('nightStatus').textContent = 'Round ' + n + ' — playing ' + (Quiz.TITLES[alt] || alt) + ' instead.';
+      }
+      await this.wait(1800);
       if (!this.running) return;
       Host.broadcast({ type: 'roundCard', kicker: r.roundLabel,
         name: Quiz.TITLES[alt] || 'Quiz round', how: Quiz.HOWTO[alt] || '' });
