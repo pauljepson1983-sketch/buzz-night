@@ -1252,12 +1252,33 @@ const Spot = {
   },
 
   async api(path, opts = {}) {
+    /* Spotify hands out 429s when it has had enough, with a Retry-After
+       saying how long to wait. Carrying on regardless is what turns a brief
+       slow-down into a dead evening: every music round fires a dozen
+       searches, they all come back refused, and the round reports finding
+       nothing. Once told to wait, everything waits, rather than each round
+       discovering it for itself a dozen requests at a time. */
+    if (Date.now() < (this.rateLimitedUntil || 0)) {
+      const secs = Math.ceil((this.rateLimitedUntil - Date.now()) / 1000);
+      const e = new Error('Spotify is asking us to slow down — about ' + secs + ' more second' + (secs === 1 ? '' : 's') + '.');
+      e.rateLimited = true;
+      throw e;
+    }
     const t = await this.ensureToken();
     if (!t) throw new Error(this.lastAuthError || 'Not connected to Spotify');
     const r = await fetch('https://api.spotify.com/v1' + path, {
       ...opts, headers: {'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json', ...(opts.headers || {})}
     });
     if (r.status === 204) return null;
+    if (r.status === 429) {
+      // Retry-After is in seconds. Capped so a wild value cannot park the
+      // whole night, but long enough to actually stop asking.
+      const wait = Math.min(120, Math.max(2, +(r.headers.get('Retry-After') || 5) || 5));
+      this.rateLimitedUntil = Date.now() + wait * 1000;
+      const e = new Error('Spotify is asking us to slow down — about ' + wait + ' seconds.');
+      e.rateLimited = true;
+      throw e;
+    }
     if (!r.ok) {
       // surface Spotify's own wording — a bare status code says nothing useful
       let detail = '';
@@ -1490,9 +1511,15 @@ const Spot = {
   // page through it — 10 is too few to pick a quiz track from. Pages overlap
   // sometimes, hence the dedupe.
   async searchRaw(q) {
+    /* Every page used to fail silently to null, so a refused search and a
+       genuinely empty one looked identical to the caller. They need opposite
+       responses: an empty search should widen, a refused one should stop. */
+    let failure = null;
     const pages = await Promise.all([0, 10, 20, 30].map(offset =>
-      this.api('/search?' + new URLSearchParams({ q, type: 'track,playlist', limit: 10, offset })).catch(() => null)
+      this.api('/search?' + new URLSearchParams({ q, type: 'track,playlist', limit: 10, offset }))
+        .catch(e => { failure = failure || e; return null; })
     ));
+    if (failure && !pages.some(Boolean)) throw failure;
     const seen = new Set(), tracks = [], plSeen = new Set(), playlists = [];
     pages.filter(Boolean).forEach(p => {
       (p.tracks?.items || []).forEach(tr => {
@@ -3057,9 +3084,15 @@ const Quiz = {
     ].map(q => decade ? q + ' year:' + decade : q);
 
     const found = new Map(), seenArt = new Set();
+    let failure = null;
     for (const q of queries) {
       let res;
-      try { res = await Spot.searchRaw(q); } catch (e) { continue; }
+      try { res = await Spot.searchRaw(q); }
+      catch (e) {
+        failure = failure || e;
+        if (e.rateLimited) break;   // no point running the rest into the same wall
+        continue;
+      }
       res.tracks.forEach(t => {
         const al = t.album;
         if (!al || !al.name || !al.images?.length) return;
@@ -3350,9 +3383,15 @@ const Quiz = {
     const hi = decade ? +decade.slice(5) : new Date().getFullYear();
 
     const found = new Map();
+    let failure = null;
     for (const q of queries) {
       let res;
-      try { res = await Spot.searchRaw(q); } catch (e) { continue; }
+      try { res = await Spot.searchRaw(q); }
+      catch (e) {
+        failure = failure || e;
+        if (e.rateLimited) break;   // no point running the rest into the same wall
+        continue;
+      }
       res.tracks.forEach(t => {
         const al = t.album;
         if (!al || !al.release_date || !t.uri) return;
@@ -3376,6 +3415,9 @@ const Quiz = {
     const known = songs.filter(s => s.pop >= 45);
     songs = (known.length >= Math.max(4, count) ? known : songs)
       .sort((a, b) => b.pop - a.pop).slice(0, Math.max(count * 3, 24));
+    /* Telling the host to widen the search when Spotify refused to answer
+       sends them off changing eras and flavours that were never the problem. */
+    if (songs.length < 4 && failure) { failure.searchFailed = true; throw failure; }
     if (songs.length < 4) throw new Error('Only found ' + songs.length + ' songs for that — try a wider decade or a different style.');
     this.available = songs.length;
     return songs;
@@ -3400,9 +3442,15 @@ const Quiz = {
     const hi = decade ? +decade.slice(5) : new Date().getFullYear();
 
     const found = new Map();
+    let failure = null;
     for (const q of queries) {
       let res;
-      try { res = await Spot.searchRaw(q); } catch (e) { continue; }
+      try { res = await Spot.searchRaw(q); }
+      catch (e) {
+        failure = failure || e;
+        if (e.rateLimited) break;   // no point running the rest into the same wall
+        continue;
+      }
       res.tracks.forEach(t => {
         const al = t.album;
         if (!al || !al.release_date) return;
@@ -3429,6 +3477,7 @@ const Quiz = {
     let songs = [...found.values()].filter(s => s.uri);
     const known = songs.filter(s => s.pop >= 45);
     songs = (known.length >= Math.max(4, count) ? known : songs).sort((a, b) => b.pop - a.pop).slice(0, Math.max(count * 3, 24));
+    if (songs.length < 4 && failure) { failure.searchFailed = true; throw failure; }
     if (songs.length < 4) throw new Error('Only found ' + songs.length + ' datable songs — try a wider decade or a different style.');
     this.available = songs.length;
 
@@ -3842,18 +3891,27 @@ const Quiz = {
        in the twenties. That used to fail the whole round, which from the sofa
        looks like the round is broken rather than the search being too narrow.
        Widen the net instead: drop the flavour, then the era. */
-    let songs = await this.collectSongs(decade, count, style, extra);
+    /* Widening is the right answer to an empty search and the wrong answer to
+       a refused one. Each widening fires another dozen requests, so a round
+       that was turned away for asking too often used to respond by asking
+       four times as much — which is how one slow-down took the rest of the
+       night with it. A failure here is passed straight up. */
+    const widen = async (d, s) => {
+      try { return await this.collectSongs(d, count, s, extra); }
+      catch (e) { if (e.rateLimited || e.searchFailed) throw e; return []; }
+    };
+    let songs = await widen(decade, style);
     let how = '';
     if (songs.length < 2 && style) {
-      songs = await this.collectSongs(decade, count, '', extra);
+      songs = await widen(decade, '');
       how = ' (nothing for that flavour, so the era on its own)';
     }
     if (songs.length < 2 && decade) {
-      songs = await this.collectSongs('', count, style, extra);
+      songs = await widen('', style);
       how = ' (nothing for that era, so the flavour on its own)';
     }
     if (songs.length < 2) {
-      songs = await this.collectSongs('', count, '', extra);
+      songs = await widen('', '');
       how = ' (that search was empty, so anything goes)';
     }
     this.bnWidened = how;
