@@ -229,17 +229,36 @@
   #quizArt.logo { object-fit: contain; image-rendering: auto }
   #quizCountdown { font-size: 2.6rem; font-weight: 900; color: var(--gold); min-height: 3rem; }
   #quizCountdown.hurry { color: var(--red); }
-  /* Four boxes in a square rather than a list running down the screen.
+  /* Four boxes around the picture rather than a list running down the
+     screen.
 
-     A column makes the four options read like a ranking, and it pushes the
-     last one under the fold on a small phone — which is a real disadvantage
-     if the answer happens to be number four. A square puts all four the same
-     distance from a thumb and the same distance from the eye.
+     A column makes the options read like a ranking and pushes the fourth
+     under the fold on a small phone, which is a real disadvantage when the
+     answer happens to be number four. Spreading them to the corners puts all
+     four the same distance from a thumb — and, more to the point, means you
+     have to look at all four.
 
-     It drops back to a single column when the options are long enough that
-     two across would wrap into a mess. */
+     That last bit matters for the logo round. Plenty of brand marks have the
+     company name in them, so with a tidy column the answer can be matched at
+     a glance without knowing anything. Scattered to the corners you still
+     have to find it, which is the difference between a quiz question and a
+     spot-the-word exercise. */
   #quizOptions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
   #quizOptions.longtext { grid-template-columns: 1fr; }
+
+  /* With a picture on screen the four go round it: two above, two below. */
+  #quizOptions.around { grid-template-areas: 'a b' 'pic pic' 'c d'; row-gap: 12px; }
+  #quizOptions.around > :nth-child(1) { grid-area: a }
+  #quizOptions.around > :nth-child(2) { grid-area: b }
+  #quizOptions.around > :nth-child(3) { grid-area: c }
+  #quizOptions.around > :nth-child(4) { grid-area: d }
+  #quizOptions.around .opt-slot { grid-area: pic; min-height: 4px }
+  /* the four are deliberately not all the same size or lined up, so the eye
+     has to travel rather than scanning a neat list */
+  #quizOptions.around > :nth-child(1) { margin-right: 14% }
+  #quizOptions.around > :nth-child(2) { margin-left: 14% }
+  #quizOptions.around > :nth-child(3) { margin-right: 8% }
+  #quizOptions.around > :nth-child(4) { margin-left: 8% }
   /* Answer buttons are the thing people jab at in a noisy room, half cut, on
      a phone held one-handed. Comfortably past the 44px minimum tap target,
      with a visible border rather than relying on background alone, and a
@@ -7272,9 +7291,17 @@ const Player = {
     this.vibe([40]);
 
     const showOptions = () => {
-      $('quizArtWrap').classList.remove('showing');
+      /* A picture round keeps its picture, sitting in the gap between the two
+         rows of answers so the four really are AROUND it.
+
+         Logos only. Album covers, stills and faces flash and then go on
+         purpose — leaving those on screen next to four titles turns the
+         round into reading rather than recognising. A logo is the opposite:
+         the mark IS the question, so hiding it just tests memory. */
+      const hasPic = !!msg.img && !!msg.logo;
+      $('quizArtWrap').classList.toggle('showing', hasPic);
       if (msg.listen) this.setStatus('🎧 Listen…');
-      this.squareOrColumn($('quizOptions'), msg.options);
+      this.squareOrColumn($('quizOptions'), msg.options, hasPic);
       msg.options.forEach((opt, i) => {
         const b = document.createElement('button');
         b.className = 'quiz-opt';
@@ -7286,6 +7313,12 @@ const Player = {
         b.onclick = () => this.quizAnswer(i, b);
         $('quizOptions').appendChild(b);
       });
+      // the gap the picture sits in, dropped between the two rows
+      if (hasPic) {
+        const slot = document.createElement('div');
+        slot.className = 'opt-slot';
+        $('quizOptions').insertBefore(slot, $('quizOptions').children[2] || null);
+      }
       let left = msg.seconds;
       const cd = $('quizCountdown');
       cd.textContent = left;
@@ -7457,9 +7490,14 @@ const Player = {
   /* Two across is better for four short answers and worse for four long
      ones — "A combined question and exclamation mark" in a half-width box is
      four lines of wrapping. Anything wordy goes back to a single column. */
-  squareOrColumn(box, options) {
+  squareOrColumn(box, options, around) {
     const longest = (options || []).reduce((n, o) => Math.max(n, String(o).length), 0);
-    box.classList.toggle('longtext', longest > 16 || (options || []).length !== 4);
+    const four = (options || []).length === 4;
+    box.classList.toggle('longtext', longest > 16 || !four);
+    /* Wrapped round the picture only when there IS one and the answers are
+       short enough to sit two across; otherwise the layout would shove the
+       image off the bottom, which helps nobody. */
+    box.classList.toggle('around', !!around && four && longest <= 16);
   },
 
   duelOptions(options) {
