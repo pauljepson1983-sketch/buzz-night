@@ -4600,7 +4600,11 @@ const Quiz = {
         type: 'duelWatch', n: this.idx + 1, total: this.questions.length,
         kind: q.kind || 'mcq', show: q.show || null, showMs: q.showMs || 0,
         prompt: q.kind === 'guess' ? (q.title || q.prompt || '') : (q.prompt || ''),
-        unit: q.unit || '', img: q.img || null,
+        /* Watchers get the options too. Without them "Which is faster?" is
+           just a caption — there is nothing to have an opinion about, and
+           shouting at the telly is the whole reason to give the room a duel
+           to watch rather than a private game between two people. */
+        options: q.options || [], unit: q.unit || '', img: q.img || null,
         pot: this.duelPot, aB: this.duelBanked[this.duelA], bB: this.duelBanked[this.duelB],
         control: this.duelControl === this.duelA ? 'a' : this.duelControl === this.duelB ? 'b' : ''
       });
@@ -4754,7 +4758,8 @@ const Quiz = {
     Object.keys(Host.players).forEach(id => {
       if (this.duelIsIn(id)) return;
       Host.sendTo(id, {
-        type: 'duelWatchResult', answer: q.answer, winner: name, nobody: !winner,
+        type: 'duelWatchResult', answer: q.answer, correct: q.correct,
+        kind: q.kind || 'mcq', unit: q.unit || '', winner: name, nobody: !winner,
         stolen: stolen, pot: this.duelPot,
         aB: this.duelBanked[this.duelA], bB: this.duelBanked[this.duelB]
       });
@@ -7257,8 +7262,25 @@ const Player = {
       flash.textContent = msg.show.join(' ');
       this.later_(msg.showMs || 3200, () => { flash.classList.add('hidden'); flash.textContent = ''; });
     } else flash.classList.add('hidden');
-    $('duelOptions').innerHTML = '';
-    $('duelSay').textContent = 'Question ' + msg.n + ' of ' + msg.total;
+
+    /* Shown, never tappable. A watcher who could answer would be a third
+       player in a two-player round. */
+    const box = $('duelOptions');
+    box.innerHTML = '';
+    const later = msg.kind === 'memory' ? (msg.showMs || 3200) : 0;
+    this.later_(later, () => {
+      box.innerHTML = '';
+      (msg.options || []).forEach((opt, i) => {
+        const b = document.createElement('button');
+        b.className = 'quiz-opt';
+        b.disabled = true;
+        b.innerHTML = '<span class="optn">' + (i + 1) + '</span> ' + esc(opt);
+        box.appendChild(b);
+      });
+    });
+    $('duelSay').textContent = msg.kind === 'guess' ? 'They are both guessing a number…'
+      : msg.kind === 'reaction' ? 'Waiting for the green…'
+      : 'Question ' + msg.n + ' of ' + msg.total;
   },
 
   duelWatchResult(msg) {
@@ -7267,8 +7289,13 @@ const Player = {
     $('duelPad').classList.add('hidden');
     this.duelPotIs(msg.pot, false);
     this.duelBanksAre(msg.aB, msg.bB);
-    $('duelNote').textContent = msg.nobody ? 'Neither of them. It was ' + msg.answer + '.'
-      : msg.stolen ? '💰 ' + msg.winner + ' steals it!' : msg.winner + ' takes it.';
+    // mark it up like a real round, so the room can see whether they were right
+    [...$('duelOptions').children].forEach((b, i) => {
+      if (i === msg.correct) b.classList.add('right');
+    });
+    const truth = msg.kind === 'guess' ? msg.answer + (msg.unit ? ' ' + msg.unit : '') : msg.answer;
+    $('duelNote').textContent = msg.nobody ? 'Neither of them. It was ' + truth + '.'
+      : msg.stolen ? '💰 ' + msg.winner + ' steals it!' : msg.winner + ' takes it — ' + truth + '.';
   },
 
   duelEnd(msg) {
