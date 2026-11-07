@@ -772,12 +772,13 @@
 
       <div class="card hidden" id="afterNight">
         <h2 id="afterHead">That’s the night</h2>
+        <p id="afterOverall" style="font-size:1rem;font-weight:700"></p>
         <p class="muted" style="font-size:.85rem">Everyone’s scores are saved. What next?</p>
         <div class="row">
-          <button class="btn big green" onclick="Night.playAgain()">▶ Another round — keep the scores</button>
+          <button class="btn big green" onclick="Night.playAgain()">▶ Next game — game score to zero, overall carries on</button>
         </div>
         <div class="row mt">
-          <button class="btn small" onclick="Night.freshScores()">↺ New game — scores back to zero</button>
+          <button class="btn small" onclick="Night.freshScores()">↺ Start over — all scores to zero</button>
           <button class="btn ghost small" onclick="Night.differentRounds()">🎲 Different rounds</button>
           <button class="btn ghost small" onclick="$('afterNight').classList.add('hidden')">Dismiss</button>
         </div>
@@ -991,7 +992,7 @@
           <h2 class="grow">🏆 Leaderboard <span id="readyCount" class="muted" style="font-size:.8rem"></span></h2>
           <label class="muted" style="font-size:.85rem"><input type="checkbox" id="teamToggle" onchange="App.toggleTeams(this.checked)"> Team mode</label>
         </div>
-        <table id="scoreTable"><thead><tr><th>Player</th><th id="teamCol" class="hidden">Team</th><th>Score</th><th>Avg reaction</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="scoreTable"><thead><tr><th>Player</th><th id="teamCol" class="hidden">Team</th><th>Game</th><th>Overall</th><th>Avg reaction</th><th></th></tr></thead><tbody></tbody></table>
         <div class="row mt">
           <button class="btn small alt" onclick="App.pushLeaderboard()">📣 Show on phones</button>
           <button class="btn ghost small" onclick="App.resetScores()">Reset scores</button>
@@ -2424,7 +2425,7 @@ const Host = {
       resume.players.forEach((p, i) => {
         this.players['restored-' + i] = {
           conn: null, name: p.name, online: false,
-          score: p.score || 0, team: p.team || null,
+          score: p.score || 0, overall: p.overall || 0, wins: p.wins || 0, team: p.team || null,
           rtt: 60, locked: false, reactions: p.reactions || [], buzzMs: null
         };
       });
@@ -2519,7 +2520,8 @@ const Host = {
         at: Date.now(),
         history: this.history || [],
         players: Object.values(this.players).map(p => ({
-          name: p.name, score: p.score, team: p.team, reactions: (p.reactions || []).slice(-20)
+          name: p.name, score: p.score, overall: p.overall || 0, wins: p.wins || 0,
+          team: p.team, reactions: (p.reactions || []).slice(-20)
         }))
       }));
     } catch (e) {}
@@ -2595,6 +2597,7 @@ const Host = {
       this.players[conn.peer] = {
         conn, name: wanted, online: true, device: device || (carry && carry.device) || null,
         score: carry ? carry.score : 0, team: carry ? carry.team : null,
+        overall: carry ? (carry.overall || 0) : 0, wins: carry ? (carry.wins || 0) : 0,
         rtt: 60, locked: false, lastSeen: Date.now(), reactions: carry ? carry.reactions : [],
         stats: carry && carry.stats ? carry.stats : this.blankStats(),
         buzzer: carry ? carry.buzzer : null, voice: carry ? carry.voice : null,
@@ -3016,8 +3019,25 @@ const Host = {
     this.renderScores();
   },
 
+  /* Two scores: the game (this run of rounds) and overall (every game since
+     the start). Overall shown anywhere is banked games plus the game in
+     progress, so it moves live rather than jumping at the end. */
+  overallOf(p) { return (p.overall || 0) + (p.score || 0); },
+  bankGame() {
+    const ps = Object.values(this.players);
+    const best = Math.max(0, ...ps.map(p => p.score || 0));
+    ps.forEach(p => {
+      if (best > 0 && p.score === best) p.wins = (p.wins || 0) + 1;
+      p.overall = (p.overall || 0) + (p.score || 0);
+      p.score = 0;
+    });
+    this.prevBoard = null;
+    this.history = [];   // the finale race replays THIS game's rounds only
+    this.renderScores(); this.pushBoard(); this.saveGame();
+  },
   resetScores() {
-    Object.values(this.players).forEach(p => { p.score = 0; p.reactions = []; });
+    Object.values(this.players).forEach(p => { p.score = 0; p.overall = 0; p.wins = 0; p.reactions = []; });
+    this.history = [];
     this.renderScores();
     this.pushBoard();
     this.saveGame();
@@ -3043,13 +3063,14 @@ const Host = {
       const teams = {};
       Object.values(this.players).forEach(p => {
         const t = p.team || '?';
-        teams[t] = teams[t] || { name: 'Team ' + t, score: 0 };
+        teams[t] = teams[t] || { name: 'Team ' + t, score: 0, overall: 0, wins: 0 };
         teams[t].score += p.score;
+        teams[t].overall += this.overallOf(p);
       });
       return Object.values(teams).sort((a, b) => b.score - a.score);
     }
     return Object.values(this.players)
-      .map(p => ({ name: p.name, score: p.score, avg: this.avgFor(p), avatar: p.avatar || null, photo: p.photo || null }))
+      .map(p => ({ name: p.name, score: p.score, overall: this.overallOf(p), wins: p.wins || 0, avg: this.avgFor(p), avatar: p.avatar || null, photo: p.photo || null }))
       .sort((a, b) => b.score - a.score);
   },
 
@@ -3181,6 +3202,7 @@ const Host = {
       return {
         name: r.name,
         score: r.score,
+        overall: r.overall, wins: r.wins || 0,
         pos,
         move: (was == null) ? 0 : (was - pos),
         gap: i === 0 ? 0 : rows[i - 1].score - r.score,
@@ -3233,7 +3255,7 @@ const Host = {
       const face = p.photo ? '<img src="'+p.photo+'" style="width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle">' : (p.avatar || '');
       tr.innerHTML = `<td>${face} ${esc(p.name)} ${state}</td>
         <td class="${this.teamMode ? '' : 'hidden'}"><button class="btn small ghost" onclick="Host.cycleTeam('${id}')">${p.team || '—'}</button></td>
-        <td><b>${p.score}</b></td><td class="muted">${avg}</td>
+        <td><b>${p.score}</b></td><td>${this.overallOf(p)}${p.wins ? ' <span class="muted">🏆' + p.wins + '</span>' : ''}</td><td class="muted">${avg}</td>
         <td><button class="btn small ghost" onclick="Host.adjust('${id}')">±</button></td>`;
       tbody.appendChild(tr);
     });
@@ -7018,15 +7040,18 @@ const Night = {
     const box = $('afterNight');
     if (!box) return;
     const top = Host.boardRows()[0];
-    $('afterHead').textContent = top ? '🏆 ' + top.name + ' won with ' + top.score : 'That’s the night';
+    $('afterHead').textContent = top ? '🏆 ' + top.name + ' won this game with ' + top.score : 'That’s the night';
+    const overall = Host.boardRows().slice().sort((a, b) => b.overall - a.overall);
+    $('afterOverall').textContent = overall.length ? 'Overall: ' + overall.map(r => r.name + ' ' + r.overall).join(' · ') : '';
     box.classList.remove('hidden');
     box.scrollIntoView({ block: 'center' });
   },
 
-  playAgain() {                       // same people, scores carry on
+  playAgain() {                       // same people, new game, overall carries on
     $('afterNight').classList.add('hidden');
+    Host.bankGame();
     Seen.newNight();
-    $('nightStatus').textContent = 'Same players, scores carried over — press start when you’re ready.';
+    $('nightStatus').textContent = 'New game — game scores back to zero, overall carried on. Press start when you’re ready.';
     Host.broadcast({ type: 'info', text: 'Another round coming up…' });
   },
 
@@ -8877,7 +8902,10 @@ const Player = {
         '<span class="lb-pos">' + medal(r.pos) + '</span>' +
         arrow +
         '<span class="lb-name">' + esc(r.name) + (isMe ? ' <b>(you)</b>' : '') + '</span>' +
-        '<span class="lb-score">' + r.score + '</span>' +
+        '<span class="lb-score">' + r.score +
+          (r.overall != null && r.overall !== r.score
+            ? '<small style="display:block;font-size:.7rem;opacity:.75;font-weight:600">' + r.overall + ' overall' + (r.wins ? ' · 🏆' + r.wins : '') + '</small>' : '') +
+        '</span>' +
         '</div>' + (note ? '<div class="lb-note">' + esc(note) + '</div>' : '');
     }).join('');
     const ff = msg.fastest
