@@ -6988,11 +6988,26 @@ const Player = {
     if (!room || !this.name) { $('joinError').textContent = 'Need a room code and a name.'; return; }
     store.set('player_name', this.name);
     $('joinError').textContent = 'Connecting…';
+    // a second press after a stuck attempt starts clean rather than stacking peers
+    if (this.peer && !this.conn?.open) { try { this.peer.destroy(); } catch (e) {} }
     this.peer = new Peer();
+    /* Never leave "Connecting…" up for ever. Say which half failed: the game
+       server (no internet) or the link to the laptop (almost always the phone
+       on mobile data, a guest/other Wi-Fi, or a VPN on the laptop). */
+    let stage = 'server';
+    clearTimeout(this._joinTimer);
+    this._joinTimer = setTimeout(() => {
+      if (this.conn && this.conn.open) return;
+      $('joinError').innerHTML = stage === 'server'
+        ? 'Can’t reach the game server. Check this phone has internet, then tap Let me in! again.'
+        : 'Found room ' + esc(room) + ' but can’t link to the laptop.<br>Put this phone on the <b>same Wi-Fi as the laptop</b> with mobile data off, check the laptop isn’t on a VPN or guest Wi-Fi, then tap Let me in! again.';
+    }, 15000);
     this.peer.on('open', () => {
+      stage = 'link';
       this.conn = this.peer.connect(PEER_PREFIX + room, { reliable: true });
       this.room = room;
       this.conn.on('open', () => {
+        clearTimeout(this._joinTimer);
         this.conn.send({ type: 'join', name: this.name, device: this.deviceId() });
         this.markHeard();
         this.startWatchdog();
@@ -7007,9 +7022,10 @@ const Player = {
       this.conn.on('close', () => { $('connDot').classList.remove('on'); this.setStatus('Reconnecting…'); this.setBuzz(false); });
     });
     this.peer.on('error', e => {
+      clearTimeout(this._joinTimer);
       $('joinError').textContent = e.type === 'peer-unavailable' ? 'Room not found — check the code.' : 'Connection error: ' + e.type;
     });
-    $('buzzBtn').addEventListener('click', () => this.buzz());
+    if (!this._buzzBound) { this._buzzBound = true; $('buzzBtn').addEventListener('click', () => this.buzz()); }
   },
 
   onMessage(msg) {
