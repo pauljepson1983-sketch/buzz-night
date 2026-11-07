@@ -785,6 +785,10 @@
         </div>
       </div>
 
+      <div class="card" id="statsCard">
+        <h2>📊 Stats <span class="muted" style="font-size:.8rem">— every game since you last pressed Start over</span></h2>
+        <div id="statsBody" class="muted">Play a round and they fill in.</div>
+      </div>
       <details class="fold" id="hallCard">
         <summary>🏅 All-time records</summary>
         <div class="fold-body">
@@ -993,7 +997,7 @@
           <h2 class="grow">🏆 Leaderboard <span id="readyCount" class="muted" style="font-size:.8rem"></span></h2>
           <label class="muted" style="font-size:.85rem"><input type="checkbox" id="teamToggle" onchange="App.toggleTeams(this.checked)"> Team mode</label>
         </div>
-        <table id="scoreTable"><thead><tr><th>Player</th><th id="teamCol" class="hidden">Team</th><th>Game</th><th>League (total)</th><th>Avg reaction</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="scoreTable"><thead><tr><th>Player</th><th id="teamCol" class="hidden">Team</th><th>Game</th><th>League (total)</th><th>Right %</th><th>Avg answer</th><th></th></tr></thead><tbody></tbody></table>
         <div class="row mt">
           <button class="btn small alt" onclick="App.pushLeaderboard()">📣 Show on phones</button>
           <button class="btn ghost small" onclick="App.resetScores()">Reset scores</button>
@@ -2436,6 +2440,7 @@ const Host = {
         this.players['restored-' + i] = {
           conn: null, name: p.name, online: false,
           score: p.score || 0, overall: p.overall || 0, wins: p.wins || 0, league: p.league || 0, team: p.team || null,
+          draws: p.draws || 0, played: p.played || 0, stats: p.stats || this.blankStats(),
           rtt: 60, locked: false, reactions: p.reactions || [], buzzMs: null
         };
       });
@@ -2531,6 +2536,7 @@ const Host = {
         history: this.history || [],
         players: Object.values(this.players).map(p => ({
           name: p.name, score: p.score, overall: p.overall || 0, wins: p.wins || 0, league: p.league || 0,
+          draws: p.draws || 0, played: p.played || 0, stats: p.stats || null,
           team: p.team, reactions: (p.reactions || []).slice(-20)
         }))
       }));
@@ -2608,6 +2614,7 @@ const Host = {
         conn, name: wanted, online: true, device: device || (carry && carry.device) || null,
         score: carry ? carry.score : 0, team: carry ? carry.team : null,
         overall: carry ? (carry.overall || 0) : 0, wins: carry ? (carry.wins || 0) : 0, league: carry ? (carry.league || 0) : 0,
+        draws: carry ? (carry.draws || 0) : 0, played: carry ? (carry.played || 0) : 0,
         rtt: 60, locked: false, lastSeen: Date.now(), reactions: carry ? carry.reactions : [],
         stats: carry && carry.stats ? carry.stats : this.blankStats(),
         buzzer: carry ? carry.buzzer : null, voice: carry ? carry.voice : null,
@@ -2746,7 +2753,22 @@ const Host = {
      night drag. The host already pings every 4s, so treat a player as here
      only if they have said something recently AND the socket still looks open.
   --------------------------------------------------------------------- */
-  blankStats() { return { answered: 0, correct: 0, firstIn: 0, bestSingle: 0, byMode: {} }; },
+  blankStats() { return { answered: 0, correct: 0, firstIn: 0, bestSingle: 0, byMode: {},
+                          fastest: 0, streak: 0, bestStreak: 0, ms: [] }; },
+  /* What the stats card and the leaderboard show. Answer time is measured on
+     the laptop from when the answers appeared, so it includes the hop over
+     Wi-Fi — the same for everyone, so still a fair comparison. */
+  statLine(p) {
+    const st = p.stats || {};
+    const ms = (st.ms || []).concat(p.reactions || []);
+    return {
+      acc: st.answered ? Math.round(100 * st.correct / st.answered) : null,
+      avg: ms.length ? Math.round(ms.reduce((a, b) => a + b, 0) / ms.length) : null,
+      fastest: st.fastest || null, firstIn: st.firstIn || 0, bestStreak: st.bestStreak || 0,
+      bestSingle: st.bestSingle || 0, answered: st.answered || 0, correct: st.correct || 0,
+      bestMode: Object.entries(st.byMode || {}).sort((a, b) => b[1] - a[1])[0] || null
+    };
+  },
 
   // A rejoining player arrives on a brand new PeerJS id, so every bit of
   // in-flight state still filed under their old one has to follow them.
@@ -3056,6 +3078,8 @@ const Host = {
     const got = new Map(ps.map(p => [p, this.leagueFor(p)]));
     ps.forEach(p => {
       if (got.get(p) === 3) p.wins = (p.wins || 0) + 1;
+      if (got.get(p) === 1) p.draws = (p.draws || 0) + 1;
+      p.played = (p.played || 0) + 1;
       p.league = (p.league || 0) + got.get(p);
       p.overall = (p.overall || 0) + (p.score || 0);
       p.score = 0;
@@ -3065,7 +3089,7 @@ const Host = {
     this.renderScores(); this.pushBoard(); this.saveGame();
   },
   resetScores() {
-    Object.values(this.players).forEach(p => { p.score = 0; p.overall = 0; p.wins = 0; p.league = 0; p.reactions = []; });
+    Object.values(this.players).forEach(p => { p.score = 0; p.overall = 0; p.wins = 0; p.league = 0; p.draws = 0; p.played = 0; p.reactions = []; p.stats = this.blankStats(); });
     this.history = [];
     this.renderScores();
     this.pushBoard();
@@ -3099,7 +3123,7 @@ const Host = {
       return Object.values(teams).sort((a, b) => b.score - a.score);
     }
     return Object.values(this.players)
-      .map(p => ({ name: p.name, score: p.score, overall: this.overallOf(p), league: p.league || 0, wins: p.wins || 0, avg: this.avgFor(p), avatar: p.avatar || null, photo: p.photo || null }))
+      .map(p => ({ name: p.name, score: p.score, overall: this.overallOf(p), league: p.league || 0, wins: p.wins || 0, acc: this.statLine(p).acc, avgMs: this.statLine(p).avg, avg: this.avgFor(p), avatar: p.avatar || null, photo: p.photo || null }))
       .sort((a, b) => b.score - a.score);
   },
 
@@ -3231,7 +3255,7 @@ const Host = {
       return {
         name: r.name,
         score: r.score,
-        overall: r.overall, league: r.league || 0, wins: r.wins || 0,
+        overall: r.overall, league: r.league || 0, wins: r.wins || 0, acc: r.acc, avgMs: r.avgMs,
         pos,
         move: (was == null) ? 0 : (was - pos),
         gap: i === 0 ? 0 : rows[i - 1].score - r.score,
@@ -3273,7 +3297,9 @@ const Host = {
     tbody.innerHTML = '';
     const entries = Object.entries(this.players).sort((a, b) => b[1].score - a[1].score);
     entries.forEach(([id, p]) => {
-      const avg = p.reactions.length ? secs(p.reactions.reduce((s, x) => s + x, 0) / p.reactions.length) : '—';
+      const sl = this.statLine(p);
+      const avg = sl.avg != null ? secs(sl.avg) : '—';
+      const acc = sl.acc != null ? sl.acc + '%' : '—';
       const tr = document.createElement('tr');
       // "away" means still connected but gone quiet — a sleeping or
       // backgrounded phone, which looks identical to "here" without this
@@ -3284,10 +3310,37 @@ const Host = {
       const face = p.photo ? '<img src="'+p.photo+'" style="width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle">' : (p.avatar || '');
       tr.innerHTML = `<td>${face} ${esc(p.name)} ${state}</td>
         <td class="${this.teamMode ? '' : 'hidden'}"><button class="btn small ghost" onclick="Host.cycleTeam('${id}')">${p.team || '—'}</button></td>
-        <td><b>${p.score}</b></td><td><b>${p.league || 0} pts</b> <span class="muted">(${this.overallOf(p)}${p.wins ? ' · 🏆' + p.wins : ''})</span></td><td class="muted">${avg}</td>
+        <td><b>${p.score}</b></td><td><b>${p.league || 0} pts</b> <span class="muted">(${this.overallOf(p)}${p.wins ? ' · 🏆' + p.wins : ''})</span></td><td>${acc}</td><td class="muted">${avg}</td>
         <td><button class="btn small ghost" onclick="Host.adjust('${id}')">±</button></td>`;
       tbody.appendChild(tr);
     });
+    this.renderStats();
+  },
+  renderStats() {
+    const el = $('statsBody'); if (!el) return;
+    const ps = Object.values(this.players);
+    if (!ps.some(p => p.stats && p.stats.answered)) { el.textContent = 'Play a round and they fill in.'; return; }
+    const rows = [
+      ['Right', p => { const s = this.statLine(p); return s.answered ? s.correct + ' / ' + s.answered + ' (' + s.acc + '%)' : '—'; }, p => this.statLine(p).acc || 0, 1],
+      ['Avg answer', p => { const s = this.statLine(p); return s.avg != null ? secs(s.avg) : '—'; }, p => this.statLine(p).avg || 1e9, -1],
+      ['Fastest answer', p => { const s = this.statLine(p); return s.fastest ? secs(s.fastest) : '—'; }, p => this.statLine(p).fastest || 1e9, -1],
+      ['First in', p => this.statLine(p).firstIn, p => this.statLine(p).firstIn, 1],
+      ['Best streak', p => this.statLine(p).bestStreak + ' in a row', p => this.statLine(p).bestStreak, 1],
+      ['Biggest hit', p => this.statLine(p).bestSingle + ' pts', p => this.statLine(p).bestSingle, 1],
+      ['Best round', p => { const b = this.statLine(p).bestMode; return b ? (Quiz.TITLES[b[0]] || b[0]) : '—'; }, null, 0],
+      ['Games W–D–L', p => (p.wins || 0) + '–' + (p.draws || 0) + '–' + Math.max(0, (p.played || 0) - (p.wins || 0) - (p.draws || 0)), p => p.league || 0, 1]
+    ];
+    let html = '<table><thead><tr><th></th>' + ps.map(p => '<th>' + esc(p.name) + '</th>').join('') + '</tr></thead><tbody>';
+    rows.forEach(([label, show, rank, dir]) => {
+      let bestIdx = -1;
+      if (rank && ps.length > 1) {
+        const v = ps.map(rank), target = dir > 0 ? Math.max(...v) : Math.min(...v);
+        if (v.filter(x => x === target).length === 1 && target !== 0 && target !== 1e9) bestIdx = v.indexOf(target);
+      }
+      html += '<tr><td class="muted">' + label + '</td>' + ps.map((p, i) =>
+        '<td>' + (i === bestIdx ? '<b>' + esc(String(show(p))) + ' ⭐</b>' : esc(String(show(p)))) + '</td>').join('') + '</tr>';
+    });
+    el.innerHTML = html + '</tbody></table>';
   },
   /* ---- the finish -------------------------------------------------------
      The night used to just stop. This walks third, second and first up on
@@ -5908,7 +5961,13 @@ const Quiz = {
     const p = Host.players[peerId];
     if (p) { p.stats = p.stats || Host.blankStats(); p.stats.answered++; }
     let gained = 0;
+    if (p && choice !== q.correct) p.stats.streak = 0;
     if (p && choice === q.correct) {
+      const took = Math.max(0, Date.now() - (this.endsAt - this.seconds * 1000));
+      const st = p.stats; st.ms = (st.ms || []).concat(took).slice(-100);
+      if (!st.fastest || took < st.fastest) st.fastest = took;
+      st.streak = (st.streak || 0) + 1;
+      if (st.streak > (st.bestStreak || 0)) st.bestStreak = st.streak;
       // 10 for being right, up to 20 more for speed, and 5 on top for getting
       // there first — being fast should visibly beat being merely correct
       const left = Math.max(0, this.endsAt - Date.now()) / 1000;
@@ -9052,6 +9111,7 @@ const Player = {
         if (r.pos === 1) note = r.lead > 0 ? 'Leading by ' + r.lead : 'Top — but it’s level';
         else if (r.gap === 0) note = 'Level with ' + r.chasing;
         else note = r.gap + ' behind ' + r.chasing;
+        if (r.acc != null) note += ' · ' + r.acc + '% right' + (r.avgMs != null ? ' · avg ' + secs(r.avgMs) : '');
       }
       return '<div class="lb-row' + (isMe ? ' me' : '') + '">' +
         '<span class="lb-pos">' + medal(r.pos) + '</span>' +
