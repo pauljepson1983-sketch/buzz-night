@@ -1947,7 +1947,47 @@ const Spot = {
   // Spotify caps /search at 10 results per call for development-mode apps, so
   // page through it — 10 is too few to pick a quiz track from. Pages overlap
   // sometimes, hence the dedupe.
+  /* Searches are remembered on this laptop for a week. Each one is four
+     Spotify calls (four pages), and the same decades come round night after
+     night, so this is what keeps a repeat night well clear of Spotify's
+     rate limit. Stored slimmed: Spotify's per-country market lists are most
+     of the bytes and nothing here reads them. Not-yet-asked songs are still
+     chosen fresh each time, because Seen does the choosing, not the search. */
+  CACHE_KEY: 'spotify_search_cache', CACHE_DAYS: 7, CACHE_MAX: 60,
+  slim(x) {
+    if (Array.isArray(x)) return x.map(v => this.slim(v));
+    if (!x || typeof x !== 'object') return x;
+    const o = {};
+    for (const k in x) {
+      if (k === 'available_markets' || k === 'external_urls' || k === 'external_ids' || k === 'href') continue;
+      o[k] = k === 'images' && Array.isArray(x[k]) ? x[k].slice(0, 1) : this.slim(x[k]);
+    }
+    return o;
+  },
+  cacheGet(q) {
+    try {
+      const all = JSON.parse(store.get(this.CACHE_KEY) || '{}');
+      const hit = all[q];
+      if (hit && Date.now() - hit.at < this.CACHE_DAYS * 864e5 && hit.tracks && hit.tracks.length) return hit;
+    } catch (e) {}
+    return null;
+  },
+  cachePut(q, res) {
+    try {
+      const all = JSON.parse(store.get(this.CACHE_KEY) || '{}');
+      all[q] = { at: Date.now(), tracks: this.slim(res.tracks), playlists: this.slim(res.playlists) };
+      const keys = Object.keys(all).sort((a, b) => all[b].at - all[a].at);
+      keys.slice(this.CACHE_MAX).forEach(k => delete all[k]);
+      try { store.set(this.CACHE_KEY, JSON.stringify(all)); }
+      catch (e) {   // storage full: keep the newest half and try once more
+        keys.slice(Math.floor(this.CACHE_MAX / 2)).forEach(k => delete all[k]);
+        store.set(this.CACHE_KEY, JSON.stringify(all));
+      }
+    } catch (e) {}
+  },
   async searchRaw(q) {
+    const cached = this.cacheGet(q);
+    if (cached) return { tracks: cached.tracks, playlists: cached.playlists || [] };
     /* Every page used to fail silently to null, so a refused search and a
        genuinely empty one looked identical to the caller. They need opposite
        responses: an empty search should widen, a refused one should stop. */
@@ -1967,6 +2007,8 @@ const Spot = {
         if (pl && pl.uri && !plSeen.has(pl.id)) { plSeen.add(pl.id); playlists.push(pl); }
       });
     });
+    // only a complete, non-empty answer is worth remembering
+    if (!failure && tracks.length) this.cachePut(q, { tracks, playlists });
     return { tracks, playlists };
   },
 
