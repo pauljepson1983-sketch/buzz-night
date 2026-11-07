@@ -663,7 +663,17 @@
   <div class="card" id="nightBar" style="border:2px solid var(--green, #3ddc84)">
     <h2 style="margin-bottom:6px">🎬 Tonight</h2>
     <p id="prefetchNote" class="muted hidden" style="font-size:.9rem;margin:0 0 6px"></p>
-    <label style="display:block;font-size:.9rem;margin-bottom:8px"><input type="checkbox" id="cheekyToggle" onchange="Forfeit.setOn(this.checked)"> 😏 Cheeky forfeits for whoever loses each round <span class="muted">— adults only; every phone has to say yes</span> <span id="cheekyNote" class="muted"></span></label>
+    <label style="display:block;font-size:.9rem;margin-bottom:8px">Forfeits for whoever loses each round:
+      <select id="forfeitLevel" onchange="Forfeit.setLevel(this.value)">
+        <option value="off">Off</option>
+        <option value="silly">🤡 Silly</option>
+        <option value="cheeky">😏 Cheeky</option>
+        <option value="flirty">😘 Flirty</option>
+        <option value="sexy">🔥 Sexy — couples only</option>
+        <option value="bonkers">🤪 Bonkers</option>
+        <option value="mix">🎲 Mix — a different style each round</option>
+      </select>
+      <span class="muted">— adults only; every phone has to say yes</span> <span id="cheekyNote" class="muted"></span></label>
         <div class="row">
           <button class="btn big green" id="nightGoBtn" onclick="Night.start()">▶ Start the night</button>
           <button class="btn big green hidden" id="nightNextBtn" onclick="Night.go()">▶ Start this round</button>
@@ -1064,8 +1074,8 @@
   <div id="stealTimer" class="hidden"></div>
   <div id="revealBox" class="reveal-box hidden"></div>
   <div id="cheekyAsk" class="card hidden" style="text-align:center">
-    <h2 style="font-size:1.1rem">😏 Cheeky forfeits?</h2>
-    <p class="muted" style="font-size:.9rem">Whoever loses a round gets a cheeky forfeit. Only switches on if everyone says yes.</p>
+    <h2 style="font-size:1.1rem" id="cheekyAskTitle">😏 Cheeky forfeits?</h2>
+    <p class="muted" style="font-size:.9rem">Whoever loses a round gets a forfeit in this style. Only switches on if everyone says yes — and anyone can switch it off.</p>
     <div class="row mt" style="justify-content:center">
       <button class="btn green" onclick="Player.cheekyVote(true)">I’m in</button>
       <button class="btn ghost" onclick="Player.cheekyVote(false)">No thanks</button>
@@ -2654,7 +2664,7 @@ const Host = {
       });
       conn.send({ type: 'phase', phase: this.phase === 'armed' ? 'armed' : 'wait', canBuzz: this.phase === 'armed' });
       // a phone joining (or rejoining) after forfeits were switched on is asked too
-      if (Forfeit.on) { me.cheeky = carry ? (carry.cheeky ?? null) : null; if (me.cheeky == null) conn.send({ type: 'cheekyAsk' }); }
+      if (Forfeit.on) { me.cheeky = carry ? (carry.cheeky ?? null) : null; if (me.cheeky == null) conn.send(Forfeit.askMsg()); }
       Forfeit.note();
       // joined (or came back) while the night is waiting for everyone to tap
       // Ready: without this their phone never gets the button and the round
@@ -6644,6 +6654,113 @@ const Hall = {
    at a grown-up party without anyone being put on the spot. */
 const Forfeit = {
   on: false, used: [], owed: {}, pending: null,
+  DECKS: {
+    silly: [
+      ['Do your best impression of {winner} answering a question.',
+       'Answer the whole next round in a robot voice.',
+       'Do your best chicken dance for 15 seconds.',
+       'Hold a plank until {winner} says stop (they have to be fair).',
+       'Talk only in questions until the next round starts.',
+       'Do an advert for the nearest object, 20 seconds, full sales pitch.',
+       'Balance a cushion on your head for the whole next round.',
+       'Sing "Happy Birthday" to {winner} like an opera singer.'],
+      ['Speak in rhyme until the next round ends.',
+       'Do a slow-motion replay of how you just lost.',
+       'Let {winner} draw something on your hand with a pen.',
+       'Do your best Geordie weather forecast for tomorrow.',
+       'Walk like a penguin every time you move until the next round ends.',
+       'Do 30 seconds of stand-up about {winner}. Keep it kind.',
+       'Impersonate a famous person until {winner} guesses who.',
+       'Narrate everything {winner} does for one minute, nature documentary style.'],
+      ['Let {winner} choose a new name for you for the rest of the night.',
+       'Do an interpretive dance of the last song you heard.',
+       'Wear a sock on one hand as a puppet who answers for you next round.',
+       'Do your best runway walk wearing something {winner} picks from the room.',
+       'Act out a film with no words until {winner} guesses it.',
+       'Sing your next answer in the style of a heavy metal band.',
+       'Give a dramatic Oscar acceptance speech for losing that round.',
+       'Let {winner} restyle your hair, however they like, for the rest of the round.']
+    ],
+    flirty: [
+      ['Give {winner} three genuine compliments, slowly.',
+       'Hold {winner}’s hand for the whole next round.',
+       'Kiss {winner} on the cheek.',
+       'Tell {winner} what you first fancied about them.',
+       'Wink at {winner} every time they get one right next round.',
+       'Give {winner} your best "come here" look for ten seconds. No laughing.',
+       'Truth: what’s your favourite thing {winner} wears?',
+       'Blow {winner} a kiss after every answer next round.'],
+      ['Slow dance with {winner} for one song chorus.',
+       'Give {winner} a two-minute shoulder massage.',
+       'Kiss {winner}’s hand like royalty, then their neck.',
+       'Whisper something sweet in {winner}’s ear.',
+       'Truth: describe your perfect date with {winner}.',
+       'Sit next to {winner} with your arm round them all next round.',
+       'Serenade {winner} with one line of a love song, looking them in the eye.',
+       'Give {winner} a proper kiss — five seconds.'],
+      ['Give {winner} a ten-second kiss, wherever above the neck they choose.',
+       'Give {winner} a five-minute foot or back rub. Their choice.',
+       'Truth: what’s the most romantic thing {winner} has ever done?',
+       'Whisper the flirtiest line you can think of in {winner}’s ear.',
+       'Feed {winner} their next snack or drink by hand.',
+       'Plan your next date night out loud, right now, and commit to it.',
+       'Let {winner} sit on your lap for the whole next round.',
+       'Slow dance with {winner} to a song they pick, the whole song.']
+    ],
+    // couples only, and still suggestive rather than graphic
+    sexy: [
+      ['Kiss {winner} for ten seconds — they choose where (above the waist).',
+       'Take off one item of clothing of {winner}’s choosing. Jewellery doesn’t count.',
+       'Whisper to {winner} what you’d like to do with them later.',
+       'Give {winner} a slow three-minute back massage, under their top.',
+       'Sit on {winner}’s lap for the whole next round.',
+       'Tell {winner} the sexiest thing about them, in detail.',
+       'Truth: when did you last think about {winner} in a naughty way?',
+       'Take one item off as slowly and seductively as you can, to music {winner} picks.'],
+      ['Give {winner} a 60-second lap dance to a song they choose.',
+       'Take off two items of clothing — {winner} chooses which.',
+       'Close your eyes; {winner} kisses you somewhere and you guess where.',
+       'Kiss {winner}’s neck for 20 seconds.',
+       'Truth: describe your favourite night together. Leave nothing out.',
+       '{winner} traces a word on your bare back with a finger. Guess it or lose an item.',
+       'Play the whole next round in your underwear.',
+       'Send {winner} a flirty text they’re allowed to keep.'],
+      ['Do a full striptease for {winner}, down to your underwear.',
+       'Let {winner} choose a spot to kiss — anywhere they like — for 30 seconds.',
+       'Truth: tell {winner} one fantasy you’ve never mentioned.',
+       '{winner} gives you one instruction you must follow for the next five minutes.',
+       'Give {winner} a ten-minute massage, anywhere they ask.',
+       'Spend the rest of the night in whatever {winner} picks for you to wear — or not wear.',
+       'Kiss {winner} for a full minute, no stopping.',
+       'Tell {winner} exactly how tonight is going to end.']
+    ],
+    bonkers: [
+      ['Swap phones with {winner} and play the next round as each other.',
+       'Answer the next round with your eyes shut until the answers appear.',
+       'Do every answer next round standing on one leg.',
+       'Answer the next round in your best Italian accent.',
+       'You must clap before every answer next round. Forget once and {winner} gets 10 of your points.',
+       '{winner} chooses a word; you must fit it into every sentence until the next round.',
+       'Play the next round sitting on the floor facing away from the screen.',
+       'Make a sound effect for every answer you give next round.'],
+      ['Double or nothing: win the next round and this forfeit is cancelled. Lose it and you do two.',
+       'You and {winner} swap seats, drinks and names for the next round.',
+       'Answer the next round holding your phone in your wrong hand only.',
+       'Narrate the next round like a football commentator.',
+       '{winner} picks your answer to the first question of the next round. You must tap it.',
+       'Wear your top inside out until you win a round.',
+       'Do the next round with a spoon in your mouth.',
+       'Invent a victory dance — and do it every time {winner} gets one right.'],
+      ['Spin round ten times, then answer the first question of the next round.',
+       'For the next round, you can only answer after saying "Buzz Night!" out loud.',
+       'Let {winner} rename you on the leaderboard by voice — the host types it in.',
+       'Swap one item of clothing with {winner} for the rest of the night.',
+       'Do a 30-second rap about how good {winner} is at quizzes.',
+       'The next round, {winner} sits on your lap and taps the answers for you.',
+       'Speak only in song lyrics you make up until the next round ends.',
+       'Pick a forfeit from any other style — {winner} chooses which.']
+    ]
+  },
   TIERS: [
     [ // rounds 1-2: warm-up
       'Do your best impression of {winner}.',
@@ -6682,19 +6799,29 @@ const Forfeit = {
       'Recreate your best ever chat-up line on {winner}.'
     ]
   ],
-  load() {
-    this.on = store.get('cheeky_on') === '1';
-    const t = $('cheekyToggle'); if (t) t.checked = this.on;
+  LEVELS: {
+    silly: '🤡 Silly', cheeky: '😏 Cheeky', flirty: '😘 Flirty',
+    sexy: '🔥 Sexy (couples only)', bonkers: '🤪 Bonkers', mix: '🎲 Mix'
   },
-  setOn(on) {
-    this.on = !!on;
-    store.set('cheeky_on', on ? '1' : '0');
-    // everyone has to agree afresh each time it is switched on
+  level: 'off',
+  load() {
+    this.level = store.get('forfeit_level') || (store.get('cheeky_on') === '1' ? 'cheeky' : 'off');
+    if (this.level !== 'off' && !this.LEVELS[this.level]) this.level = 'off';
+    this.on = this.level !== 'off';
+    const t = $('forfeitLevel'); if (t) t.value = this.level;
+  },
+  askMsg() { return { type: 'cheekyAsk', level: this.level, label: this.LEVELS[this.level] || '' }; },
+  setLevel(v) {
+    this.level = this.LEVELS[v] ? v : 'off';
+    this.on = this.level !== 'off';
+    store.set('forfeit_level', this.level);
+    // a new style is a new question: everyone agrees afresh to THIS one
     Object.values(Host.players).forEach(p => { p.cheeky = null; });
-    if (on) Host.broadcast({ type: 'cheekyAsk' });
+    if (this.on) Host.broadcast(this.askMsg());
     else Host.broadcast({ type: 'cheekyOff' });
     this.note();
   },
+  setOn(on) { this.setLevel(on ? 'cheeky' : 'off'); },
   // live only when every phone actually here has said yes
   active() {
     if (!this.on) return false;
@@ -6710,6 +6837,20 @@ const Forfeit = {
     el.textContent = no.length ? '· off — ' + no.join(', ') + ' said no'
       : wait.length ? '· waiting for ' + wait.join(', ')
       : '· everyone’s in ✓';
+  },
+  // the style's three heat tiers; Mix picks a style per round (once per round,
+  // so a doubled forfeit draws both cards from the same style)
+  deckFor(roundNo) {
+    let lv = this.level;
+    if (lv === 'mix') {
+      if (this._mixRound !== roundNo) {
+        const all = ['silly', 'cheeky', 'flirty', 'sexy', 'bonkers'];
+        this._mixRound = roundNo; this._mixPick = all[Math.floor(Math.random() * all.length)];
+      }
+      lv = this._mixPick;
+    }
+    const tiers = lv === 'cheeky' ? this.TIERS : (this.DECKS[lv] || this.TIERS);
+    return tiers[this.tierFor(roundNo)];
   },
   tierFor(roundNo) { return roundNo <= 2 ? 0 : roundNo <= 4 ? 1 : 2; },
   // returns extra ms the night should pause so the forfeit can be done
@@ -6729,7 +6870,7 @@ const Forfeit = {
     const winner = tops.map(([, p]) => p.name).join(' & ');
     const judgeId = tops[0][0];
     const draw = () => {
-      const deck = this.TIERS[this.tierFor(roundNo)];
+      const deck = this.deckFor(roundNo);
       let pool = deck.filter(t => !this.used.includes(t));
       if (!pool.length) pool = deck;
       const card = pool[Math.floor(Math.random() * pool.length)];
@@ -7579,7 +7720,7 @@ const Player = {
       }
 
 
-      case 'cheekyAsk': $('cheekyAsk').classList.remove('hidden'); break;
+      case 'cheekyAsk': $('cheekyAskTitle').textContent = (msg.label || '😏 Cheeky') + ' forfeits?'; $('cheekyAsk').classList.remove('hidden'); break;
       case 'cheekyOff': $('cheekyAsk').classList.add('hidden'); $('forfeitBox').classList.add('hidden'); break;
       case 'forfeit': {
         const el = $('forfeitBox');
