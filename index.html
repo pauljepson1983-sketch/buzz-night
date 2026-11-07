@@ -848,12 +848,10 @@
             <button class="btn ghost small" onclick="Night.quickAdd('tv')">📺 TV themes</button>
             <button class="btn ghost small" onclick="Night.quickAdd('covers')">🖼️ Covers</button>
             <button class="btn ghost small" onclick="Night.quickAdd('themes')">🎵 Themes</button>
-            <button class="btn ghost small" onclick="Night.addBuzzer()">🔔 Buzzer</button>
           </div>
         </div>
         <div id="nightList"></div>
         <div class="row mb">
-          <button class="btn ghost small" onclick="Night.addBuzzer()">➕ Add a buzzer round</button>
           <button class="btn ghost small" onclick="Night.clear()">Clear</button>
         </div>
         <label class="muted mb" style="display:block; font-size:.85rem">
@@ -2624,6 +2622,7 @@ const Host = {
       p.rtt = p.rtt * 0.7 + rtt * 0.3;
       return;
     }
+    if (msg.type === 'roundReady') { Night.playerReady(conn.peer); return; }
     if (msg.type === 'prefs') {
       if (msg.buzzer !== undefined) p.buzzer = msg.buzzer || null;
       if (msg.voice !== undefined) p.voice = msg.voice || null;
@@ -3732,7 +3731,13 @@ const Quiz = {
     // One film per franchise, or three Spider-Man films hand over six of the
     // same series' cast. Same helper the film stills round uses.
     const takenFilms = [];
-    for (let page = 1; page <= 3 && people.size < count + 14; page++) {
+    /* Pages 1-3 every time meant the same thirty-odd films, so the same
+       faces every night. Three pages drawn at random from the top six are
+       still all big films (2000+ votes) but a different crowd each time. Pages
+       7-8 brought in names like Rochelle Davis, so it stops at six. */
+    const pages = this.shuffle([1, 2, 3, 4, 5, 6]).slice(0, 3);
+    for (const page of pages) {
+      if (people.size >= count + 14) break;
       const disc = await this.tmdb('/discover/movie', {
         // vote_count, not popularity — popularity is today's page views and
         // front-loads films barely anyone has seen yet. Exactly the fault the
@@ -3744,7 +3749,7 @@ const Quiz = {
         without_genres: '16',
         'primary_release_date.gte': gte, 'primary_release_date.lte': lte, page
       });
-      for (const m of (disc.results || [])) {
+      for (const m of this.shuffle(disc.results || [])) {
         const fk = this.franchiseKey(m.title || '');
         if (!fk || takenFilms.some(k => this.sameFranchise(k, fk))) continue;
         takenFilms.push(fk);
@@ -3777,7 +3782,9 @@ const Quiz = {
       im.onload = () => res(im); im.onerror = () => rej(new Error('face load failed'));
       im.src = url;
     });
-    const side = Math.round(Math.min(img.width * 0.52, img.height * 0.35));
+    // 0.52/0.35 was eyes and nose only, and every face looked much the same.
+    // A little wider keeps the hair and outfit out but shows a whole face.
+    const side = Math.round(Math.min(img.width * 0.72, img.height * 0.48));
     const sx = Math.round((img.width - side) / 2);
     const sy = Math.round(Math.max(0, img.height * 0.26 - side / 2));
     const c = document.createElement('canvas');
@@ -6498,6 +6505,10 @@ const Night = {
        by the leaderboard. A saved night from before that change would still
        have one sat in it. */
     this.plan = this.plan.filter(r => r.mode !== 'duel');
+    // The "you judge" buzzer round needs the host to play music and mark
+    // answers by hand, which the self-running night no longer offers. A saved
+    // night that still had one would sit there looking broken.
+    this.plan = this.plan.filter(r => r.mode !== 'buzzer');
     this.quickChanged();
     this.render();
   },
@@ -6764,9 +6775,30 @@ const Night = {
     // a failed round offers its own button, so do not also offer "start"
     if (!this.failedRound) $('nightNextBtn').classList.remove('hidden');
     $('nightGoBtn').classList.add('hidden');
+    /* The players start the round, not the host: every phone gets a Ready
+       button and the round goes when everyone here has pressed it. The
+       laptop button stays as an override for someone who has wandered off. */
+    this._ready = new Set();
+    if (!this.failedRound) { Host.broadcast({ type: 'readyUp' }); this.readyNote(); }
     return new Promise(resolve => { this._go = resolve; });
   },
+  readyNote() {
+    const here = Host.presentCount(), n = this._ready ? this._ready.size : 0;
+    $('nightNextBtn').textContent = '▶ Start this round (' + n + ' of ' + here + ' ready)';
+  },
+  playerReady(peerId) {
+    if (!this._go || !this._ready) return;
+    this._ready.add(peerId);
+    const p = Host.players[peerId];
+    if (p) { const b = $('phaseBanner'); b.className = 'phase-banner armed'; b.textContent = '✅ ' + p.name + ' is ready'; }
+    this.readyNote();
+    const here = Host.presentCount();
+    if (this._ready.size >= Math.max(1, here)) this.go();
+  },
   go() {
+    $('nightNextBtn').textContent = '▶ Start this round';
+    this._ready = null;
+    Host.broadcast({ type: 'readyDone' });
     $('nightNextBtn').classList.add('hidden');
     $('nightRetryBtn').classList.add('hidden');
     if (this._go) { const r = this._go; this._go = null; r(true); }
@@ -7135,6 +7167,20 @@ const Player = {
         break;
       case 'info': this.setStatus(msg.text); break;
 
+      case 'readyUp': {
+        const el = $('roundCard');
+        el.classList.remove('hidden');
+        let b = $('rcReady');
+        if (!b) { b = document.createElement('button'); b.id = 'rcReady'; b.className = 'btn big green mt'; el.appendChild(b); }
+        b.disabled = false; b.textContent = '▶ I’m ready — start the round';
+        b.onclick = () => {
+          try { this.conn.send({ type: 'roundReady' }); } catch (e) {}
+          b.disabled = true; b.textContent = '✓ Waiting for everyone else…';
+          this.vibe(30);
+        };
+        break;
+      }
+      case 'readyDone': { const b = $('rcReady'); if (b) b.remove(); break; }
       case 'roundCard': {
         // what's coming, so nobody is left guessing between rounds
         this.hideExtras();
