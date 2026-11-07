@@ -657,6 +657,24 @@
   </div>
   <div id="phaseBanner" class="phase-banner">Waiting…</div>
 
+  <!-- The one place to run the night from. It used to sit at the bottom of a
+       long page, under the manual buzzer controls, so the obvious big green
+       button on screen was ARM BUZZERS — which runs nothing on its own. -->
+  <div class="card" id="nightBar" style="border:2px solid var(--green, #3ddc84)">
+    <h2 style="margin-bottom:6px">🎬 Tonight</h2>
+        <div class="row">
+          <button class="btn big green" id="nightGoBtn" onclick="Night.start()">▶ Start the night</button>
+          <button class="btn big green hidden" id="nightNextBtn" onclick="Night.go()">▶ Start this round</button>
+          <button class="btn big green hidden" id="nightRetryBtn" onclick="Night.go()">↻ Try this round again</button>
+        </div>
+        <div class="row mt">
+          <button class="btn ghost small" onclick="Night.skip()">Skip round</button>
+          <button class="btn ghost small" onclick="Night.stop()">Stop</button>
+        </div>
+        <p class="mt" id="nightStatus" style="font-size:1rem">Nothing planned yet — set up a round below and add it.</p>
+      <div id="quizHostView" class="hidden" style="margin-top:10px;font-size:1rem"></div>
+  </div>
+
   <div class="host-grid">
     <div>
       <div class="card" id="joinCard">
@@ -705,9 +723,9 @@
       </div>
 
       <div class="card">
-        <h2>🚨 Round control</h2>
+        <h2>🚨 Manual buzzer <span class="muted" style="font-size:.8rem">— only for playing your own music. The night runs from 🎬 Tonight at the top.</span></h2>
         <div class="row">
-          <button class="btn big green" id="armBtn" onclick="App.armBuzzers()">ARM BUZZERS</button>
+          <button class="btn alt hidden" id="armBtn" onclick="App.armBuzzers()" style="display:none">ARM BUZZERS</button>
         </div>
         <div id="judgePanel" class="hidden mt">
           <p id="judgeWho" style="font-size:1.2rem; font-weight:800"></p>
@@ -844,16 +862,6 @@
         <label class="muted mb" style="display:block; font-size:.85rem">
           <input type="checkbox" id="useEras" checked> Use players' own eras (mixes each round so everyone gets questions they know)
         </label>
-        <div class="row">
-          <button class="btn big green" id="nightGoBtn" onclick="Night.start()">▶ Start the night</button>
-          <button class="btn big green hidden" id="nightNextBtn" onclick="Night.go()">▶ Start this round</button>
-          <button class="btn big green hidden" id="nightRetryBtn" onclick="Night.go()">↻ Try this round again</button>
-        </div>
-        <div class="row mt">
-          <button class="btn ghost small" onclick="Night.skip()">Skip round</button>
-          <button class="btn ghost small" onclick="Night.stop()">Stop</button>
-        </div>
-        <p class="muted redact-note mt" id="nightStatus">Nothing planned yet — set up a round below and add it.</p>
         <!-- Chrome slows a hidden tab's timers right down, so a night left in
              the background crawls. Say so plainly rather than letting the
              game look broken. -->
@@ -972,7 +980,6 @@
            the answered-count, which the host needs while a round is running,
            and it would be hidden inside a panel they had folded away. -->
       <p class="muted redact-note" id="quizStatus">Artist and album names printed on the covers are blanked out automatically.</p>
-      <div id="quizHostView" class="hidden" style="margin-bottom:14px"></div>
     </div>
 
     <div>
@@ -1299,6 +1306,9 @@ const App = {
      the QR code. Previously this was Create room, then scroll past four cards,
      then build a plan, then find Start the night. */
   quickStart() {
+    // ask for the one-off Wi-Fi permission on this click, while it counts as
+    // the host's own gesture — otherwise phones on the home Wi-Fi cannot join
+    Host.autoLan();
     const saved = Host.loadGame();
     if (saved) return this.askNewGame(saved, () => this.quickStartGo());
     this.quickStartGo();
@@ -2767,9 +2777,16 @@ const Host = {
       $('lanNote').classList.remove('hidden');
     }
   },
+  async autoLan() {
+    try {
+      const st = (await navigator.permissions.query({ name: 'microphone' })).state;
+      if (st === 'prompt') this.unlockLan();
+    } catch (e) {}
+  },
   async unlockLan() {
     const note = $('lanNote');
     note.classList.remove('hidden');
+    note.textContent = 'Chrome is asking to use the microphone — press Allow so phones on your Wi-Fi can join. Nothing is recorded.';
     try {
       const s = await navigator.mediaDevices.getUserMedia({ audio: true });
       s.getTracks().forEach(t => t.stop());
