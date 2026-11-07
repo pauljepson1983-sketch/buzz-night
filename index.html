@@ -2560,7 +2560,9 @@ const Host = {
     conn.on('data', msg => this.onMessage(conn, msg));
     conn.on('close', () => {
       const p = this.players[conn.peer];
-      if (p) { p.online = false; p.conn = null; this.renderScores(); }
+      // only if this is still their live connection — closing a stale one
+      // after a relink must not mark the player offline
+      if (p && p.conn === conn) { p.online = false; p.conn = null; this.renderScores(); }
     });
   },
 
@@ -2600,7 +2602,14 @@ const Host = {
         }
       }
 
-      if (existing && existing[0] !== conn.peer) {
+      /* The SAME id coming back is the commonest case of all: the phone's
+         watchdog relinks over its existing PeerJS id after a Wi-Fi blip. That
+         used to fall through as a brand-new player — score to zero, forfeit
+         opt-in and stats gone, mid-game. It is the same person; keep them. */
+      if (existing && existing[0] === conn.peer) {
+        carry = existing[1];
+        try { if (carry.conn && carry.conn !== conn) carry.conn.close(); } catch (e) {}
+      } else if (existing) {
         carry = existing[1];
         try { if (carry.conn && carry.conn !== conn) carry.conn.close(); } catch (e) {}
         delete this.players[existing[0]];
@@ -2610,16 +2619,18 @@ const Host = {
         // and orphaned their points so the round winner was miscounted.
         this.rekey(existing[0], conn.peer);
       }
-      this.players[conn.peer] = {
-        conn, name: wanted, online: true, device: device || (carry && carry.device) || null,
-        score: carry ? carry.score : 0, team: carry ? carry.team : null,
-        overall: carry ? (carry.overall || 0) : 0, wins: carry ? (carry.wins || 0) : 0, league: carry ? (carry.league || 0) : 0,
-        draws: carry ? (carry.draws || 0) : 0, played: carry ? (carry.played || 0) : 0,
-        rtt: 60, locked: false, lastSeen: Date.now(), reactions: carry ? carry.reactions : [],
-        stats: carry && carry.stats ? carry.stats : this.blankStats(),
-        buzzer: carry ? carry.buzzer : null, voice: carry ? carry.voice : null,
-        style: carry ? carry.style : null
+      // a returning player keeps EVERYTHING (score, league, stats, face,
+      // eras, ready, forfeit opt-in); only the connection details are new
+      const base = carry ? { ...carry } : {
+        score: 0, team: null, overall: 0, wins: 0, league: 0, draws: 0, played: 0,
+        reactions: [], stats: this.blankStats(), buzzer: null, voice: null, style: null
       };
+      if (!base.stats) base.stats = this.blankStats();
+      if (!base.reactions) base.reactions = [];
+      this.players[conn.peer] = Object.assign(base, {
+        conn, name: wanted, online: true, device: device || base.device || null,
+        rtt: 60, locked: false, lastSeen: Date.now()
+      });
       const me = this.players[conn.peer];
       conn.send({
         type: 'welcome', name: me.name, teamMode: this.teamMode, team: me.team, score: me.score,
