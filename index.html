@@ -2733,6 +2733,7 @@ const Host = {
     if (msg.type === 'roundReady') { Night.playerReady(conn.peer); return; }
     if (msg.type === 'cheekyVote') { p.cheeky = !!msg.yes; Forfeit.note(); return; }
     if (msg.type === 'forfeitDone') { Forfeit.done(conn.peer, msg); return; }
+    if (msg.type === 'forfeitSpun') { Forfeit.landed(conn.peer, msg); return; }
     if (msg.type === 'forfeitStars') { Forfeit.rate(conn.peer, msg); return; }
     if (msg.type === 'prefs') {
       if (msg.buzzer !== undefined) p.buzzer = msg.buzzer || null;
@@ -6922,18 +6923,43 @@ const Forfeit = {
     // bottled last time? then this one is a double: two forfeits back to back
     const doubled = !!this.owed[loser.name];
     delete this.owed[loser.name];
-    const text = doubled ? 'DOUBLE — you bottled the last one, so both of these: ① ' + draw() + ' ② ' + draw() : draw();
+    /* The wheel: eight different forfeits from this style and heat go on it,
+       the loser presses STOP and it coasts to a halt — too slowly to aim. */
+    const options = [];
+    const deck = this.deckFor(roundNo);
+    const pool = this.shuffle(deck.filter(t => !this.used.includes(t)));
+    const fill = pool.length >= 8 ? pool : pool.concat(this.shuffle(deck.filter(t => !pool.includes(t))));
+    fill.slice(0, 8).forEach(t => options.push(t.split('{winner}').join(winner)));
+    const raw = fill.slice(0, 8);
     const fid = Date.now();
-    this.pending = { fid, loserId, judgeId, text, stage: 'doing' };
-    Host.sendTo(loserId, { type: 'forfeit', fid, text });
-    here.forEach(([id]) => { if (id !== loserId) Host.sendTo(id, { type: 'forfeitWatch', who: loser.name, text }); });
-    this.banner('😏 Forfeit for ' + loser.name + ': ' + text);
-    Sound.say(loser.name + ', ' + (doubled ? 'double forfeit time.' : 'forfeit time.'));
-    // the night waits for done, rated or bottled — or a minute, whichever first
+    this.pending = { fid, loserId, judgeId, stage: 'spinning', options, raw, doubled, draw, loser: loser.name };
+    Host.sendTo(loserId, { type: 'forfeitWheel', fid, options, doubled });
+    here.forEach(([id]) => { if (id !== loserId) Host.sendTo(id, { type: 'forfeitWatch', who: loser.name, text: '🎡 ' + loser.name + ' is spinning the forfeit wheel…' }); });
+    this.banner('🎡 ' + loser.name + ' is spinning the forfeit wheel' + (doubled ? ' — and it’s a double' : ''));
+    Sound.say(loser.name + ', spin the wheel.' + (doubled ? ' It is a double.' : ''));
+    // the night waits for spin, done, rated or bottled — or about a minute and a half
     return new Promise(resolve => {
       this.pending.resolve = resolve;
-      this.pending.timer = setTimeout(() => this.finish('timeout'), 60000);
+      // nobody pressed STOP: the wheel stops itself
+      this.pending.spinTimer = setTimeout(() => this.landed(loserId, { fid, idx: Math.floor(Math.random() * options.length), auto: true }), 25000);
+      this.pending.timer = setTimeout(() => this.finish('timeout'), 90000);
     });
+  },
+  shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; },
+  // the wheel has stopped on the loser's phone (or timed out)
+  landed(peerId, msg) {
+    const f = this.pending;
+    if (!f || f.fid !== msg.fid || peerId !== f.loserId || f.stage !== 'spinning') return;
+    clearTimeout(f.spinTimer);
+    const idx = Math.max(0, Math.min(f.options.length - 1, parseInt(msg.idx, 10) || 0));
+    this.used.push(f.raw[idx]);
+    const first = f.options[idx];
+    f.text = f.doubled ? 'DOUBLE — you bottled the last one, so both of these: ① ' + first + ' ② ' + f.draw() : first;
+    f.stage = 'doing';
+    Host.sendTo(f.loserId, { type: 'forfeit', fid: f.fid, text: f.text, auto: !!msg.auto });
+    Object.keys(Host.players).forEach(id => { if (id !== f.loserId) Host.sendTo(id, { type: 'forfeitWatch', who: f.loser, text: f.text }); });
+    this.banner('🎡 Forfeit for ' + f.loser + ': ' + f.text);
+    Sound.say(f.loser + ', forfeit time.');
   },
   banner(text) { const b = $('phaseBanner'); b.className = 'phase-banner armed'; b.textContent = text; },
   // from the loser's phone
@@ -6985,7 +7011,7 @@ const Forfeit = {
   },
   finish(why) {
     const f = this.pending; if (!f) return;
-    clearTimeout(f.timer);
+    clearTimeout(f.timer); clearTimeout(f.spinTimer);
     // done but never rated: they still get the 5 for doing it
     if (why === 'timeout' && f.stage === 'rating') this.award(0);
     this.pending = null;
@@ -7775,6 +7801,7 @@ const Player = {
         el.classList.remove('hidden'); this.vibe([60, 40, 60]);
         break;
       }
+      case 'forfeitWheel': { this.wheel(msg); break; }
       case 'forfeitRate': {
         const el = $('forfeitBox');
         el.innerHTML = '<div class="rc-kicker">' + esc(msg.who) + ' did their forfeit</div>' +
@@ -9688,6 +9715,60 @@ const Player = {
     this._playing = !!on;
   },
 
+  /* The forfeit wheel. Spins until STOP, then coasts to a halt over a random
+     one and a half to three turns, so landing where you want is luck. Only
+     numbers go on the slots; the forfeit is revealed once it stops. */
+  wheel(msg) {
+    const n = msg.options.length, seg = 360 / n;
+    const cols = ['#ff5fae', '#7fe0ff', '#ffd23f', '#5ce6a2', '#b28dff', '#ff8a5c', '#4dd0e1', '#f06292'];
+    const grad = msg.options.map((_, i) => cols[i % cols.length] + ' ' + (i * seg) + 'deg ' + ((i + 1) * seg) + 'deg').join(',');
+    const labels = msg.options.map((_, i) => {
+      const a = (i + 0.5) * seg;
+      return '<div style="position:absolute;left:50%;top:50%;transform:rotate(' + a + 'deg) translateY(-105px) rotate(-' + a + 'deg);' +
+        'margin:-14px 0 0 -14px;width:28px;height:28px;line-height:28px;text-align:center;font-weight:800;font-size:1.1rem;color:#1a0f35">' + (i + 1) + '</div>';
+    }).join('');
+    const el = $('forfeitBox');
+    el.innerHTML = '<div class="rc-kicker">You lost that round 😏' + (msg.doubled ? ' — and it’s a <b>double</b>' : '') + '</div>' +
+      '<div class="rc-name" style="font-size:1.2rem;margin:4px 0 10px">Spin for your forfeit</div>' +
+      '<div style="position:relative;width:260px;height:260px;margin:0 auto">' +
+        '<div style="position:absolute;left:50%;top:-6px;margin-left:-12px;width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-top:22px solid #fff;z-index:2;filter:drop-shadow(0 2px 2px #0008)"></div>' +
+        '<div id="wheelDisc" style="position:absolute;inset:0;border-radius:50%;background:conic-gradient(' + grad + ');border:6px solid #fff;box-shadow:0 6px 18px #0008">' + labels + '</div>' +
+      '</div>' +
+      '<button id="wheelStop" class="btn big pink mt" style="width:100%">✋ STOP</button>' +
+      '<div class="muted" style="font-size:.8rem;margin-top:6px">It won’t stop dead — it slows down. Good luck.</div>';
+    el.classList.remove('hidden'); this.vibe(40);
+    const disc = $('wheelDisc'), btn = $('wheelStop');
+    let angle = Math.random() * 360, speed = 540 + Math.random() * 240, last = performance.now(), stopping = false, target = null, from = 0, t0 = 0, dur = 0, sent = false;
+    const finish = () => {
+      if (sent) return; sent = true;
+      const a = ((angle % 360) + 360) % 360;
+      const idx = Math.floor(((360 - a) % 360) / seg) % n;   // the slot under the pointer
+      btn.disabled = true; btn.textContent = '🎯 Number ' + (idx + 1) + '!';
+      // a beat to see where it landed before the forfeit replaces the wheel
+      setTimeout(() => { try { this.conn.send({ type: 'forfeitSpun', fid: msg.fid, idx }); } catch (e) {} }, 1300);
+      this.vibe([80, 40, 80]);
+    };
+    const frame = now => {
+      if (!document.body.contains(disc)) return;
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      if (!stopping) angle += speed * dt;
+      else {
+        const k = Math.min(1, (now - t0) / dur), ease = 1 - Math.pow(1 - k, 3);
+        angle = from + (target - from) * ease;
+        if (k >= 1) { disc.style.transform = 'rotate(' + angle + 'deg)'; return finish(); }
+      }
+      disc.style.transform = 'rotate(' + angle + 'deg)';
+      requestAnimationFrame(frame);
+    };
+    btn.onclick = () => {
+      if (stopping) return;
+      stopping = true; from = angle; t0 = performance.now();
+      target = angle + 540 + Math.random() * 540;   // 1.5 to 3 more turns
+      dur = 2600 + Math.random() * 1400;
+      btn.disabled = true; btn.textContent = 'Slowing down…';
+    };
+    requestAnimationFrame(frame);
+  },
   forfeitDone(fid, done) {
     try { this.conn.send({ type: 'forfeitDone', fid, done }); } catch (e) {}
     $('forfeitBox').innerHTML = '<div class="rc-name" style="font-size:1.1rem">' + (done ? '✓ Nice. Waiting for your rating…' : '🙈 Bottled. Next one’s a double…') + '</div>';
