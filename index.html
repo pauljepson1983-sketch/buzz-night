@@ -662,6 +662,7 @@
        button on screen was ARM BUZZERS — which runs nothing on its own. -->
   <div class="card" id="nightBar" style="border:2px solid var(--green, #3ddc84)">
     <h2 style="margin-bottom:6px">🎬 Tonight</h2>
+    <label style="display:block;font-size:.9rem;margin-bottom:8px"><input type="checkbox" id="cheekyToggle" onchange="Forfeit.setOn(this.checked)"> 😏 Cheeky forfeits for whoever loses each round <span class="muted">— adults only; every phone has to say yes</span> <span id="cheekyNote" class="muted"></span></label>
         <div class="row">
           <button class="btn big green" id="nightGoBtn" onclick="Night.start()">▶ Start the night</button>
           <button class="btn big green hidden" id="nightNextBtn" onclick="Night.go()">▶ Start this round</button>
@@ -992,7 +993,7 @@
           <h2 class="grow">🏆 Leaderboard <span id="readyCount" class="muted" style="font-size:.8rem"></span></h2>
           <label class="muted" style="font-size:.85rem"><input type="checkbox" id="teamToggle" onchange="App.toggleTeams(this.checked)"> Team mode</label>
         </div>
-        <table id="scoreTable"><thead><tr><th>Player</th><th id="teamCol" class="hidden">Team</th><th>Game</th><th>Overall</th><th>Avg reaction</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="scoreTable"><thead><tr><th>Player</th><th id="teamCol" class="hidden">Team</th><th>Game</th><th>League (total)</th><th>Avg reaction</th><th></th></tr></thead><tbody></tbody></table>
         <div class="row mt">
           <button class="btn small alt" onclick="App.pushLeaderboard()">📣 Show on phones</button>
           <button class="btn ghost small" onclick="App.resetScores()">Reset scores</button>
@@ -1057,6 +1058,15 @@
   </div>
   <div id="stealTimer" class="hidden"></div>
   <div id="revealBox" class="reveal-box hidden"></div>
+  <div id="cheekyAsk" class="card hidden" style="text-align:center">
+    <h2 style="font-size:1.1rem">😏 Cheeky forfeits?</h2>
+    <p class="muted" style="font-size:.9rem">Whoever loses a round gets a cheeky forfeit. Only switches on if everyone says yes.</p>
+    <div class="row mt" style="justify-content:center">
+      <button class="btn green" onclick="Player.cheekyVote(true)">I’m in</button>
+      <button class="btn ghost" onclick="Player.cheekyVote(false)">No thanks</button>
+    </div>
+  </div>
+  <div id="forfeitBox" class="card hidden" style="text-align:center;border:2px solid #ff5fae"></div>
   <div id="roundCard" class="hidden"></div>
   <div id="quizPanel" class="hidden">
     <div id="quizRound"></div>
@@ -2425,7 +2435,7 @@ const Host = {
       resume.players.forEach((p, i) => {
         this.players['restored-' + i] = {
           conn: null, name: p.name, online: false,
-          score: p.score || 0, overall: p.overall || 0, wins: p.wins || 0, team: p.team || null,
+          score: p.score || 0, overall: p.overall || 0, wins: p.wins || 0, league: p.league || 0, team: p.team || null,
           rtt: 60, locked: false, reactions: p.reactions || [], buzzMs: null
         };
       });
@@ -2520,7 +2530,7 @@ const Host = {
         at: Date.now(),
         history: this.history || [],
         players: Object.values(this.players).map(p => ({
-          name: p.name, score: p.score, overall: p.overall || 0, wins: p.wins || 0,
+          name: p.name, score: p.score, overall: p.overall || 0, wins: p.wins || 0, league: p.league || 0,
           team: p.team, reactions: (p.reactions || []).slice(-20)
         }))
       }));
@@ -2597,7 +2607,7 @@ const Host = {
       this.players[conn.peer] = {
         conn, name: wanted, online: true, device: device || (carry && carry.device) || null,
         score: carry ? carry.score : 0, team: carry ? carry.team : null,
-        overall: carry ? (carry.overall || 0) : 0, wins: carry ? (carry.wins || 0) : 0,
+        overall: carry ? (carry.overall || 0) : 0, wins: carry ? (carry.wins || 0) : 0, league: carry ? (carry.league || 0) : 0,
         rtt: 60, locked: false, lastSeen: Date.now(), reactions: carry ? carry.reactions : [],
         stats: carry && carry.stats ? carry.stats : this.blankStats(),
         buzzer: carry ? carry.buzzer : null, voice: carry ? carry.voice : null,
@@ -2613,6 +2623,9 @@ const Host = {
         buzzer: me.buzzer, voice: me.voice, style: me.style
       });
       conn.send({ type: 'phase', phase: this.phase === 'armed' ? 'armed' : 'wait', canBuzz: this.phase === 'armed' });
+      // a phone joining (or rejoining) after forfeits were switched on is asked too
+      if (Forfeit.on) { me.cheeky = carry ? (carry.cheeky ?? null) : null; if (me.cheeky == null) conn.send({ type: 'cheekyAsk' }); }
+      Forfeit.note();
       this.renderScores();
       this.saveGame();
       return;
@@ -2626,6 +2639,7 @@ const Host = {
       return;
     }
     if (msg.type === 'roundReady') { Night.playerReady(conn.peer); return; }
+    if (msg.type === 'cheekyVote') { p.cheeky = !!msg.yes; Forfeit.note(); return; }
     if (msg.type === 'prefs') {
       if (msg.buzzer !== undefined) p.buzzer = msg.buzzer || null;
       if (msg.voice !== undefined) p.voice = msg.voice || null;
@@ -3023,11 +3037,26 @@ const Host = {
      the start). Overall shown anywhere is banked games plus the game in
      progress, so it moves live rather than jumping at the end. */
   overallOf(p) { return (p.overall || 0) + (p.score || 0); },
+  /* League points, like football: a game won is 3, a draw (joint top) is 1,
+     anything else 0. The overall table ranks on league points, so one
+     thrashing cannot decide the night; raw points only break a tie. */
+  leagueFor(p) {
+    const ps = Object.values(this.players);
+    const best = Math.max(0, ...ps.map(x => x.score || 0));
+    if (best <= 0 || p.score !== best) return 0;
+    return ps.filter(x => x.score === best).length > 1 ? 1 : 3;
+  },
+  leagueTable(includeCurrent) {
+    return Object.values(this.players).map(p => ({
+      name: p.name, pts: (p.league || 0) + (includeCurrent ? this.leagueFor(p) : 0), raw: this.overallOf(p)
+    })).sort((a, b) => b.pts - a.pts || b.raw - a.raw);
+  },
   bankGame() {
     const ps = Object.values(this.players);
-    const best = Math.max(0, ...ps.map(p => p.score || 0));
+    const got = new Map(ps.map(p => [p, this.leagueFor(p)]));
     ps.forEach(p => {
-      if (best > 0 && p.score === best) p.wins = (p.wins || 0) + 1;
+      if (got.get(p) === 3) p.wins = (p.wins || 0) + 1;
+      p.league = (p.league || 0) + got.get(p);
       p.overall = (p.overall || 0) + (p.score || 0);
       p.score = 0;
     });
@@ -3036,7 +3065,7 @@ const Host = {
     this.renderScores(); this.pushBoard(); this.saveGame();
   },
   resetScores() {
-    Object.values(this.players).forEach(p => { p.score = 0; p.overall = 0; p.wins = 0; p.reactions = []; });
+    Object.values(this.players).forEach(p => { p.score = 0; p.overall = 0; p.wins = 0; p.league = 0; p.reactions = []; });
     this.history = [];
     this.renderScores();
     this.pushBoard();
@@ -3070,7 +3099,7 @@ const Host = {
       return Object.values(teams).sort((a, b) => b.score - a.score);
     }
     return Object.values(this.players)
-      .map(p => ({ name: p.name, score: p.score, overall: this.overallOf(p), wins: p.wins || 0, avg: this.avgFor(p), avatar: p.avatar || null, photo: p.photo || null }))
+      .map(p => ({ name: p.name, score: p.score, overall: this.overallOf(p), league: p.league || 0, wins: p.wins || 0, avg: this.avgFor(p), avatar: p.avatar || null, photo: p.photo || null }))
       .sort((a, b) => b.score - a.score);
   },
 
@@ -3202,7 +3231,7 @@ const Host = {
       return {
         name: r.name,
         score: r.score,
-        overall: r.overall, wins: r.wins || 0,
+        overall: r.overall, league: r.league || 0, wins: r.wins || 0,
         pos,
         move: (was == null) ? 0 : (was - pos),
         gap: i === 0 ? 0 : rows[i - 1].score - r.score,
@@ -3255,7 +3284,7 @@ const Host = {
       const face = p.photo ? '<img src="'+p.photo+'" style="width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle">' : (p.avatar || '');
       tr.innerHTML = `<td>${face} ${esc(p.name)} ${state}</td>
         <td class="${this.teamMode ? '' : 'hidden'}"><button class="btn small ghost" onclick="Host.cycleTeam('${id}')">${p.team || '—'}</button></td>
-        <td><b>${p.score}</b></td><td>${this.overallOf(p)}${p.wins ? ' <span class="muted">🏆' + p.wins + '</span>' : ''}</td><td class="muted">${avg}</td>
+        <td><b>${p.score}</b></td><td><b>${p.league || 0} pts</b> <span class="muted">(${this.overallOf(p)}${p.wins ? ' · 🏆' + p.wins : ''})</span></td><td class="muted">${avg}</td>
         <td><button class="btn small ghost" onclick="Host.adjust('${id}')">±</button></td>`;
       tbody.appendChild(tr);
     });
@@ -6506,6 +6535,111 @@ const Hall = {
    to decide whether a spoken answer was right — so those park and wait for
    the host to finish before the queue moves on.
    ====================================================================== */
+/* ---- cheeky forfeits ------------------------------------------------
+   Off unless the host ticks it AND every phone in the room says yes; any
+   phone can say no at any time and that switches it off for everyone. The
+   loser of each round gets one, read from three tiers that get cheekier as
+   the night goes on. Deliberately cheeky, not explicit: it can be left on
+   at a grown-up party without anyone being put on the spot. */
+const Forfeit = {
+  on: false, used: [],
+  TIERS: [
+    [ // rounds 1-2: warm-up
+      'Do your best impression of {winner}.',
+      'Speak in a posh accent until the next round ends.',
+      'Make {winner} a drink of their choice before the next round.',
+      'Pay {winner} three compliments. No repeats, no sarcasm.',
+      'Talk like a pirate until the next round starts.',
+      'Do your best catwalk across the room and back.',
+      'Tell everyone the most embarrassing thing that happened to you at school.',
+      'Sing your next answer out loud, whatever it is.',
+      'Do 10 star jumps, counting each one out loud.',
+      'Describe your perfect night in, in exactly ten words.'
+    ],
+    [ // rounds 3-4: cheekier
+      'Give {winner} a two-minute shoulder rub.',
+      'Tell the story of your worst ever date.',
+      'Slow dance with a cushion for 30 seconds while {winner} hums.',
+      'Serenade {winner} with one line of a love song.',
+      'Truth: what was your first impression of {winner}?',
+      'Wink at {winner} every time they speak until the next round ends.',
+      'Do your best "sexy" walk across the room. Commit to it.',
+      'Tell {winner} something they don’t know about you.',
+      'Truth: who is your secret celebrity crush?',
+      'Let {winner} choose your drink for the next round.'
+    ],
+    [ // round 5 on: cheekiest
+      'Give {winner} a kiss on the cheek — or wherever above the neck they point.',
+      'Give {winner} a five-minute foot or shoulder massage. Their choice.',
+      'Whisper something flirty in {winner}’s ear.',
+      'Truth: what’s the cheekiest thing you’ve ever done?',
+      'Do a 20-second dance for {winner} to whatever song they pick.',
+      'Describe {winner}’s best feature in your most seductive voice.',
+      'Be {winner}’s servant until the next round ends. Fetch whatever they ask.',
+      'Truth: what’s your favourite memory of the two of you?',
+      'Let {winner} give you a nickname you must answer to for the rest of the night.',
+      'Recreate your best ever chat-up line on {winner}.'
+    ]
+  ],
+  load() {
+    this.on = store.get('cheeky_on') === '1';
+    const t = $('cheekyToggle'); if (t) t.checked = this.on;
+  },
+  setOn(on) {
+    this.on = !!on;
+    store.set('cheeky_on', on ? '1' : '0');
+    // everyone has to agree afresh each time it is switched on
+    Object.values(Host.players).forEach(p => { p.cheeky = null; });
+    if (on) Host.broadcast({ type: 'cheekyAsk' });
+    else Host.broadcast({ type: 'cheekyOff' });
+    this.note();
+  },
+  // live only when every phone actually here has said yes
+  active() {
+    if (!this.on) return false;
+    const here = Object.values(Host.players).filter(p => Host.isPresent(p));
+    return here.length >= 2 && here.every(p => p.cheeky === true);
+  },
+  note() {
+    const el = $('cheekyNote'); if (!el) return;
+    if (!this.on) { el.textContent = ''; return; }
+    const here = Object.values(Host.players).filter(p => Host.isPresent(p));
+    const no = here.filter(p => p.cheeky === false).map(p => p.name);
+    const wait = here.filter(p => p.cheeky == null).map(p => p.name);
+    el.textContent = no.length ? '· off — ' + no.join(', ') + ' said no'
+      : wait.length ? '· waiting for ' + wait.join(', ')
+      : '· everyone’s in ✓';
+  },
+  tierFor(roundNo) { return roundNo <= 2 ? 0 : roundNo <= 4 ? 1 : 2; },
+  // returns extra ms the night should pause so the forfeit can be done
+  afterRound(roundNo) {
+    if (!this.active()) return 0;
+    const here = Object.entries(Host.players).filter(([id, p]) => Host.isPresent(p));
+    const g = id => (Quiz.roundGains && Quiz.roundGains[id]) || 0;
+    const low = Math.min(...here.map(([id]) => g(id)));
+    const high = Math.max(...here.map(([id]) => g(id)));
+    const losers = here.filter(([id]) => g(id) === low);
+    if (low === high || losers.length !== 1) {
+      Host.broadcast({ type: 'forfeitWatch', who: '', text: 'A draw — nobody does a forfeit this round.' });
+      return 0;
+    }
+    const [loserId, loser] = losers[0];
+    const winner = here.filter(([id]) => g(id) === high).map(([, p]) => p.name).join(' & ');
+    const deck = this.TIERS[this.tierFor(roundNo)];
+    let pool = deck.filter(t => !this.used.includes(t));
+    if (!pool.length) pool = deck;
+    const card = pool[Math.floor(Math.random() * pool.length)];
+    this.used.push(card);
+    const text = card.split('{winner}').join(winner);
+    Host.sendTo(loserId, { type: 'forfeit', text });
+    here.forEach(([id]) => { if (id !== loserId) Host.sendTo(id, { type: 'forfeitWatch', who: loser.name, text }); });
+    const b = $('phaseBanner'); b.className = 'phase-banner armed';
+    b.textContent = '😏 Forfeit for ' + loser.name + ': ' + text;
+    Sound.say(loser.name + ', forfeit time.');
+    return 12000;
+  }
+};
+
 const Night = {
   plan: [], idx: -1, running: false, waiting: false,
 
@@ -6784,6 +6918,7 @@ const Night = {
     // rest of the night
     Wake.audioOn(); Wake.on();
     Seen.newNight();   // a fresh evening: nothing counts as used-tonight yet
+    Forfeit.used = [];
     $('nightGoBtn').disabled = true;
     Sound.say('Welcome to Buzz Night. Here we go.');
     await this.wait(2600);
@@ -7004,8 +7139,9 @@ const Night = {
     }
     // breathing room on the leaderboard between rounds
     Host.pushBoard();
+    const forfeitMs = Forfeit.afterRound(n);
     $('nightStatus').textContent = 'Round ' + n + ' done — next one shortly…';
-    await this.wait(6000);
+    await this.wait(6000 + forfeitMs);
     return this.runNext();
   },
 
@@ -7041,8 +7177,9 @@ const Night = {
     if (!box) return;
     const top = Host.boardRows()[0];
     $('afterHead').textContent = top ? '🏆 ' + top.name + ' won this game with ' + top.score : 'That’s the night';
-    const overall = Host.boardRows().slice().sort((a, b) => b.overall - a.overall);
-    $('afterOverall').textContent = overall.length ? 'Overall: ' + overall.map(r => r.name + ' ' + r.overall).join(' · ') : '';
+    // the table as it will stand once this game is banked
+    const lt = Host.leagueTable(true);
+    $('afterOverall').textContent = lt.length ? 'League: ' + lt.map(r => r.name + ' ' + r.pts + ' pts').join(' · ') : '';
     box.classList.remove('hidden');
     box.scrollIntoView({ block: 'center' });
   },
@@ -7219,7 +7356,25 @@ const Player = {
       }
 
 
+      case 'cheekyAsk': $('cheekyAsk').classList.remove('hidden'); break;
+      case 'cheekyOff': $('cheekyAsk').classList.add('hidden'); $('forfeitBox').classList.add('hidden'); break;
+      case 'forfeit': {
+        const el = $('forfeitBox');
+        el.innerHTML = '<div class="rc-kicker">You lost that round 😏</div><div class="rc-name" style="font-size:1.3rem;margin:8px 0">' +
+          esc(msg.text) + '</div><button class="btn ghost small mt" onclick="Player.cheekyVote(false)">Turn forfeits off</button>';
+        el.classList.remove('hidden'); this.vibe([60, 40, 60]);
+        break;
+      }
+      case 'forfeitWatch': {
+        const el = $('forfeitBox');
+        el.innerHTML = msg.who
+          ? '<div class="rc-kicker">' + esc(msg.who) + ' lost that round 😏</div><div class="rc-name" style="font-size:1.2rem;margin:8px 0">' + esc(msg.text) + '</div>'
+          : '<div class="rc-name" style="font-size:1.1rem">' + esc(msg.text) + '</div>';
+        el.classList.remove('hidden');
+        break;
+      }
       case 'quizStart':
+        $('forfeitBox').classList.add('hidden');
         this.hideExtras();
         $('buzzBtn').classList.add('hidden');
         $('quizPanel').classList.remove('hidden');
@@ -8903,8 +9058,8 @@ const Player = {
         arrow +
         '<span class="lb-name">' + esc(r.name) + (isMe ? ' <b>(you)</b>' : '') + '</span>' +
         '<span class="lb-score">' + r.score +
-          (r.overall != null && r.overall !== r.score
-            ? '<small style="display:block;font-size:.7rem;opacity:.75;font-weight:600">' + r.overall + ' overall' + (r.wins ? ' · 🏆' + r.wins : '') + '</small>' : '') +
+          (r.league
+            ? '<small style="display:block;font-size:.7rem;opacity:.75;font-weight:600">' + (r.league || 0) + ' league pts' + (r.wins ? ' · 🏆' + r.wins : '') + '</small>' : '') +
         '</span>' +
         '</div>' + (note ? '<div class="lb-note">' + esc(note) + '</div>' : '');
     }).join('');
@@ -9105,6 +9260,11 @@ const Player = {
     this._playing = !!on;
   },
 
+  cheekyVote(yes) {
+    try { this.conn.send({ type: 'cheekyVote', yes }); } catch (e) {}
+    $('cheekyAsk').classList.add('hidden');
+    if (!yes) $('forfeitBox').classList.add('hidden');
+  },
   hideExtras() {
     $('roundCard').classList.add('hidden');
     $('finaleBox').classList.add('hidden');
@@ -9136,6 +9296,7 @@ const Player = {
 };
 
 App.setHideAnswers(store.get('hide_answers') !== '0');
+Forfeit.load();
 // tap a blurred answer to see it; tap again to hide. The element is often
 // rewritten as answers arrive, which hides it again on its own.
 document.addEventListener('click', e => {
