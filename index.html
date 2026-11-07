@@ -664,6 +664,8 @@
         <div class="center">
           <div id="qrBox"></div>
           <div id="joinUrl" class="muted" style="word-break:break-all; font-size:.85rem"></div>
+          <button id="lanBtn" class="btn small pink mt hidden" onclick="Host.unlockLan()">📶 Phones stuck on “Connecting”? Tap, then press Allow</button>
+          <div id="lanNote" class="muted hidden" style="font-size:.8rem;margin-top:4px"></div>
           <div class="row mt" style="justify-content:center">
             <button id="inviteBtn" class="btn small green" onclick="Host.shareInvite()">📤 Send invite</button>
             <button id="copyBtn" class="btn small alt" onclick="Host.copyInvite()">🔗 Copy link</button>
@@ -2435,6 +2437,7 @@ const Host = {
                       // does not leave the host staring at an empty night
       Hall.render();
       Seen.render();
+      this.lanCheck();
       if (this._afterOpen) { const fn = this._afterOpen; this._afterOpen = null; try { fn(); } catch (e) {} }
       this._resuming = false;
       this._resumeTries = 0;
@@ -2746,6 +2749,36 @@ const Host = {
     return (Date.now() - (p.lastSeen || 0)) < this.PRESENT_MS;
   },
   presentCount() { return Object.values(this.players).filter(p => this.isPresent(p)).length; },
+
+  /* Phones on the home Wi-Fi often cannot reach this laptop. Chrome hides
+     the laptop's real network address behind a "….local" name that phones
+     frequently fail to look up, and many home hubs (Virgin's especially)
+     will not loop traffic back in from outside either. Once this page has
+     microphone permission, Chrome stops hiding the address and phones on the
+     same Wi-Fi link straight to it. The mic is switched off again at once —
+     nothing is recorded. The permission sticks, so this is a one-off. */
+  async lanCheck() {
+    const btn = $('lanBtn'); if (!btn) return;
+    let state = 'prompt';
+    try { state = (await navigator.permissions.query({ name: 'microphone' })).state; } catch (e) {}
+    btn.classList.toggle('hidden', state === 'granted');
+    if (state === 'denied') {
+      $('lanNote').textContent = 'Microphone is blocked for this page, so phones may need mobile data to join. Allow it from the padlock by the address bar to fix.';
+      $('lanNote').classList.remove('hidden');
+    }
+  },
+  async unlockLan() {
+    const note = $('lanNote');
+    note.classList.remove('hidden');
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach(t => t.stop());
+      $('lanBtn').classList.add('hidden');
+      note.textContent = '✓ Sorted. Phones on your Wi-Fi can join now — on a stuck phone, reload and tap Let me in! again.';
+    } catch (e) {
+      note.textContent = 'Not allowed, so phones may need mobile data to join. Allow the microphone from the padlock by the address bar, then tap again.';
+    }
+  },
 
   pingAll() {
     this.broadcast({ type: 'ping', t: performance.now() });
@@ -7000,7 +7033,7 @@ const Player = {
       if (this.conn && this.conn.open) return;
       $('joinError').innerHTML = stage === 'server'
         ? 'Can’t reach the game server. Check this phone has internet, then tap Let me in! again.'
-        : 'Found room ' + esc(room) + ' but can’t link to the laptop.<br>Put this phone on the <b>same Wi-Fi as the laptop</b> with mobile data off, check the laptop isn’t on a VPN or guest Wi-Fi, then tap Let me in! again.';
+        : 'Found room ' + esc(room) + ' but can’t link to the laptop.<br>Ask the host to tap <b>📶 Phones stuck</b> on the laptop, or turn this phone’s Wi-Fi off and use mobile data. Then tap Let me in! again.';
     }, 15000);
     this.peer.on('open', () => {
       stage = 'link';
