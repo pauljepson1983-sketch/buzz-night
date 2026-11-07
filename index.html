@@ -662,6 +662,7 @@
        button on screen was ARM BUZZERS — which runs nothing on its own. -->
   <div class="card" id="nightBar" style="border:2px solid var(--green, #3ddc84)">
     <h2 style="margin-bottom:6px">🎬 Tonight</h2>
+    <p id="prefetchNote" class="muted hidden" style="font-size:.9rem;margin:0 0 6px"></p>
     <label style="display:block;font-size:.9rem;margin-bottom:8px"><input type="checkbox" id="cheekyToggle" onchange="Forfeit.setOn(this.checked)"> 😏 Cheeky forfeits for whoever loses each round <span class="muted">— adults only; every phone has to say yes</span> <span id="cheekyNote" class="muted"></span></label>
         <div class="row">
           <button class="btn big green" id="nightGoBtn" onclick="Night.start()">▶ Start the night</button>
@@ -1333,6 +1334,7 @@ const App = {
     Host._afterOpen = () => {
       // nothing planned? pick a night rather than leaving them on a blank list
       if (!Night.plan.length) Night.surprise();
+      Night.prefetch();
       const card = $('nightCard');
       $('nightStatus').textContent = Night.plan.length +
         ' rounds ready. Get everyone to scan the QR above, then press "Start the night".';
@@ -1495,7 +1497,17 @@ const App = {
     const modes = ['quickfire', 'guess', 'logos', 'places', 'faces', 'covers',
                    'backdrops', 'themes', 'songs', 'years', 'tv', 'duel'];
     const wasMode = this._m;
+    /* Building every music round for real cost about ten Spotify calls in a
+       burst — enough on its own to trip Spotify's rate limit before the night
+       had started. The one search above already proves Spotify answers; the
+       music rounds are reported off that and not built here. */
+    const SPOTIFY_MODES = ['covers', 'themes', 'songs', 'years', 'tv'];
+    const searchOk = lines.some(l => l.indexOf('Spotify search is answering') >= 0);
     for (const m of modes) {
+      if (SPOTIFY_MODES.includes(m)) {
+        add(searchOk ? 'ok' : 'warn', (Quiz.TITLES[m] || m) + (searchOk ? ' — Spotify ready' : ' — needs Spotify searching (see above)'));
+        continue;
+      }
       const keep = Quiz.mode;
       Quiz.mode = m;
       try {
@@ -2644,6 +2656,16 @@ const Host = {
       // a phone joining (or rejoining) after forfeits were switched on is asked too
       if (Forfeit.on) { me.cheeky = carry ? (carry.cheeky ?? null) : null; if (me.cheeky == null) conn.send({ type: 'cheekyAsk' }); }
       Forfeit.note();
+      // joined (or came back) while the night is waiting for everyone to tap
+      // Ready: without this their phone never gets the button and the round
+      // sits there looking frozen
+      if (Night._go && Night._ready && !Night._ready.has(conn.peer)) {
+        const r = Night.plan[Night.idx];
+        if (r) conn.send({ type: 'roundCard', kicker: 'Round ' + (Night.idx + 1) + ' of ' + Night.plan.length,
+          name: Quiz.TITLES[r.mode] || 'Quiz round', how: Quiz.HOWTO[r.mode] || '' });
+        conn.send({ type: 'readyUp' });
+        Night.readyNote();
+      }
       this.renderScores();
       this.saveGame();
       return;
@@ -5715,8 +5737,13 @@ const Quiz = {
       || ('films' + (decadeLabel ? ', ' + decadeLabel : ''));
     try {
       let qs;
-      const plan = this.MIXABLE.includes(this.mode) ? this.eraPlan(count) : null;
-      if (plan) {
+      // built quietly in the background when the room opened (Night.prefetch)
+      const pre = c._prebuilt && c._prebuilt.length >= 4 ? c._prebuilt : null;
+      c._prebuilt = null;
+      const plan = pre ? null : (this.MIXABLE.includes(this.mode) ? this.eraPlan(count) : null);
+      if (pre) {
+        qs = pre;
+      } else if (plan) {
         // Build a slice per era and pool them, so a room spanning thirty years
         // still gets questions each person has a chance at. Each question
         // remembers whose era it came from.
@@ -6812,7 +6839,48 @@ const Night = {
     this.quickChanged();
     this.render();
   },
-  save() { store.set('night_plan', JSON.stringify(this.plan)); },
+  save() { store.set('night_plan', JSON.stringify(this.plan, (k, v) => k === '_prebuilt' ? undefined : v)); },
+
+  /* Fetch every music round's songs up front, one at a time with a gap,
+     while people are still scanning the QR. Building a round at the moment it
+     starts meant a burst of Spotify searches (one per decade anyone ticked),
+     which is what tripped Spotify's "slow down" and froze the round. */
+  prefetch() {
+    if (this._prefetchP) return this._prefetchP;
+    const MUSIC = ['covers', 'themes', 'songs', 'years', 'tv'];
+    const todo = this.plan.filter(r => MUSIC.includes(r.mode) && !r._prebuilt);
+    if (!todo.length || !(Spot.token || store.get('spotify_refresh'))) return Promise.resolve();
+    const pause = ms => new Promise(res => setTimeout(res, ms));
+    const note = t => { const el = $('prefetchNote'); if (el) { el.textContent = t; el.classList.toggle('hidden', !t); } };
+    const seen = new Set();
+    this._prefetchP = (async () => {
+      let done = 0;
+      for (const r of todo) {
+        note('🎵 Getting the music ready… ' + done + ' of ' + todo.length);
+        for (let attempt = 0; attempt < 2 && !r._prebuilt; attempt++) {
+          const wait = (Spot.rateLimitedUntil || 0) - Date.now();
+          if (wait > 0) { note('🎵 Spotify asked us to wait — ' + Math.ceil(wait / 1000) + 's'); await pause(wait + 500); }
+          const keep = Quiz.mode;
+          Quiz.mode = r.mode;
+          try {
+            const qs = await Quiz.buildChunk(r.decade, r.count, r.style, r.extra, r.decade ? r.decade.slice(0, 4) + 's' : '');
+            const fresh = (qs || []).filter(q => q.uri).filter(q => {
+              const k = String(q.answer).toLowerCase() + '|' + String(q.title || '').toLowerCase();
+              if (seen.has(k)) return false; seen.add(k); return true;
+            });
+            if (fresh.length >= 4) r._prebuilt = fresh;
+          } catch (e) { /* the round will simply build itself when it starts */ }
+          finally { Quiz.mode = keep; }
+        }
+        done++;
+        await pause(2500);   // spread the calls out — that is the whole point
+      }
+      const ok = todo.filter(r => r._prebuilt).length;
+      note(ok === todo.length ? '🎵 Music ready for all ' + ok + ' rounds ✓' : '🎵 Music ready for ' + ok + ' of ' + todo.length + ' rounds — the rest load when they start');
+      this._prefetchP = null;
+    })();
+    return this._prefetchP;
+  },
 
   describe(r) {
     if (r.mode === 'buzzer') return this.LABELS.buzzer;
@@ -7057,6 +7125,10 @@ const Night = {
     if (!Host.peer) { alert('Create the room first.'); return; }
     if (!this.plan.length) { alert('Add some rounds first.'); return; }
     if (this.running) return;
+    // whatever route the night was opened by, make sure the music is fetched
+    // (spaced out) before round one rather than in a burst at each round
+    $('nightStatus').textContent = 'Getting the music ready…';
+    await this.prefetch();
     this.running = true; this.idx = -1;
     // pressing start is the gesture that lets us hold the tab awake for the
     // rest of the night
@@ -7253,7 +7325,7 @@ const Night = {
       if (!this.running) return;
       Host.broadcast({ type: 'roundCard', kicker: r.roundLabel,
         name: Quiz.TITLES[alt] || 'Quiz round', how: Quiz.HOWTO[alt] || '' });
-      ok = await Quiz.runRound({ ...r, mode: alt, decade: '', style: '', extra: '' });
+      ok = await Quiz.runRound({ ...r, mode: alt, decade: '', style: '', extra: '', _prebuilt: null });
     }
 
     if (!this.running) return;
@@ -7337,6 +7409,7 @@ const Night = {
     $('afterNight').classList.add('hidden');
     Host.bankGame();
     Seen.newNight();
+    Night.prefetch();
     $('nightStatus').textContent = 'New game — game scores back to zero, overall carried on. Press start when you’re ready.';
     Host.broadcast({ type: 'info', text: 'Another round coming up…' });
   },
@@ -7351,6 +7424,7 @@ const Night = {
   differentRounds() {
     $('afterNight').classList.add('hidden');
     this.surprise();
+    this.prefetch();
   },
 
   done() {
