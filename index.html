@@ -6897,8 +6897,36 @@ const Forfeit = {
   },
   tierFor(roundNo) { return roundNo <= 2 ? 0 : roundNo <= 4 ? 1 : 2; },
   // returns extra ms the night should pause so the forfeit can be done
+  /* Some forfeits happen DURING the next round ("sing your next answer",
+     "accent for the next round"). Rating those before the round is played
+     was meaningless, so they are carried: the loser accepts, the round is
+     played, and the winner rates it when the round ends. */
+  isLater(t) { return /next round(?!\s*start)|next answer|rest of the night|until you win/i.test(t); },
+  carry: null,
   afterRound(roundNo) {
+    const carry = this.carry; this.carry = null;
+    const pre = carry && this.active() ? this.rateCarry(carry) : Promise.resolve();
+    return pre.then(() => this.drawFor(roundNo));
+  },
+  rateCarry(c) {
+    const judge = Host.players[c.judgeId];
+    this.pending = { fid: c.fid, loserId: c.loserId, judgeId: c.judgeId, text: c.text, stage: 'rating', loser: c.loser, later: true };
+    Host.sendTo(c.judgeId, { type: 'forfeitRate', fid: c.fid, who: c.loser, text: c.text, later: true });
+    Object.keys(Host.players).forEach(id => {
+      if (id !== c.judgeId) Host.sendTo(id, { type: 'forfeitResult', text: '⭐ ' + (judge ? judge.name : 'The winner') + ' is rating how ' + c.loser + ' did that forfeit…' });
+    });
+    this.banner('⭐ How did ' + c.loser + ' do? ' + c.text);
+    Sound.say('So, how did ' + c.loser + ' do with that forfeit?');
+    return new Promise(resolve => {
+      this.pending.resolve = resolve;
+      this.pending.timer = setTimeout(() => this.finish('timeout'), 60000);
+    });
+  },
+  drawFor(roundNo) {
     if (!this.active()) return Promise.resolve();
+    // the last round has no "next round" to do a carried forfeit in
+    const last = roundNo >= Night.plan.length;
+    const fits = t => !(last && this.isLater(t));
     const here = Object.entries(Host.players).filter(([id, p]) => Host.isPresent(p));
     const g = id => (Quiz.roundGains && Quiz.roundGains[id]) || 0;
     const low = Math.min(...here.map(([id]) => g(id)));
@@ -6913,7 +6941,7 @@ const Forfeit = {
     const winner = tops.map(([, p]) => p.name).join(' & ');
     const judgeId = tops[0][0];
     const draw = () => {
-      const deck = this.deckFor(roundNo);
+      const deck = this.deckFor(roundNo).filter(fits);
       let pool = deck.filter(t => !this.used.includes(t));
       if (!pool.length) pool = deck;
       const card = pool[Math.floor(Math.random() * pool.length)];
@@ -6926,7 +6954,7 @@ const Forfeit = {
     /* The wheel: eight different forfeits from this style and heat go on it,
        the loser presses STOP and it coasts to a halt — too slowly to aim. */
     const options = [];
-    const deck = this.deckFor(roundNo);
+    const deck = this.deckFor(roundNo).filter(fits);
     const pool = this.shuffle(deck.filter(t => !this.used.includes(t)));
     const fill = pool.length >= 8 ? pool : pool.concat(this.shuffle(deck.filter(t => !pool.includes(t))));
     fill.slice(0, 8).forEach(t => options.push(t.split('{winner}').join(winner)));
@@ -6956,7 +6984,9 @@ const Forfeit = {
     const first = f.options[idx];
     f.text = f.doubled ? 'DOUBLE — you bottled the last one, so both of these: ① ' + first + ' ② ' + f.draw() : first;
     f.stage = 'doing';
-    Host.sendTo(f.loserId, { type: 'forfeit', fid: f.fid, text: f.text, auto: !!msg.auto });
+    f.later = this.isLater(f.text);
+    const judge = Host.players[f.judgeId];
+    Host.sendTo(f.loserId, { type: 'forfeit', fid: f.fid, text: f.text, auto: !!msg.auto, later: f.later, judge: judge ? judge.name : '' });
     Object.keys(Host.players).forEach(id => { if (id !== f.loserId) Host.sendTo(id, { type: 'forfeitWatch', who: f.loser, text: f.text }); });
     this.banner('🎡 Forfeit for ' + f.loser + ': ' + f.text);
     Sound.say(f.loser + ', forfeit time.');
@@ -6975,6 +7005,15 @@ const Forfeit = {
       Sound.say(loser.name + ' bottled it. Next one is a double.');
       return this.finish('bottled');
     }
+    if (f.later) {
+      // accepted for the next round: play on, rate it when that round ends
+      this.carry = { fid: f.fid, loserId: f.loserId, judgeId: f.judgeId, text: f.text, loser: loser.name };
+      const line = '▶ ' + loser.name + ' does this during the next round — ' + (judge ? judge.name : 'the winner') + ' rates it after: ' + f.text;
+      Host.broadcast({ type: 'forfeitResult', text: line });
+      this.banner(line);
+      Sound.say(loser.name + ' takes that into the next round.');
+      return this.finish('later');
+    }
     f.stage = 'rating';
     Host.sendTo(f.judgeId, { type: 'forfeitRate', fid: f.fid, who: loser.name, text: f.text });
     Object.keys(Host.players).forEach(id => {
@@ -6986,6 +7025,15 @@ const Forfeit = {
   rate(peerId, msg) {
     const f = this.pending;
     if (!f || f.fid !== msg.fid || peerId !== f.judgeId || f.stage !== 'rating') return;
+    // a carried forfeit can be marked as not done: same as bottling it
+    if (parseInt(msg.stars, 10) === 0) {
+      const loser = Host.players[f.loserId];
+      if (loser) { this.owed[loser.name] = true; this.bump(loser, 'bottled'); }
+      const line = '✗ ' + f.loser + ' didn’t do it. 0 points — and their next forfeit is a double.';
+      Host.broadcast({ type: 'forfeitResult', text: line }); this.banner(line);
+      Sound.say(f.loser + ' did not do it. Next one is a double.');
+      return this.finish('rated');
+    }
     const stars = Math.max(1, Math.min(5, parseInt(msg.stars, 10) || 1));
     this.award(stars);
     this.finish('rated');
@@ -7343,7 +7391,7 @@ const Night = {
     // rest of the night
     Wake.audioOn(); Wake.on();
     Seen.newNight();   // a fresh evening: nothing counts as used-tonight yet
-    Forfeit.used = []; Forfeit.owed = {};
+    Forfeit.used = []; Forfeit.owed = {}; Forfeit.carry = null;
     $('nightGoBtn').disabled = true;
     Sound.say('Welcome to Buzz Night. Here we go.');
     await this.wait(2600);
@@ -7588,6 +7636,7 @@ const Night = {
   stop() {
     this.running = false; this.waiting = false;
     if (Forfeit.pending) Forfeit.finish('stopped');   // don't leave the night waiting on a rating
+    Forfeit.carry = null;
     Wake.audioOff();
     $('hiddenWarn') && $('hiddenWarn').classList.add('hidden');
     clearTimeout(this.timer);
@@ -7793,10 +7842,13 @@ const Player = {
       case 'forfeit': {
         const el = $('forfeitBox');
         el.innerHTML = '<div class="rc-kicker">You lost that round 😏</div><div class="rc-name" style="font-size:1.3rem;margin:8px 0">' +
-          esc(msg.text) + '</div>' +
-          '<div class="row mt" style="justify-content:center"><button class="btn green" onclick="Player.forfeitDone(' + msg.fid + ', true)">✓ Done it</button>' +
+          esc(msg.text) + '</div>' + (msg.later
+          ? '<div class="row mt" style="justify-content:center"><button class="btn green" onclick="Player.forfeitDone(' + msg.fid + ', true, true)">👍 I’ll do it next round</button>' +
+            '<button class="btn ghost" onclick="Player.forfeitDone(' + msg.fid + ', false)">🙈 Bottled it</button></div>' +
+            '<div class="muted" style="font-size:.8rem;margin-top:6px">Do it during the next round — ' + esc(msg.judge || 'the winner') + ' rates it when that round ends.</div>'
+          : '<div class="row mt" style="justify-content:center"><button class="btn green" onclick="Player.forfeitDone(' + msg.fid + ', true)">✓ Done it</button>' +
           '<button class="btn ghost" onclick="Player.forfeitDone(' + msg.fid + ', false)">🙈 Bottled it</button></div>' +
-          '<div class="muted" style="font-size:.8rem;margin-top:6px">Do it, tap Done, and the winner rates it — up to 30 points. Bottle it and your next one is a double.</div>' +
+          '<div class="muted" style="font-size:.8rem;margin-top:6px">Do it, tap Done, and the winner rates it — up to 30 points. Bottle it and your next one is a double.</div>') +
           '<button class="btn ghost small mt" onclick="Player.cheekyVote(false)">Turn forfeits off</button>';
         el.classList.remove('hidden'); this.vibe([60, 40, 60]);
         break;
@@ -7808,7 +7860,8 @@ const Player = {
           '<div style="font-size:.95rem;margin:6px 0">' + esc(msg.text) + '</div><div class="rc-name" style="font-size:1.1rem">How good was it?</div>' +
           '<div class="row mt" style="justify-content:center;gap:6px">' +
           [1, 2, 3, 4, 5].map(n => '<button class="btn small" style="font-size:1.1rem" onclick="Player.forfeitStars(' + msg.fid + ',' + n + ')">' + n + '⭐</button>').join('') +
-          '</div><div class="muted" style="font-size:.8rem;margin-top:6px">1⭐ = 10 points to them … 5⭐ = 30</div>';
+          '</div>' + (msg.later ? '<button class="btn ghost small mt" onclick="Player.forfeitStars(' + msg.fid + ',0)">✗ Didn’t do it</button>' : '') +
+          '<div class="muted" style="font-size:.8rem;margin-top:6px">1⭐ = 10 points to them … 5⭐ = 30</div>';
         el.classList.remove('hidden'); this.vibe(40);
         break;
       }
@@ -9769,13 +9822,13 @@ const Player = {
     };
     requestAnimationFrame(frame);
   },
-  forfeitDone(fid, done) {
+  forfeitDone(fid, done, later) {
     try { this.conn.send({ type: 'forfeitDone', fid, done }); } catch (e) {}
-    $('forfeitBox').innerHTML = '<div class="rc-name" style="font-size:1.1rem">' + (done ? '✓ Nice. Waiting for your rating…' : '🙈 Bottled. Next one’s a double…') + '</div>';
+    $('forfeitBox').innerHTML = '<div class="rc-name" style="font-size:1.1rem">' + (!done ? '🙈 Bottled. Next one’s a double…' : later ? '👍 Remember — do it this round!' : '✓ Nice. Waiting for your rating…') + '</div>';
   },
   forfeitStars(fid, stars) {
     try { this.conn.send({ type: 'forfeitStars', fid, stars }); } catch (e) {}
-    $('forfeitBox').innerHTML = '<div class="rc-name" style="font-size:1.1rem">' + '⭐'.repeat(stars) + ' sent</div>';
+    $('forfeitBox').innerHTML = '<div class="rc-name" style="font-size:1.1rem">' + (stars ? '⭐'.repeat(stars) + ' sent' : '✗ Marked as not done') + '</div>';
   },
   cheekyVote(yes) {
     try { this.conn.send({ type: 'cheekyVote', yes }); } catch (e) {}
