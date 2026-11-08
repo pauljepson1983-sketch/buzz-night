@@ -686,6 +686,7 @@
         </div>
         <p class="mt" id="nightStatus" style="font-size:1rem">Nothing planned yet — set up a round below and add it.</p>
       <div id="quizHostView" class="hidden" style="margin-top:10px;font-size:1rem"></div>
+      <div id="bingoHost" class="hidden" style="margin-top:10px"></div>
   </div>
 
   <div class="host-grid">
@@ -857,6 +858,7 @@
             <button class="btn ghost small" onclick="Night.quickAdd('quickfire')">⚡ Fastest finger</button>
             <button class="btn ghost small" onclick="Night.quickAdd('logos')">🏷️ Logos</button>
             <button class="btn ghost small" onclick="Night.quickAdd('places')">🌍 Where is it?</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('bingo')">🎱 Bingo</button>
             <button class="btn ghost small" onclick="Night.quickAdd('buzzname')">🎤 Buzz and name it</button>
             <button class="btn ghost small" onclick="Night.quickAdd('guess')">🎯 Closest wins</button>
             <button class="btn ghost small" onclick="Night.quickAdd('faces')">⭐ Faces</button>
@@ -1084,6 +1086,7 @@
   </div>
   <div id="forfeitBox" class="card hidden" style="text-align:center;border:2px solid #ff5fae"></div>
   <div id="roundCard" class="hidden"></div>
+  <div id="bingoBox" class="hidden"></div>
   <div id="quizPanel" class="hidden">
     <div id="quizRound"></div>
     <div id="quizProgress" class="muted"></div>
@@ -2738,6 +2741,8 @@ const Host = {
       return;
     }
     if (msg.type === 'roundReady') { Night.playerReady(conn.peer); return; }
+    if (msg.type === 'bingoJoin') { Bingo.join(conn.peer, msg.count); return; }
+    if (msg.type === 'bingoClaim') { Bingo.claim(conn.peer, msg); return; }
     if (msg.type === 'cheekyVote') { p.cheeky = !!msg.yes; Forfeit.note(); return; }
     if (msg.type === 'forfeitDone') { Forfeit.done(conn.peer, msg); return; }
     if (msg.type === 'forfeitSpun') { Forfeit.landed(conn.peer, msg); return; }
@@ -6434,13 +6439,15 @@ const Quiz = {
   TITLES: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
     songs: '🎧 Name the song', tv: '📺 TV theme tunes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces',
-    quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel'
+    quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel',
+    bingo: '🎱 Bingo'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
     songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question', logos: 'Logo', places: 'Place', buzzname: 'Song', duel: 'Question'
   },
   HOWTO: {
+    bingo: 'Tap your numbers as they’re called. One line, two lines, full house — hit BINGO! to claim. A wrong claim costs 10 points.',
     covers: 'A cover flashes up, then four albums. Pick the right one.',
     backdrops: 'A scene from the film flashes up, then four titles.',
     themes: 'Listen to the theme, then pick the film.',
@@ -6457,6 +6464,7 @@ const Quiz = {
   },
 
   ROUND_NAMES: {
+    bingo: 'bingo round',
     covers: 'album cover round', backdrops: 'film stills round',
     themes: 'film themes round',
     songs: 'name the song round',
@@ -6523,6 +6531,204 @@ const Quiz = {
    ask Spotify to PLAY the song. Searches the library can't answer (a TV
    show's theme, say) still go live once, and are remembered for 60 days.
    ====================================================================== */
+/* ======================================================================
+   BINGO — UK 90-ball, three sizes.
+
+   The size setting shrinks the NUMBER POOL, not the calling: 25% plays 1-23
+   on 9-number tickets (a few minutes), 50% plays 1-45 on 12-number tickets,
+   100% is classic 1-90 on the usual 15-number tickets. Calling only a
+   quarter of 1-90 would mean nobody ever got a full house.
+
+   Prizes in order: one line, two lines (on the same ticket), full house.
+   Players tap numbers themselves and press BINGO!; the host checks the claim
+   against what has actually been called. A wrong claim costs 10 points.
+   Two good claims on the same call both win.
+   ====================================================================== */
+const Bingo = {
+  SIZES: {
+    25:  { label: 'Quick (1–23)',  N: 23, perRow: 3 },
+    50:  { label: 'Half (1–45)',   N: 45, perRow: 4 },
+    100: { label: 'Full (1–90)',   N: 90, perRow: 5 }
+  },
+  SPEEDS: {
+    slow:   { label: 'Slow calling',   ms: 8000 },
+    normal: { label: 'Normal calling', ms: 5500 },
+    fast:   { label: 'Fast calling',   ms: 3500 }
+  },
+  STAGES: [{ name: 'One line', lines: 1, pts: 25 }, { name: 'Two lines', lines: 2, pts: 50 }, { name: 'Full house', lines: 3, pts: 100 }],
+  FALSE_PENALTY: 10,
+  CALLS: ['', 'Kelly’s eye', 'One little duck', 'Cup of tea', 'Knock at the door', 'Man alive', 'Half a dozen', 'Lucky seven',
+    'Garden gate', 'Doctor’s orders', 'Cock and hen', 'Legs eleven', 'One dozen', 'Unlucky for some', 'Valentine’s Day',
+    'Young and keen', 'Sweet sixteen', 'Dancing queen', 'Coming of age', 'Goodbye teens', 'One score', 'Key of the door',
+    'Two little ducks', 'Thee and me', 'Two dozen', 'Duck and dive', 'Pick and mix', 'Gateway to heaven', 'Overweight',
+    'Rise and shine', 'Dirty Gertie', 'Get up and run', 'Buckle my shoe', 'Dirty knee', 'Ask for more', 'Jump and jive',
+    'Three dozen', 'More than eleven', 'Christmas cake', 'Thirty-nine steps', 'Naughty forty', 'Time for fun',
+    'Winnie the Pooh', 'Down on your knees', 'Droopy drawers', 'Halfway there', 'Up to tricks', 'Four and seven',
+    'Four dozen', 'PC', 'Half a century', 'Tweak of the thumb', 'Danny La Rue', 'Stuck in the tree', 'Clean the floor',
+    'Snakes alive', 'Was she worth it?', 'Heinz varieties', 'Make them wait', 'Brighton line', 'Five dozen', 'Baker’s bun',
+    'Tickety-boo', 'Tickle me', 'Red raw', 'Old age pension', 'Clickety click', 'Stairway to heaven', 'Saving grace',
+    'Either way up', 'Three score and ten', 'Bang on the drum', 'Six dozen', 'Queen bee', 'Candy store', 'Strive and strive',
+    'Trombones', 'Sunset strip', 'Heaven’s gate', 'One more time', 'Eight and blank', 'Stop and run', 'Straight on through',
+    'Time for tea', 'Seven dozen', 'Staying alive', 'Between the sticks', 'Torquay in Devon', 'Two fat ladies',
+    'Nearly there', 'Top of the shop'],
+  active: false,
+
+  // column ranges like a real ticket: 1-9, 10-19 ... with the top number
+  // folded into the last column (80-90 on a full card)
+  columns(N) {
+    const cols = [[1, Math.min(9, N)]];
+    for (let lo = 10; lo <= N; lo += 10) cols.push([lo, Math.min(lo + 9, N)]);
+    const last = cols[cols.length - 1];
+    if (cols.length > 1 && last[0] === last[1] && last[0] === N) { cols.pop(); cols[cols.length - 1][1] = N; }
+    return cols;
+  },
+  ticket(size) {
+    const { N, perRow } = this.SIZES[size];
+    const cols = this.columns(N), nc = cols.length;
+    for (let tries = 0; tries < 50; tries++) {
+      // which columns each of the three rows uses
+      const rows = [0, 1, 2].map(() => Quiz.shuffle([...Array(nc).keys()]).slice(0, perRow));
+      const need = cols.map((_, c) => rows.filter(r => r.includes(c)).length);
+      if (need.some((k, c) => k > cols[c][1] - cols[c][0] + 1)) continue;
+      const grid = [0, 1, 2].map(() => Array(nc).fill(null));
+      cols.forEach(([lo, hi], c) => {
+        const pool = Quiz.shuffle(Array.from({ length: hi - lo + 1 }, (_, i) => lo + i)).slice(0, need[c]).sort((a, b) => a - b);
+        let k = 0;
+        [0, 1, 2].forEach(r => { if (rows[r].includes(c)) grid[r][c] = pool[k++]; });
+      });
+      return grid;
+    }
+    return null;
+  },
+
+  async run(cfg) {
+    const size = this.SIZES[cfg.size] ? cfg.size : 100;
+    const speed = this.SPEEDS[cfg.speed] || this.SPEEDS.normal;
+    const N = this.SIZES[size].N;
+    Object.assign(this, { active: true, size, N, speedMs: speed.ms, called: [], stage: 0, tickets: {}, joined: new Set(),
+      wonAt: -1, wonStage: -1, winners: [], lockout: {}, paused: false });
+    this.left = Quiz.shuffle(Array.from({ length: N }, (_, i) => i + 1));
+    Quiz.roundGains = {};          // forfeits after the round read this
+    const here = () => Object.keys(Host.players).filter(id => Host.isPresent(Host.players[id]));
+    Host.broadcast({ type: 'bingoSetup', size, label: this.SIZES[size].label });
+    $('nightStatus').textContent = '🎱 Bingo — ' + this.SIZES[size].label + '. Phones are picking tickets, then numbers get called.';
+    this.renderHost('Waiting for everyone to pick their tickets…');
+    Sound.say('Eyes down for bingo. Pick your tickets.');
+    // up to 30 seconds for phones to choose 1-3 tickets; latecomers get one
+    for (let t = 0; t < 60 && this.active; t++) {
+      if (here().every(id => this.joined.has(id)) && this.joined.size) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    here().forEach(id => { if (!this.joined.has(id)) this.join(id, 1); });
+    if (!this.active) return this.finish();
+    await new Promise(r => setTimeout(r, 2500));
+    Sound.say('Eyes down. First number coming up.');
+    await new Promise(r => setTimeout(r, 2500));
+    while (this.active && this.stage < this.STAGES.length && this.left.length) {
+      if (this.paused || Date.now() < (this.holdUntil || 0)) { await new Promise(r => setTimeout(r, 300)); continue; }
+      const n = this.left.pop();
+      this.called.push(n);
+      const call = this.CALLS[n] || '';
+      Host.broadcast({ type: 'bingoCall', n, call, count: this.called.length, stage: this.STAGES[this.stage].name });
+      $('nightStatus').textContent = '🎱 Bingo in play — ' + this.called.length + ' of ' + this.N + ' called, playing for ' + this.STAGES[this.stage].name + '.';
+      this.renderHost();
+      Sound.say((call ? call + '. ' : '') + this.say(n));
+      // wait out the gap, in slices, so pause and claims are picked up promptly
+      const until = Date.now() + this.speedMs;
+      while (this.active && Date.now() < until) await new Promise(r => setTimeout(r, 200));
+    }
+    return this.finish();
+  },
+  say(n) { return n < 10 ? 'Number ' + n + ' on its own.' : String(n).split('').join(' and ') + ', ' + n + '.'; },
+
+  join(peerId, count) {
+    if (!this.active || this.joined.has(peerId)) return;
+    const c = Math.max(1, Math.min(3, parseInt(count, 10) || 1));
+    const tix = [];
+    for (let i = 0; i < c; i++) tix.push(this.ticket(this.size));
+    this.tickets[peerId] = tix;
+    this.joined.add(peerId);
+    Host.sendTo(peerId, { type: 'bingoTickets', tickets: tix, size: this.size, stage: this.STAGES[this.stage].name, called: this.called });
+    this.renderHost();
+  },
+
+  // the claim is checked against what was CALLED and what they MARKED
+  linesDone(grid, marked) {
+    const called = new Set(this.called), mk = new Set(marked || []);
+    return grid.filter(row => row.every(v => v == null || (called.has(v) && mk.has(v)))).length;
+  },
+  claim(peerId, msg) {
+    if (!this.active) return;
+    const p = Host.players[peerId], tix = this.tickets[peerId];
+    if (!p || !tix) return;
+    if (this.lockout[peerId] === this.called.length) return;   // one claim per call
+    const best = Math.max(...tix.map((g, i) => this.linesDone(g, (msg.marked || [])[i])));
+    // a good claim for the stage just won on this same call also wins (a tie)
+    const tieStage = (this.wonAt === this.called.length && this.wonStage >= 0) ? this.wonStage : -1;
+    let st = -1;
+    if (this.stage < this.STAGES.length && best >= this.STAGES[this.stage].lines) st = this.stage;
+    else if (tieStage >= 0 && best >= this.STAGES[tieStage].lines && !this.winners.some(w => w.id === peerId && w.stage === tieStage)) st = tieStage;
+    if (st < 0) {
+      this.lockout[peerId] = this.called.length;
+      p.score -= this.FALSE_PENALTY;
+      Quiz.roundGains[peerId] = (Quiz.roundGains[peerId] || 0) - this.FALSE_PENALTY;
+      Host.sendTo(peerId, { type: 'bingoResult', text: '❌ Not yet! That claim cost you ' + this.FALSE_PENALTY + ' points.', bad: true });
+      Sound.say(p.name + ', not yet. That is ' + this.FALSE_PENALTY + ' points off.');
+      Host.renderScores(); Host.pushBoard(); this.renderHost();
+      return;
+    }
+    const prize = this.STAGES[st];
+    p.score += prize.pts;
+    Quiz.roundGains[peerId] = (Quiz.roundGains[peerId] || 0) + prize.pts;
+    this.winners.push({ id: peerId, name: p.name, stage: st, prize: prize.name, at: this.called.length });
+    if (st === this.stage) { this.wonAt = this.called.length; this.wonStage = st; this.stage++; }
+    this.holdUntil = Date.now() + 5000;
+    const next = this.STAGES[this.stage];
+    const text = '🎉 ' + p.name + ' wins ' + prize.name + '! +' + prize.pts + (next ? ' · now playing for ' + next.name : '');
+    Host.broadcast({ type: 'bingoResult', text, stage: next ? next.name : '' });
+    Sound.say(p.name + ' wins ' + prize.name + '!' + (next ? ' Now playing for ' + next.name + '.' : ' That’s a full house!'));
+    Host.renderScores(); Host.pushBoard(); Host.saveGame(); this.renderHost();
+    if (!next) { this.left = []; }   // full house ends the game (after the pause)
+  },
+
+  pause() { this.paused = !this.paused; this.renderHost(); },
+  setSpeed(v) { if (this.SPEEDS[v]) this.speedMs = this.SPEEDS[v].ms; },
+  stop() { this.active = false; },
+  async finish() {
+    // let a full-house cheer play out before moving on
+    while (Date.now() < (this.holdUntil || 0)) await new Promise(r => setTimeout(r, 200));
+    const wasActive = this.active;
+    this.active = false;
+    const summary = this.winners.length
+      ? this.winners.map(w => w.prize + ': ' + w.name).join(' · ')
+      : 'Nobody claimed a prize.';
+    Host.broadcast({ type: 'bingoEnd', text: '🎱 Bingo over — ' + summary });
+    this.renderHost('Bingo over — ' + summary);
+    Host.pushBoard();
+    setTimeout(() => { const el = $('bingoHost'); if (el && !this.active) el.classList.add('hidden'); }, 15000);
+    return wasActive || this.winners.length > 0;
+  },
+  renderHost(note) {
+    const el = $('bingoHost'); if (!el) return;
+    el.classList.remove('hidden');
+    const last = this.called[this.called.length - 1];
+    const called = new Set(this.called);
+    const board = Array.from({ length: this.N || 90 }, (_, i) => i + 1).map(n =>
+      '<span style="display:inline-block;width:2.1em;text-align:center;margin:1px;border-radius:5px;padding:2px 0;font-size:.8rem;' +
+      (called.has(n) ? 'background:#ffd23f;color:#1a0f35;font-weight:800' : 'background:rgba(255,255,255,.08);opacity:.6') + '">' + n + '</span>').join('');
+    const st = this.STAGES[this.stage];
+    el.innerHTML = '<div class="row" style="align-items:center;gap:14px">' +
+        '<div style="font-size:3rem;font-weight:900;min-width:2ch;text-align:center">' + (last || '–') + '</div>' +
+        '<div class="grow"><div style="font-size:1.1rem">' + esc(last ? this.CALLS[last] || '' : (note || '')) + '</div>' +
+          '<div class="muted" style="font-size:.85rem">' + (st ? 'Playing for: <b>' + st.name + '</b>' : 'All prizes won') + ' · ' + this.called.length + ' of ' + (this.N || 90) + ' called' +
+          ' · tickets in: ' + this.joined.size + (this.paused ? ' · <b>PAUSED</b>' : '') + '</div></div>' +
+        '<button class="btn small" onclick="Bingo.pause()">' + (this.paused ? '▶ Resume' : '⏸ Pause') + '</button>' +
+      '</div>' +
+      (this.winners.length ? '<div style="margin:6px 0">' + this.winners.map(w => '🏆 ' + esc(w.prize) + ': <b>' + esc(w.name) + '</b>').join(' · ') + '</div>' : '') +
+      '<div style="margin-top:6px;line-height:1.1">' + board + '</div>';
+  }
+};
+
 const Library = {
   KEY: 'music_library', EXACT_KEY: 'music_exact', CALLS_KEY: 'spotify_calls',
   MAX_TRACKS: 4500, MAX_EXACT: 500, EXACT_DAYS: 60,
@@ -7254,7 +7460,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel', buzzer: '🔔 Buzzer round (you judge)'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel', buzzer: '🔔 Buzzer round (you judge)', bingo: '🎱 Bingo'
   },
 
   load() {
@@ -7322,6 +7528,7 @@ const Night = {
 
   describe(r) {
     if (r.mode === 'buzzer') return this.LABELS.buzzer;
+    if (r.mode === 'bingo') return this.LABELS.bingo + ' — ' + Bingo.SIZES[r.size || 100].label + ', ' + (Bingo.SPEEDS[r.speed || 'normal'] || Bingo.SPEEDS.normal).label;
     const bits = [];
     if (r.style) bits.push(r.style);
     if (r.extra) bits.push(r.extra);
@@ -7393,6 +7600,7 @@ const Night = {
       flash: mode === 'faces' ? 2000 : 3000,
       startAt: 'skip',
       crop: 'crop',
+      ...(mode === 'bingo' ? { size: 100, speed: 'normal' } : {}),
       roundLabel: ''
     };
   },
@@ -7402,7 +7610,7 @@ const Night = {
      in three separate places, which is exactly what happened here. */
   // buzzname is deliberately absent: it searches Spotify, so an era and a
   // flavour both mean something and both get a picker in the running order
-  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos', 'places', 'duel'],
+  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos', 'places', 'duel', 'bingo'],
 
   quickAdd(mode) {
     this.plan.push(this.defaultsFor(mode));
@@ -7536,12 +7744,18 @@ const Night = {
           return '<option value="' + esc(val) + '"' + (val === (chosen || '') ? ' selected' : '') + '>' + esc(lab) + '</option>';
         }).join('');
         const styleList = [''].concat(this.STYLES || []);
-        const pickers = (usesEra || usesStyle) && !locked
+        const bingoPick = r.mode === 'bingo' && !locked
+          ? '<div class="night-opts"><select onchange="Night.setField(' + i + ',\'size\',+this.value)">' +
+              opts(Object.entries(Bingo.SIZES).map(([k, v]) => [k, v.label]), String(r.size || 100)) + '</select>' +
+            '<select onchange="Night.setField(' + i + ',\'speed\',this.value)">' +
+              opts(Object.entries(Bingo.SPEEDS).map(([k, v]) => [k, v.label]), r.speed || 'normal') + '</select></div>'
+          : '';
+        const pickers = bingoPick || ((usesEra || usesStyle) && !locked
           ? '<div class="night-opts">' +
               (usesEra ? '<select onchange="Night.setField(' + i + ',\'decade\',this.value)">' + opts(DECADES, r.decade) + '</select>' : '') +
               (usesStyle ? '<select onchange="Night.setField(' + i + ',\'style\',this.value)">' + opts(styleList, r.style) + '</select>' : '') +
             '</div>'
-          : '';
+          : '');
         return '<div class="night-row' + (now ? ' now' : '') + '">' +
           '<span class="night-n">' + (i + 1) + '</span>' +
           '<span class="night-desc">' + esc(this.describe(r)) + '</span>' +
@@ -7662,7 +7876,7 @@ const Night = {
     await this.wait(2200);
     if (!this.running) return;
 
-    let ok = await Quiz.runRound(r);
+    let ok = r.mode === 'bingo' ? await Bingo.run(r) : await Quiz.runRound(r);
 
     /* Spotify asking us to wait is not a reason to throw a round away. It is
        a reason to wait. The cool-off is seconds, the round is one somebody
@@ -7811,6 +8025,7 @@ const Night = {
     clearTimeout(this.timer);
     // skipping while held at the gate should drop that round, not start it
     if (this._go) { this.releaseGo(); this.runNext(); return; }
+    if (Bingo.active) { Bingo.stop(); return; }
     if (Quiz.active) { Quiz.stop(); return; }
     if (this.waiting) { this.waiting = false; Host.endRound(false); }
     this.runNext();
@@ -7824,6 +8039,7 @@ const Night = {
     $('hiddenWarn') && $('hiddenWarn').classList.add('hidden');
     clearTimeout(this.timer);
     this.releaseGo();
+    if (Bingo.active) Bingo.stop();
     if (Quiz.active) Quiz.stop();
     $('nightGoBtn').classList.remove('hidden');
     $('nightGoBtn').disabled = false;
@@ -8037,6 +8253,11 @@ const Player = {
         break;
       }
       case 'forfeitWheel': { this.wheel(msg); break; }
+      case 'bingoSetup': this.bingoSetup(msg); break;
+      case 'bingoTickets': this.bingoTickets(msg); break;
+      case 'bingoCall': this.bingoCall(msg); break;
+      case 'bingoResult': this.bingoNote(msg.text, msg.bad); if (msg.stage) { const s = $('bgStage'); if (s) s.textContent = 'Playing for: ' + msg.stage; } break;
+      case 'bingoEnd': this.bingoNote(msg.text); { const b = $('bgClaim'); if (b) b.disabled = true; } break;
       case 'forfeitRate': {
         const el = $('forfeitBox');
         el.innerHTML = '<div class="rc-kicker">' + esc(msg.who) + ' did their forfeit</div>' +
@@ -8064,6 +8285,7 @@ const Player = {
         break;
       }
       case 'quizStart':
+        $('bingoBox').classList.add('hidden');
         $('forfeitBox').classList.add('hidden');
         this.hideExtras();
         $('buzzBtn').classList.add('hidden');
@@ -10018,8 +10240,68 @@ const Player = {
     $('cheekyAsk').classList.add('hidden');
     if (!yes) $('forfeitBox').classList.add('hidden');
   },
+  /* ---- bingo on the phone ---- */
+  bingoSetup(msg) {
+    this.hideExtras();
+    $('quizPanel').classList.add('hidden');
+    $('buzzBtn').classList.add('hidden');
+    const el = $('bingoBox');
+    el.innerHTML = '<div class="card" style="text-align:center"><div class="rc-kicker">🎱 Bingo — ' + esc(msg.label) + '</div>' +
+      '<div class="rc-name" style="font-size:1.2rem;margin:6px 0">How many tickets?</div>' +
+      '<div class="muted" style="font-size:.85rem">More tickets, more chances — but more to keep an eye on.</div>' +
+      '<div class="row mt" style="justify-content:center;gap:8px">' +
+      [1, 2, 3].map(n => '<button class="btn big" style="min-width:64px" onclick="Player.bingoJoin(' + n + ')">' + n + '</button>').join('') +
+      '</div></div>';
+    el.classList.remove('hidden');
+    this.vibe(40);
+  },
+  bingoJoin(n) {
+    try { this.conn.send({ type: 'bingoJoin', count: n }); } catch (e) {}
+    $('bingoBox').innerHTML = '<div class="card" style="text-align:center"><div class="rc-name">Getting your tickets…</div></div>';
+  },
+  bingoTickets(msg) {
+    this.bgTickets = msg.tickets;
+    this.bgMarked = msg.tickets.map(() => new Set());
+    const el = $('bingoBox');
+    const tix = msg.tickets.map((g, ti) => '<div style="background:#fff;border-radius:10px;padding:4px;margin:8px 0">' +
+      g.map(row => '<div style="display:flex">' + row.map(v => v == null
+        ? '<div style="flex:1;height:42px;margin:1px;background:#e7e0f5;border-radius:4px"></div>'
+        : '<button data-t="' + ti + '" data-n="' + v + '" onclick="Player.bingoTap(this)" style="flex:1;height:42px;margin:1px;border:none;border-radius:4px;background:#fff7d6;color:#1a0f35;font-weight:800;font-size:1.1rem;padding:0">' + v + '</button>'
+      ).join('') + '</div>').join('') + '</div>').join('');
+    el.innerHTML = '<div class="card" style="text-align:center;padding:10px">' +
+      '<div class="row" style="align-items:center;justify-content:center;gap:12px"><div id="bgNum" style="font-size:2.6rem;font-weight:900">–</div>' +
+      '<div style="text-align:left"><div id="bgCall" style="font-size:1rem"></div><div id="bgStage" class="muted" style="font-size:.85rem">Playing for: ' + esc(msg.stage) + '</div></div></div>' +
+      '<div id="bgNote" style="min-height:1.4em;font-size:.95rem;margin:4px 0"></div>' + tix +
+      '<div style="position:sticky;bottom:8px;z-index:5;padding-top:6px"><button id="bgClaim" class="btn big pink" style="width:100%;font-size:1.6rem;box-shadow:0 6px 18px #000a" onclick="Player.bingoClaim()">BINGO!</button></div>' +
+      '<div class="muted" style="font-size:.8rem;margin-top:4px">Tap a number to mark it. Claim when you have the prize — a wrong claim is −10.</div></div>';
+    el.classList.remove('hidden');
+  },
+  bingoTap(b) {
+    const t = +b.dataset.t, n = +b.dataset.n, set = this.bgMarked[t];
+    if (set.has(n)) { set.delete(n); b.style.background = '#fff7d6'; b.style.color = '#1a0f35'; }
+    else { set.add(n); b.style.background = '#e11d74'; b.style.color = '#fff'; this.vibe(15); }
+  },
+  bingoCall(msg) {
+    const a = $('bgNum'), c = $('bgCall');
+    if (a) a.textContent = msg.n;
+    if (c) c.textContent = msg.call || '';
+    const s = $('bgStage'); if (s && msg.stage) s.textContent = 'Playing for: ' + msg.stage + ' · ' + msg.count + ' called';
+    this.vibe(20);
+  },
+  bingoClaim() {
+    if (!this.bgMarked) return;
+    try { this.conn.send({ type: 'bingoClaim', marked: this.bgMarked.map(s => [...s]) }); } catch (e) {}
+    this.bingoNote('Checking your claim…');
+  },
+  bingoNote(text, bad) {
+    const el = $('bgNote');
+    if (el) { el.textContent = text; el.style.color = bad ? '#ff8a8a' : ''; }
+    else { const box = $('bingoBox'); box.innerHTML = '<div class="card" style="text-align:center"><div class="rc-name">' + esc(text) + '</div></div>'; box.classList.remove('hidden'); }
+    this.vibe(bad ? [80, 40, 80] : 40);
+  },
   hideExtras() {
     $('roundCard').classList.add('hidden');
+    $('bingoBox').classList.add('hidden');
     $('finaleBox').classList.add('hidden');
     $('stealTimer').classList.add('hidden');
     $('revealBox').classList.add('hidden');
