@@ -6552,13 +6552,13 @@ const Quiz = {
    Two good claims on the same call both win.
    ====================================================================== */
 const Bingo = {
-  // Every size uses a proper English ticket: 9 columns, 3 rows, 5 numbers a
-  // row. Smaller sizes just spread a smaller number pool across the nine
-  // columns, so the game is shorter but the ticket looks the same.
+  /* Always a real 1-90 game in proper columns (1-9, 10s ... 80-90). The size
+     setting decides where the game ENDS: Quick stops at One line, Half at
+     Two lines, Full plays to a Full house. */
   SIZES: {
-    25:  { label: 'Quick (1–23)',  N: 23, perRow: 5 },
-    50:  { label: 'Half (1–45)',   N: 45, perRow: 5 },
-    100: { label: 'Full (1–90)',   N: 90, perRow: 5 }
+    25:  { label: 'Quick — ends at One line',  last: 0 },
+    50:  { label: 'Half — ends at Two lines',  last: 1 },
+    100: { label: 'Full — play to Full house', last: 2 }
   },
   SPEEDS: {
     slow:   { label: 'Slow calling',   ms: 8000 },
@@ -6571,13 +6571,17 @@ const Bingo = {
     { name: 'Full house', lines: 3, pts: 100, means: 'all 15 numbers on one ticket' }
   ],
   RULES: [
-    'Numbers are called out loud and shown at the top of your phone.',
+    'Numbers 1–90 are called out loud and shown at the top of your phone. 1–9 are in the first column, the 10s in the second … 80–90 in the last.',
+    'A strip of six tickets holds every number exactly once, so every number called is on one of them.',
     'If it’s on your ticket, tap it to dab it. Tap again to undo.',
     'Prizes go in order: ① One line — all 5 numbers in any one row (25 pts). ② Two lines — any 2 rows on the SAME ticket (50 pts). ③ Full house — all 15 numbers on one ticket (100 pts).',
     'Got it? Press BINGO! straight away — first to claim wins. Two good claims on the same number both win.',
     'The game checks your ticket. A wrong claim costs 10 points, so check before you shout.'
   ],
-  rulesHtml() { return '<ol style="text-align:left;margin:6px 0 0 18px;padding:0;font-size:.85rem;line-height:1.4">' + this.RULES.map(r => '<li>' + esc(r) + '</li>').join('') + '</ol>'; },
+  rulesHtml(size) {
+    const end = this.SIZES[size] ? '<li><b>This game: ' + esc(this.SIZES[size].label) + '.</b></li>' : '';
+    return '<ol style="text-align:left;margin:6px 0 0 18px;padding:0;font-size:.85rem;line-height:1.4">' + this.RULES.map(r => '<li>' + esc(r) + '</li>').join('') + end + '</ol>';
+  },
   FALSE_PENALTY: 10,
   CALLS: ['', 'Kelly’s eye', 'One little duck', 'Cup of tea', 'Knock at the door', 'Man alive', 'Half a dozen', 'Lucky seven',
     'Garden gate', 'Doctor’s orders', 'Cock and hen', 'Legs eleven', 'One dozen', 'Unlucky for some', 'Valentine’s Day',
@@ -6595,46 +6599,90 @@ const Bingo = {
     'Nearly there', 'Top of the shop'],
   active: false,
 
-  // column ranges like a real ticket: 1-9, 10-19 ... with the top number
-  // folded into the last column (80-90 on a full card)
-  columns(N) {
-    if (N === 90) {   // the real thing: 1-9, 10-19 ... 80-90
-      const cols = [[1, 9]];
-      for (let lo = 10; lo < 80; lo += 10) cols.push([lo, lo + 9]);
-      cols.push([80, 90]);
-      return cols;
-    }
-    // smaller pools: nine runs of consecutive numbers, as even as they go
-    const cols = [];
-    for (let c = 0; c < 9; c++) cols.push([Math.round(c * N / 9) + 1, Math.round((c + 1) * N / 9)]);
+  columns() {   // 1-9, 10-19 ... 70-79, 80-90
+    const cols = [[1, 9]];
+    for (let lo = 10; lo < 80; lo += 10) cols.push([lo, lo + 9]);
+    cols.push([80, 90]);
     return cols;
   },
-  ticket(size) {
-    const { N, perRow } = this.SIZES[size];
-    const cols = this.columns(N), nc = cols.length;
-    for (let tries = 0; tries < 400; tries++) {
-      // which columns each of the three rows uses (a thin column can't be
-      // used by more rows than it has numbers — the retry sorts that out)
-      const rows = [0, 1, 2].map(() => Quiz.shuffle([...Array(nc).keys()]).slice(0, perRow));
-      const need = cols.map((_, c) => rows.filter(r => r.includes(c)).length);
-      if (need.some((k, c) => k > cols[c][1] - cols[c][0] + 1)) continue;
-      const grid = [0, 1, 2].map(() => Array(nc).fill(null));
-      cols.forEach(([lo, hi], c) => {
-        const pool = Quiz.shuffle(Array.from({ length: hi - lo + 1 }, (_, i) => lo + i)).slice(0, need[c]).sort((a, b) => a - b);
-        let k = 0;
-        [0, 1, 2].forEach(r => { if (rows[r].includes(c)) grid[r][c] = pool[k++]; });
-      });
-      return grid;
+  /* A strip (book) of six: six tickets that between them hold every number
+     1-90 exactly once. Each ticket: 3 rows x 9 columns, 5 numbers a row, at
+     least one number in every column, numbers rising down each column. */
+  strip() {
+    const cols = this.columns();
+    const range = (lo, hi) => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+    for (let attempt = 0; attempt < 300; attempt++) {
+      const colNums = cols.map(([lo, hi]) => Quiz.shuffle(range(lo, hi)));
+      const counts = Array.from({ length: 6 }, () => Array(9).fill(1));   // one per column each
+      const need = Array(6).fill(6);                                       // 15 - 9
+      const extras = Quiz.shuffle([].concat(...cols.map(([lo, hi], c) => Array(hi - lo + 1 - 6).fill(c))));
+      let ok = true;
+      for (const c of extras) {
+        const cand = [...Array(6).keys()].filter(t => need[t] > 0 && counts[t][c] < 3);
+        if (!cand.length) { ok = false; break; }
+        cand.sort((a, b) => (need[b] - need[a]) || (Math.random() - 0.5));
+        const t = cand[0]; counts[t][c]++; need[t]--;
+      }
+      if (!ok || need.some(n => n)) continue;
+      const ptr = Array(9).fill(0), tickets = [];
+      for (let t = 0; t < 6 && ok; t++) {
+        const grid = this.layout(counts[t]);
+        if (!grid) { ok = false; break; }
+        for (let c = 0; c < 9; c++) {
+          const vals = colNums[c].slice(ptr[c], ptr[c] + counts[t][c]).sort((a, b) => a - b);
+          ptr[c] += counts[t][c];
+          let k = 0;
+          for (let r = 0; r < 3; r++) grid[r][c] = grid[r][c] ? vals[k++] : null;
+        }
+        tickets.push(grid);
+      }
+      if (ok) return tickets;
     }
     return null;
+  },
+  // which rows each column's numbers sit in, so every row ends up with 5
+  layout(counts) {
+    for (let tries = 0; tries < 300; tries++) {
+      const grid = [0, 1, 2].map(() => Array(9).fill(0)), rc = [0, 0, 0];
+      const order = Quiz.shuffle([...Array(9).keys()]).sort((a, b) => counts[b] - counts[a]);
+      let ok = true;
+      for (const c of order) {
+        const rows = [0, 1, 2].sort((a, b) => (rc[a] - rc[b]) || (Math.random() - 0.5)).slice(0, counts[c]);
+        rows.forEach(r => { grid[r][c] = 1; rc[r]++; });
+        if (rc.some(x => x > 5)) { ok = false; break; }
+      }
+      if (ok && rc.every(x => x === 5)) return grid;
+    }
+    return null;
+  },
+  // one ticket, drawn as an English bingo ticket (used on phones AND laptop)
+  COLOURS: ['#e11d74', '#1e88e5', '#16a86a', '#f57c00', '#8e24aa', '#00897b'],
+  ticketHtml(g, o = {}) {
+    const col = o.colour || this.COLOURS[0], h = o.h || 40, fs = o.fs || 1.05;
+    const called = o.called || new Set(), marked = o.marked || new Set(), hi = o.rows || [];
+    const dab = 'radial-gradient(circle at 50% 50%, ' + col + 'cc 0 42%, #fff 44%)';
+    return '<div style="background:' + col + ';border-radius:6px;padding:3px 3px 4px;margin:6px 0;box-shadow:0 3px 8px #0006">' +
+      '<div style="display:flex;justify-content:space-between;color:#fff;font-size:.66rem;font-weight:800;letter-spacing:.06em;padding:1px 4px 3px">' +
+        '<span>BUZZ NIGHT BINGO</span><span>' + esc(o.title || '') + '</span></div>' +
+      '<div style="background:#fff;border:1px solid ' + col + '">' +
+      g.map((row, r) => '<div style="display:flex;' + (hi.includes(r) ? 'outline:3px solid #ffd23f;outline-offset:-2px;position:relative;z-index:1' : '') + '">' +
+        row.map(v => {
+          if (v == null) return '<div style="flex:1;height:' + h + 'px;background:' + col + '22;border:1px solid ' + col + '55"></div>';
+          const on = o.interactive ? false : (marked.has(v) || (o.showCalled && called.has(v)));
+          const style = 'flex:1;height:' + h + 'px;border:1px solid ' + col + '55;border-radius:0;padding:0;font-weight:800;font-size:' + fs + 'rem;font-family:Georgia,serif;' +
+            (on ? 'background:' + dab + ';color:#fff' : 'background:#fff;color:#111');
+          return o.interactive
+            ? '<button data-t="' + o.ti + '" data-n="' + v + '" data-c="' + col + '" onclick="Player.bingoTap(this)" style="' + style + '">' + v + '</button>'
+            : '<div style="' + style + ';display:flex;align-items:center;justify-content:center">' + v + '</div>';
+        }).join('') + '</div>').join('') + '</div></div>';
   },
 
   async run(cfg) {
     const size = this.SIZES[cfg.size] ? cfg.size : 100;
     const speed = this.SPEEDS[cfg.speed] || this.SPEEDS.normal;
-    const N = this.SIZES[size].N;
+    const N = 90;
     Object.assign(this, { active: true, size, N, speedMs: speed.ms, called: [], stage: 0, tickets: {}, joined: new Set(),
-      wonAt: -1, wonStage: -1, winners: [], lockout: {}, paused: false });
+      wonAt: -1, wonStage: -1, winners: [], lockout: {}, paused: false, lastStage: this.SIZES[size].last, lastWin: null });
     this.left = Quiz.shuffle(Array.from({ length: N }, (_, i) => i + 1));
     Quiz.roundGains = {};          // forfeits after the round read this
     const here = () => Object.keys(Host.players).filter(id => Host.isPresent(Host.players[id]));
@@ -6652,7 +6700,7 @@ const Bingo = {
     await new Promise(r => setTimeout(r, 2500));
     Sound.say('Eyes down. First number coming up.');
     await new Promise(r => setTimeout(r, 2500));
-    while (this.active && this.stage < this.STAGES.length && this.left.length) {
+    while (this.active && this.stage <= this.lastStage && this.left.length) {
       if (this.paused || Date.now() < (this.holdUntil || 0)) { await new Promise(r => setTimeout(r, 300)); continue; }
       const n = this.left.pop();
       this.called.push(n);
@@ -6672,9 +6720,9 @@ const Bingo = {
   join(peerId, count) {
     if (!this.active) return;
     if (this.joined.has(peerId)) return this.resend(peerId);
-    const c = Math.max(1, Math.min(3, parseInt(count, 10) || 1));
-    const tix = [];
-    for (let i = 0; i < c; i++) tix.push(this.ticket(this.size));
+    // 6 = a full strip; 1-3 are dealt off a strip too, so never a repeat
+    const c = parseInt(count, 10) === 6 ? 6 : Math.max(1, Math.min(3, parseInt(count, 10) || 1));
+    const tix = this.strip().slice(0, c);
     this.tickets[peerId] = tix;
     this.joined.add(peerId);
     Host.sendTo(peerId, { type: 'bingoTickets', tickets: tix, size: this.size, stage: this.STAGES[this.stage].name, called: this.called });
@@ -6702,7 +6750,7 @@ const Bingo = {
     // a good claim for the stage just won on this same call also wins (a tie)
     const tieStage = (this.wonAt === this.called.length && this.wonStage >= 0) ? this.wonStage : -1;
     let st = -1;
-    if (this.stage < this.STAGES.length && best >= this.STAGES[this.stage].lines) st = this.stage;
+    if (this.stage <= this.lastStage && best >= this.STAGES[this.stage].lines) st = this.stage;
     else if (tieStage >= 0 && best >= this.STAGES[tieStage].lines && !this.winners.some(w => w.id === peerId && w.stage === tieStage)) st = tieStage;
     if (st < 0) {
       this.lockout[peerId] = this.called.length;
@@ -6718,8 +6766,14 @@ const Bingo = {
     Quiz.roundGains[peerId] = (Quiz.roundGains[peerId] || 0) + prize.pts;
     this.winners.push({ id: peerId, name: p.name, stage: st, prize: prize.name, at: this.called.length });
     if (st === this.stage) { this.wonAt = this.called.length; this.wonStage = st; this.stage++; }
-    this.holdUntil = Date.now() + 5000;
-    const next = this.STAGES[this.stage];
+    this.holdUntil = Date.now() + 6000;
+    const next = this.stage <= this.lastStage ? this.STAGES[this.stage] : null;
+    // show everyone the winning ticket, winning rows picked out
+    const ti = tix.map((g, i) => this.linesDone(g, (msg.marked || [])[i])).reduce((b, v, i, a) => v > a[b] ? i : b, 0);
+    const calledSet = new Set(this.called), mk = new Set((msg.marked || [])[ti] || []);
+    const rows = tix[ti].map((row, r) => row.every(v => v == null || (calledSet.has(v) && mk.has(v))) ? r : -1).filter(r => r >= 0);
+    this.lastWin = { name: p.name, prize: prize.name, grid: tix[ti], rows, ti };
+    Host.broadcast({ type: 'bingoWin', name: p.name, prize: prize.name, grid: tix[ti], rows, ti, called: this.called });
     const text = '🎉 ' + p.name + ' wins ' + prize.name + '! +' + prize.pts + (next ? ' · now playing for ' + next.name : '');
     Host.broadcast({ type: 'bingoResult', text, stage: next ? next.name : '', means: next ? next.means : '' });
     Sound.say(p.name + ' wins ' + prize.name + '!' + (next ? ' Now playing for ' + next.name + '.' : ' That’s a full house!'));
@@ -6729,7 +6783,7 @@ const Bingo = {
 
   // say exactly what the laptop saw, so a failed claim is never a mystery
   why(tix, marked) {
-    const need = this.STAGES[this.stage] ? this.STAGES[this.stage].lines : 3;
+    const need = this.STAGES[Math.min(this.stage, this.lastStage)].lines;
     const called = new Set(this.called);
     const per = tix.map((g, i) => this.linesDone(g, marked[i]));
     const total = per.reduce((a, b) => a + b, 0);
@@ -6752,7 +6806,7 @@ const Bingo = {
   resend(peerId) {
     const tix = this.tickets[peerId];
     if (!tix) return;
-    Host.sendTo(peerId, { type: 'bingoTickets', tickets: tix, size: this.size, stage: this.STAGES[this.stage] ? this.STAGES[this.stage].name : 'Full house', called: this.called });
+    Host.sendTo(peerId, { type: 'bingoTickets', tickets: tix, size: this.size, stage: this.STAGES[Math.min(this.stage, this.lastStage)].name, called: this.called });
   },
   pause() { this.paused = !this.paused; this.renderHost(); },
   setSpeed(v) { if (this.SPEEDS[v]) this.speedMs = this.SPEEDS[v].ms; },
@@ -6779,7 +6833,11 @@ const Bingo = {
     const board = Array.from({ length: this.N || 90 }, (_, i) => i + 1).map(n =>
       '<span style="display:inline-block;width:2.1em;text-align:center;margin:1px;border-radius:5px;padding:2px 0;font-size:.8rem;' +
       (called.has(n) ? 'background:#ffd23f;color:#1a0f35;font-weight:800' : 'background:rgba(255,255,255,.08);opacity:.6') + '">' + n + '</span>').join('');
-    const st = this.STAGES[this.stage];
+    const st = this.stage <= this.lastStage ? this.STAGES[this.stage] : null;
+    const win = this.lastWin
+      ? '<div style="margin:8px 0;padding:8px;border-radius:10px;background:rgba(255,210,63,.12)"><div style="font-size:1.2rem;font-weight:800">🏆 ' + esc(this.lastWin.name) + ' — ' + esc(this.lastWin.prize) + '</div>' +
+        '<div style="max-width:620px">' + this.ticketHtml(this.lastWin.grid, { colour: this.COLOURS[this.lastWin.ti % 6], called, showCalled: true, rows: this.lastWin.rows, h: 54, fs: 1.5, title: 'WINNING TICKET' }) + '</div></div>'
+      : '';
     el.innerHTML = '<div class="row" style="align-items:center;gap:14px">' +
         '<div style="font-size:3rem;font-weight:900;min-width:2ch;text-align:center">' + (last || '–') + '</div>' +
         '<div class="grow"><div style="font-size:1.1rem">' + esc(last ? this.CALLS[last] || '' : (note || '')) + '</div>' +
@@ -6787,7 +6845,7 @@ const Bingo = {
           ' · tickets in: ' + this.joined.size + (this.paused ? ' · <b>PAUSED</b>' : '') + '</div></div>' +
         '<button class="btn small" onclick="Bingo.pause()">' + (this.paused ? '▶ Resume' : '⏸ Pause') + '</button>' +
       '</div>' +
-      (this.winners.length ? '<div style="margin:6px 0">' + this.winners.map(w => '🏆 ' + esc(w.prize) + ': <b>' + esc(w.name) + '</b>').join(' · ') + '</div>' : '') +
+      (this.winners.length ? '<div style="margin:6px 0">' + this.winners.map(w => '🏆 ' + esc(w.prize) + ': <b>' + esc(w.name) + '</b>').join(' · ') + '</div>' : '') + win +
       '<div style="margin-top:6px;line-height:1.1">' + board + '</div>';
   }
 };
@@ -8320,6 +8378,15 @@ const Player = {
       case 'bingoTickets': this.bingoTickets(msg); break;
       case 'bingoCall': this.bingoCall(msg); break;
       case 'bingoResult': this.bingoNote(msg.text, msg.bad); if (msg.stage) { const s = $('bgStage'); if (s) s.textContent = 'Playing for: ' + msg.stage; const m = $('bgMeans'); if (m && msg.means) m.textContent = 'Looking for: ' + msg.means; } break;
+      case 'bingoWin': {
+        const w = $('bgWin');
+        if (w) {
+          w.innerHTML = '<div style="background:rgba(255,210,63,.15);border-radius:10px;padding:6px;margin:4px 0"><div style="font-weight:800">🏆 ' + esc(msg.name) + ' — ' + esc(msg.prize) + '</div>' +
+            Bingo.ticketHtml(msg.grid, { colour: Bingo.COLOURS[msg.ti % 6], called: new Set(msg.called), showCalled: true, rows: msg.rows, h: 26, fs: .8, title: 'WINNING TICKET' }) + '</div>';
+          clearTimeout(this._bgWinT); this._bgWinT = setTimeout(() => { const x = $('bgWin'); if (x) x.innerHTML = ''; }, 9000);
+        }
+        break;
+      }
       case 'bingoEnd': this.bingoNote(msg.text); { const b = $('bgClaim'); if (b) b.disabled = true; } break;
       case 'forfeitRate': {
         const el = $('forfeitBox');
@@ -10312,10 +10379,11 @@ const Player = {
     el.innerHTML = '<div class="card" style="text-align:center"><div class="rc-kicker">🎱 Bingo — ' + esc(msg.label) + '</div>' +
       '<div class="rc-name" style="font-size:1.2rem;margin:6px 0">How many tickets?</div>' +
       '<div class="muted" style="font-size:.85rem">More tickets, more chances — but more to keep an eye on.</div>' +
-      '<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px 10px;margin-top:10px;text-align:left"><b>How to win</b>' + Bingo.rulesHtml() + '</div>' +
+      '<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px 10px;margin-top:10px;text-align:left"><b>How to win</b>' + Bingo.rulesHtml(msg.size) + '</div>' +
       '<div class="row mt" style="justify-content:center;gap:8px">' +
       [1, 2, 3].map(n => '<button class="btn big" style="min-width:64px" onclick="Player.bingoJoin(' + n + ')">' + n + '</button>').join('') +
-      '</div></div>';
+      '</div><button class="btn big green mt" style="width:100%" onclick="Player.bingoJoin(6)">📒 Strip of six — every number 1–90</button>' +
+      '</div>';
     el.classList.remove('hidden');
     this.vibe(40);
   },
@@ -10331,25 +10399,16 @@ const Player = {
     this.bgTickets = msg.tickets;
     this.bgMarked = msg.tickets.map(() => new Set());
     const el = $('bingoBox');
-    const tix = msg.tickets.map((g, ti) => {
-      const col = this.BG_COLOURS[ti % 3];
-      const serial = String(100000 + Math.floor(Math.random() * 899999));
-      return '<div style="background:' + col + ';border-radius:6px;padding:3px 3px 4px;margin:8px 0;box-shadow:0 3px 8px #0006">' +
-        '<div style="display:flex;justify-content:space-between;color:#fff;font-size:.68rem;font-weight:800;letter-spacing:.06em;padding:1px 4px 3px">' +
-          '<span>BUZZ NIGHT BINGO</span><span>TICKET ' + (ti + 1) + ' · No. ' + serial + '</span></div>' +
-        '<div style="background:#fff;border:1px solid ' + col + '">' +
-        g.map(row => '<div style="display:flex">' + row.map(v => v == null
-          ? '<div style="flex:1;height:40px;background:' + col + '22;border:1px solid ' + col + '55"></div>'
-          : '<button data-t="' + ti + '" data-n="' + v + '" data-c="' + col + '" onclick="Player.bingoTap(this)" style="flex:1;height:40px;border:1px solid ' + col + '55;border-radius:0;background:#fff;color:#111;font-weight:800;font-size:1.05rem;padding:0;font-family:Georgia,serif">' + v + '</button>'
-        ).join('') + '</div>').join('') + '</div></div>';
-    }).join('');
+    const many = msg.tickets.length > 3;
+    const tix = msg.tickets.map((g, ti) => Bingo.ticketHtml(g, { interactive: true, ti, colour: Bingo.COLOURS[ti % 6],
+      title: 'TICKET ' + (ti + 1) + (many ? ' of 6' : ''), h: many ? 34 : 40, fs: many ? .95 : 1.05 })).join('');
     el.innerHTML = '<div class="card" style="text-align:center;padding:10px">' +
       '<div class="row" style="align-items:center;justify-content:center;gap:12px"><div id="bgNum" style="font-size:2.6rem;font-weight:900">–</div>' +
       '<div style="text-align:left"><div id="bgCall" style="font-size:1rem"></div><div id="bgStage" class="muted" style="font-size:.85rem">Playing for: ' + esc(msg.stage) + '</div></div></div>' +
       '<div id="bgMeans" style="font-size:.9rem;font-weight:700;color:#ffd23f;margin-top:2px">Looking for: ' + esc((Bingo.STAGES.find(x => x.name === msg.stage) || Bingo.STAGES[0]).means) + '</div>' +
-      '<div id="bgNote" style="min-height:1.4em;font-size:.95rem;margin:4px 0"></div>' + tix +
+      '<div id="bgNote" style="min-height:1.4em;font-size:.95rem;margin:4px 0"></div><div id="bgWin"></div>' + tix +
       '<div style="position:sticky;bottom:8px;z-index:5;padding-top:6px"><button id="bgClaim" class="btn big pink" style="width:100%;font-size:1.6rem;box-shadow:0 6px 18px #000a" onclick="Player.bingoClaim()">BINGO!</button></div>' +
-      '<details style="margin-top:8px;text-align:left"><summary style="font-weight:700">📖 How to win</summary>' + Bingo.rulesHtml() + '</details></div>';
+      '<details style="margin-top:8px;text-align:left"><summary style="font-weight:700">📖 How to win</summary>' + Bingo.rulesHtml(msg.size) + '</details></div>';
     el.classList.remove('hidden');
   },
   bingoTap(b) {
