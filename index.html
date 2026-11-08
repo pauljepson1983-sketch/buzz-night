@@ -3576,7 +3576,7 @@ const Host = {
     }]);
     if (fastest) steps.push([this.raceMs(), () => {
       this.broadcast({ type: 'finale', stage: 'fastest', row: fastest });
-      Sound.say('Fastest finger of the night, ' + fastest.name + ', averaging ' + (fastest.avg/1000).toFixed(2) + ' seconds.');
+      Sound.say('A separate award. Quickest quiz answers of the night, ' + fastest.name + ', averaging ' + (fastest.avg/1000).toFixed(2) + ' seconds.');
     }]);
     const gongs = this.awards();
     if (gongs.length) steps.push([4200, () => {
@@ -6682,7 +6682,7 @@ const Bingo = {
     const speed = this.SPEEDS[cfg.speed] || this.SPEEDS.normal;
     const N = 90;
     Object.assign(this, { active: true, size, N, speedMs: speed.ms, called: [], stage: 0, tickets: {}, joined: new Set(),
-      wonAt: -1, wonStage: -1, winners: [], lockout: {}, paused: false, lastStage: this.SIZES[size].last, lastWin: null });
+      wonAt: -1, wonStage: -1, winners: [], lockout: {}, paused: false, lastStage: this.SIZES[size].last, lastWin: null, lastWins: null });
     this.left = Quiz.shuffle(Array.from({ length: N }, (_, i) => i + 1));
     Quiz.roundGains = {};          // forfeits after the round read this
     const here = () => Object.keys(Host.players).filter(id => Host.isPresent(Host.players[id]));
@@ -6735,8 +6735,11 @@ const Bingo = {
     return grid.filter(row => row.every(v => v == null || (called.has(v) && mk.has(v)))).length;
   },
   claim(peerId, msg) {
-    if (!this.active) return;
     const p = Host.players[peerId], tix = this.tickets[peerId];
+    if (!this.active) {   // never silent, even after the game has ended
+      Host.sendTo(peerId, { type: 'bingoResult', text: 'That claim came in after the game ended — results are on the screen.', bad: true });
+      return;
+    }
     if (!p) return;
     if (!tix) {   // never silent: hand them their tickets back
       Host.sendTo(peerId, { type: 'bingoResult', text: 'I didn’t have your tickets — sending them again. Re-mark and claim.', bad: true });
@@ -6744,6 +6747,11 @@ const Bingo = {
     }
     if (this.lockout[peerId] === this.called.length) {
       Host.sendTo(peerId, { type: 'bingoResult', text: 'Already checked on this number — claim again after the next call.', bad: true });
+      return;
+    }
+    // already shared this prize when the laptop checked everyone's tickets
+    if (this.winners.some(w => w.id === peerId && w.at === this.called.length)) {
+      Host.sendTo(peerId, { type: 'bingoResult', text: '✅ You’ve already got this one — the laptop spotted your ticket and you share the win.' });
       return;
     }
     const best = Math.max(...tix.map((g, i) => this.linesDone(g, (msg.marked || [])[i])));
@@ -6762,23 +6770,40 @@ const Bingo = {
       return;
     }
     const prize = this.STAGES[st];
-    p.score += prize.pts;
-    Quiz.roundGains[peerId] = (Quiz.roundGains[peerId] || 0) + prize.pts;
-    this.winners.push({ id: peerId, name: p.name, stage: st, prize: prize.name, at: this.called.length });
+    const wins = [this.award(peerId, st, msg.marked || [])];
+    // the caller's job: check EVERY ticket, so a joint winner on this number
+    // shares it even if their tap was slower (or they never tapped)
+    for (const id of Object.keys(this.tickets)) {
+      if (id === peerId || !Host.players[id]) continue;
+      if (this.winners.some(w => w.id === id && w.stage === st)) continue;
+      const t = this.tickets[id];
+      const lines = Math.max(...t.map(g => this.linesDone(g, this.called)));
+      if (lines >= prize.lines) wins.push(this.award(id, st, t.map(() => this.called)));
+    }
     if (st === this.stage) { this.wonAt = this.called.length; this.wonStage = st; this.stage++; }
-    this.holdUntil = Date.now() + 6000;
+    this.holdUntil = Date.now() + (wins.length > 1 ? 9000 : 6000);
     const next = this.stage <= this.lastStage ? this.STAGES[this.stage] : null;
-    // show everyone the winning ticket, winning rows picked out
-    const ti = tix.map((g, i) => this.linesDone(g, (msg.marked || [])[i])).reduce((b, v, i, a) => v > a[b] ? i : b, 0);
-    const calledSet = new Set(this.called), mk = new Set((msg.marked || [])[ti] || []);
-    const rows = tix[ti].map((row, r) => row.every(v => v == null || (calledSet.has(v) && mk.has(v))) ? r : -1).filter(r => r >= 0);
-    this.lastWin = { name: p.name, prize: prize.name, grid: tix[ti], rows, ti };
-    Host.broadcast({ type: 'bingoWin', name: p.name, prize: prize.name, grid: tix[ti], rows, ti, called: this.called });
-    const text = '🎉 ' + p.name + ' wins ' + prize.name + '! +' + prize.pts + (next ? ' · now playing for ' + next.name : '');
+    this.lastWin = wins[0]; this.lastWins = wins;
+    Host.broadcast({ type: 'bingoWin', wins, prize: prize.name, called: this.called, next: next ? next.name : '' });
+    const names = wins.map(w => w.name);
+    const who = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0];
+    const text = '🎉 ' + who + (wins.length > 1 ? ' share ' : ' wins ') + prize.name + '! +' + prize.pts + (wins.length > 1 ? ' each' : '') + (next ? ' · now playing for ' + next.name : '');
     Host.broadcast({ type: 'bingoResult', text, stage: next ? next.name : '', means: next ? next.means : '' });
-    Sound.say(p.name + ' wins ' + prize.name + '!' + (next ? ' Now playing for ' + next.name + '.' : ' That’s a full house!'));
+    Sound.say(who + (wins.length > 1 ? ' both win ' : ' wins ') + prize.name + '!' + (next ? ' Now playing for ' + next.name + '.' : ' That’s a full house!'));
     Host.renderScores(); Host.pushBoard(); Host.saveGame(); this.renderHost();
     if (!next) { this.left = []; }   // full house ends the game (after the pause)
+  },
+  // give one player the prize and work out which of their tickets / rows won
+  award(id, st, marked) {
+    const p = Host.players[id], tix = this.tickets[id], prize = this.STAGES[st];
+    p.score += prize.pts;
+    Quiz.roundGains = Quiz.roundGains || {};
+    Quiz.roundGains[id] = (Quiz.roundGains[id] || 0) + prize.pts;
+    this.winners.push({ id, name: p.name, stage: st, prize: prize.name, at: this.called.length });
+    const ti = tix.map((g, i) => this.linesDone(g, marked[i])).reduce((b, v, i, a) => v > a[b] ? i : b, 0);
+    const calledSet = new Set(this.called), mk = new Set(marked[ti] || []);
+    const rows = tix[ti].map((row, r) => row.every(v => v == null || (calledSet.has(v) && mk.has(v))) ? r : -1).filter(r => r >= 0);
+    return { name: p.name, prize: prize.name, grid: tix[ti], rows, ti };
   },
 
   // say exactly what the laptop saw, so a failed claim is never a mystery
@@ -6834,9 +6859,10 @@ const Bingo = {
       '<span style="display:inline-block;width:2.1em;text-align:center;margin:1px;border-radius:5px;padding:2px 0;font-size:.8rem;' +
       (called.has(n) ? 'background:#ffd23f;color:#1a0f35;font-weight:800' : 'background:rgba(255,255,255,.08);opacity:.6') + '">' + n + '</span>').join('');
     const st = this.stage <= this.lastStage ? this.STAGES[this.stage] : null;
-    const win = this.lastWin
-      ? '<div style="margin:8px 0;padding:8px;border-radius:10px;background:rgba(255,210,63,.12)"><div style="font-size:1.2rem;font-weight:800">🏆 ' + esc(this.lastWin.name) + ' — ' + esc(this.lastWin.prize) + '</div>' +
-        '<div style="max-width:620px">' + this.ticketHtml(this.lastWin.grid, { colour: this.COLOURS[this.lastWin.ti % 6], called, showCalled: true, rows: this.lastWin.rows, h: 54, fs: 1.5, title: 'WINNING TICKET' }) + '</div></div>'
+    const lw = this.lastWins || (this.lastWin ? [this.lastWin] : []);
+    const win = lw.length
+      ? '<div style="margin:8px 0;padding:8px;border-radius:10px;background:rgba(255,210,63,.12)"><div style="font-size:1.2rem;font-weight:800">🏆 ' + esc(lw.map(w => w.name).join(' & ')) + (lw.length > 1 ? ' share ' : ' — ') + esc(lw[0].prize) + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:10px">' + lw.map(w => '<div style="max-width:620px;flex:1 1 300px">' + this.ticketHtml(w.grid, { colour: this.COLOURS[w.ti % 6], called, showCalled: true, rows: w.rows, h: lw.length > 1 ? 40 : 54, fs: lw.length > 1 ? 1.1 : 1.5, title: esc(w.name) + ' — WINNING TICKET' }) + '</div>').join('') + '</div></div>'
       : '';
     el.innerHTML = '<div class="row" style="align-items:center;gap:14px">' +
         '<div style="font-size:3rem;font-weight:900;min-width:2ch;text-align:center">' + (last || '–') + '</div>' +
@@ -8379,12 +8405,20 @@ const Player = {
       case 'bingoCall': this.bingoCall(msg); break;
       case 'bingoResult': this.bingoNote(msg.text, msg.bad); if (msg.stage) { const s = $('bgStage'); if (s) s.textContent = 'Playing for: ' + msg.stage; const m = $('bgMeans'); if (m && msg.means) m.textContent = 'Looking for: ' + msg.means; } break;
       case 'bingoWin': {
-        const w = $('bgWin');
-        if (w) {
-          w.innerHTML = '<div style="background:rgba(255,210,63,.15);border-radius:10px;padding:6px;margin:4px 0"><div style="font-weight:800">🏆 ' + esc(msg.name) + ' — ' + esc(msg.prize) + '</div>' +
-            Bingo.ticketHtml(msg.grid, { colour: Bingo.COLOURS[msg.ti % 6], called: new Set(msg.called), showCalled: true, rows: msg.rows, h: 26, fs: .8, title: 'WINNING TICKET' }) + '</div>';
-          clearTimeout(this._bgWinT); this._bgWinT = setTimeout(() => { const x = $('bgWin'); if (x) x.innerHTML = ''; }, 9000);
-        }
+        // full-screen card on every phone: can't be scrolled past, stays till OK
+        const wins = msg.wins || [{ name: msg.name, prize: msg.prize, grid: msg.grid, rows: msg.rows, ti: msg.ti }];
+        const me = (this.name || '').toLowerCase();
+        const mine = wins.some(w => (w.name || '').toLowerCase() === me);
+        let ov = $('bgWinOv');
+        if (!ov) { ov = document.createElement('div'); ov.id = 'bgWinOv'; document.body.appendChild(ov); }
+        ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,8,30,.94);overflow-y:auto;padding:16px 10px 90px;text-align:center';
+        ov.innerHTML = '<div style="font-size:1.6rem;font-weight:900;margin:6px 0">' + (mine ? '🎉 YOU WIN!' : '🏆 BINGO!') + '</div>' +
+          '<div style="font-size:1.1rem;font-weight:800;margin-bottom:8px">' + esc(wins.map(w => w.name).join(' & ')) + (wins.length > 1 ? ' share ' : ' — ') + esc(msg.prize || wins[0].prize) + '</div>' +
+          wins.map(w => '<div style="margin:8px 0"><div style="font-weight:700;margin-bottom:4px">' + esc(w.name) + '’s winning ticket</div>' +
+            Bingo.ticketHtml(w.grid, { colour: Bingo.COLOURS[w.ti % 6], called: new Set(msg.called), showCalled: true, rows: w.rows, h: 34, fs: 1, title: 'WINNING TICKET' }) + '</div>').join('') +
+          (msg.next ? '<div class="muted" style="margin:8px 0">Next: playing for ' + esc(msg.next) + '</div>' : '') +
+          '<button class="btn" style="position:fixed;left:16px;right:16px;bottom:16px;font-size:1.2rem" onclick="document.getElementById(\'bgWinOv\').remove()">OK</button>';
+        this.vibe(mine ? [80, 60, 80] : 60);
         break;
       }
       case 'bingoEnd': this.bingoNote(msg.text); { const b = $('bgClaim'); if (b) b.disabled = true; } break;
@@ -9987,7 +10021,7 @@ const Player = {
       el.innerHTML = '<div class="fin-title">🏁 Final scores</div>' + msg.rows.map((r, i) =>
         '<div class="fin-line' + (isMe(r) ? ' me' : '') + '">' + (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.') +
         ' ' + esc(r.name) + ' <b>' + r.score + '</b>' + (r.avg != null ? ' <span class="fin-avg">' + secs(r.avg) + '</span>' : '') + '</div>').join('') +
-        (msg.fastest ? '<div class="fin-line">⚡ Fastest finger: ' + esc(msg.fastest.name) + ' (' + secs(msg.fastest.avg) + ')</div>' : '') +
+        (msg.fastest ? '<div class="fin-line">⚡ Quickest quiz answers (separate award): ' + esc(msg.fastest.name) + ' (' + secs(msg.fastest.avg) + ' avg)</div>' : '') +
         ((msg.awards || []).length
           ? '<div class="fin-title" style="font-size:1rem;margin-top:10px">🎖️ Awards</div>' +
             msg.awards.map(a => '<div class="fin-line' + (a.name.toLowerCase() === mine ? ' me' : '') + '">' +
@@ -10106,9 +10140,7 @@ const Player = {
         '</span>' +
         '</div>' + (note ? '<div class="lb-note">' + esc(note) + '</div>' : '');
     }).join('');
-    const ff = msg.fastest
-      ? '<div class="lb-fast">⚡ Fastest finger: ' + esc(msg.fastest.name) + ' · ' + secs(msg.fastest.avg) + '</div>'
-      : '';
+    const ff = '';   // fastest finger is an end-of-night award, not a round result
     el.innerHTML = '<h2 style="font-size:1rem">🏆 Leaderboard</h2>' + rows + ff;
     el.classList.remove('hidden');
   },
