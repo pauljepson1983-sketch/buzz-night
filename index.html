@@ -6684,12 +6684,11 @@ const Library = {
 
 const Seen = {
   KEY: 'buzz_seen',
-  // Paul plays with the same crowd regularly and is happy for favourites to
-  // come back between games — just not so often it feels samey. Thirty days
-  // lets a classic return after a few weeks while a big pool still serves
-  // fresh material first, and nothing repeats inside a single night.
-  FORGET_DAYS: 30,
-  MAX_PER_MODE: 600,   // keeps localStorage sane over a lot of nights
+  // Unseen first, then the longest-ago; nothing repeats inside a night.
+  // Paul's rule (Nov 2026): nothing asked again within a year. The banks
+  // are sized for it — about 300 per round type covers weekly nights.
+  FORGET_DAYS: 365,
+  MAX_PER_MODE: 2000,  // a year of a round type, with room to spare
 
   load() {
     try { this.data = JSON.parse(store.get(this.KEY) || '') || {}; } catch (e) { this.data = {}; }
