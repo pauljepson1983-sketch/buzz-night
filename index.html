@@ -663,6 +663,7 @@
   <div class="card" id="nightBar" style="border:2px solid var(--green, #3ddc84)">
     <h2 style="margin-bottom:6px">🎬 Tonight</h2>
     <p id="prefetchNote" class="muted hidden" style="font-size:.9rem;margin:0 0 6px"></p>
+    <p id="libNote" style="font-size:.85rem;margin:0 0 8px"></p>
     <label style="display:block;font-size:.9rem;margin-bottom:8px">Forfeits for whoever loses each round:
       <select id="forfeitLevel" onchange="Forfeit.setLevel(this.value)">
         <option value="off">Off</option>
@@ -1311,6 +1312,7 @@ const App = {
   },
 
   startHostFlow() {
+    setTimeout(() => Library.start(), 0);
     $('clientIdInput').value = store.get('spotify_client_id') || '';
     Spot.updateStatus();
     this.offerResume();
@@ -1701,6 +1703,7 @@ const Spot = {
     }
     const t = await this.ensureToken();
     if (!t) throw new Error(this.lastAuthError || 'Not connected to Spotify');
+    Library.countCall();
     const r = await fetch('https://api.spotify.com/v1' + path, {
       ...opts, headers: {'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json', ...(opts.headers || {})}
     });
@@ -1986,6 +1989,10 @@ const Spot = {
     } catch (e) {}
   },
   async searchRaw(q) {
+    // the buffer: decade searches come out of the song library, other
+    // searches (a TV show's theme, say) out of the long-lived exact store
+    const fromLib = Library.serve(q);
+    if (fromLib) return fromLib;
     const cached = this.cacheGet(q);
     if (cached) return { tracks: cached.tracks, playlists: cached.playlists || [] };
     /* Every page used to fail silently to null, so a refused search and a
@@ -2008,7 +2015,7 @@ const Spot = {
       });
     });
     // only a complete, non-empty answer is worth remembering
-    if (!failure && tracks.length) this.cachePut(q, { tracks, playlists });
+    if (!failure && tracks.length) { this.cachePut(q, { tracks, playlists }); Library.add(q, tracks); Library.addExact(q, tracks); }
     return { tracks, playlists };
   },
 
@@ -6500,6 +6507,181 @@ const Quiz = {
    joining their first night still meets the well-known stuff eventually
    instead of only ever getting the leftovers nobody has used.
    ====================================================================== */
+/* ======================================================================
+   THE MUSIC LIBRARY (the buffer)
+
+   Spotify's 2026 rules cut search to 10 results a call and put every
+   developer app on a small shared daily allowance, so building a round live
+   — dozens of searches in a burst — kept hitting "slow down" and could lock
+   the night out. It also meant the same three searches per decade returned
+   the same hundred songs every time, which is why songs kept repeating.
+
+   So songs are gathered ahead of time instead. While the host page is open
+   and nothing is playing, one small search goes out every ~20 seconds, each
+   a different decade, genre and page of results, and everything it finds is
+   kept on this laptop. Decade rounds then pick from the library and only
+   ask Spotify to PLAY the song. Searches the library can't answer (a TV
+   show's theme, say) still go live once, and are remembered for 60 days.
+   ====================================================================== */
+const Library = {
+  KEY: 'music_library', EXACT_KEY: 'music_exact', CALLS_KEY: 'spotify_calls',
+  MAX_TRACKS: 4500, MAX_EXACT: 500, EXACT_DAYS: 60,
+  FILL_DAILY_CAP: 300,      // the background filler's own share of the day
+  MIN_TO_SERVE: 40,         // fewer matching songs than this and we search live
+  DECADES: ['1960-1969', '1970-1979', '1980-1989', '1990-1999', '2000-2009', '2010-2019', '2020-2029'],
+  WORDS: ['', 'pop', 'rock', 'dance', 'indie', 'soul', 'hip hop', 'r&b', 'disco', 'country',
+          'original motion picture soundtrack', 'film soundtrack'],
+
+  data: null,
+  load() {
+    if (this.data) return this.data;
+    try { this.data = JSON.parse(store.get(this.KEY) || '') || null; } catch (e) { this.data = null; }
+    if (!this.data || typeof this.data !== 'object') this.data = { t: {}, fam: {} };
+    this.data.t = this.data.t || {}; this.data.fam = this.data.fam || {};
+    return this.data;
+  },
+  save() { try { store.set(this.KEY, JSON.stringify(this.data)); } catch (e) {} },
+
+  // "rock year:1990-1999" -> { words: 'rock', lo: 1990, hi: 1999 }
+  parse(q) {
+    const m = String(q).match(/year:(\d{4})-(\d{4})/);
+    if (!m) return null;
+    const words = String(q).replace(m[0], '').replace(/\s+/g, ' ').trim().toLowerCase();
+    return { words, lo: +m[1], hi: +m[2] };
+  },
+  // a few hundred bytes a song, rebuilt into Spotify's shape when served
+  slim(t) {
+    const al = t.album || {};
+    return { n: t.name, a: (t.artists || []).map(x => x.name), u: t.uri, d: t.duration_ms || 0, p: t.popularity || 0,
+             al: al.name || '', ty: al.album_type || '', r: al.release_date || '', i: (al.images && al.images[0] && al.images[0].url) || '' };
+  },
+  shape(id, s) {
+    return { id, name: s.n, uri: s.u, duration_ms: s.d, popularity: s.p, artists: (s.a || []).map(n => ({ name: n })),
+             album: { name: s.al, album_type: s.ty, release_date: s.r, images: s.i ? [{ url: s.i }] : [] } };
+  },
+  add(q, tracks) {
+    const pq = this.parse(q);
+    const d = this.load();
+    const tag = pq ? pq.words : null;
+    (tracks || []).forEach(t => {
+      if (!t || !t.id || !t.uri) return;
+      const cur = d.t[t.id] || (d.t[t.id] = { ...this.slim(t), g: [], at: Date.now() });
+      cur.p = t.popularity || cur.p;
+      if (tag != null && !cur.g.includes(tag)) cur.g.push(tag);
+    });
+    if (pq) { const fk = pq.words + '|' + pq.lo; d.fam[fk] = (d.fam[fk] || 0) + (tracks || []).length; }
+    // keep it a sensible size: the least popular go first
+    const ids = Object.keys(d.t);
+    if (ids.length > this.MAX_TRACKS) {
+      ids.sort((a, b) => (d.t[a].p || 0) - (d.t[b].p || 0)).slice(0, ids.length - this.MAX_TRACKS).forEach(id => delete d.t[id]);
+    }
+    this.save(); this.render();
+  },
+  // answer a decade search from the library, if it holds enough
+  serve(q) {
+    const pq = this.parse(q);
+    if (pq) {
+      const d = this.load();
+      const yr = s => +String(s.r || '').slice(0, 4);
+      let hits = Object.entries(d.t).filter(([, s]) => { const y = yr(s); return y >= pq.lo && y <= pq.hi; });
+      if (pq.words) hits = hits.filter(([, s]) => (s.g || []).includes(pq.words));
+      if (hits.length < this.MIN_TO_SERVE) return null;
+      // a random slice each time, weighted to the well known, so two nights
+      // with the same decade don't get the same pool
+      hits.sort((a, b) => (b[1].p + Math.random() * 40) - (a[1].p + Math.random() * 40));
+      return { tracks: hits.slice(0, 80).map(([id, s]) => this.shape(id, s)), playlists: [], fromLibrary: true };
+    }
+    // exact store: long-lived answers for one-off searches (TV themes etc.)
+    try {
+      const ex = JSON.parse(store.get(this.EXACT_KEY) || '{}')[q];
+      if (ex && Date.now() - ex.at < this.EXACT_DAYS * 864e5 && ex.tr && ex.tr.length)
+        return { tracks: ex.tr.map(([id, s]) => this.shape(id, s)), playlists: [], fromLibrary: true };
+    } catch (e) {}
+    return null;
+  },
+  addExact(q, tracks) {
+    if (this.parse(q)) return;
+    try {
+      const all = JSON.parse(store.get(this.EXACT_KEY) || '{}');
+      all[q] = { at: Date.now(), tr: (tracks || []).filter(t => t && t.id && t.uri).slice(0, 8).map(t => [t.id, this.slim(t)]) };
+      const keys = Object.keys(all).sort((a, b) => all[b].at - all[a].at);
+      keys.slice(this.MAX_EXACT).forEach(k => delete all[k]);
+      store.set(this.EXACT_KEY, JSON.stringify(all));
+    } catch (e) {}
+  },
+
+  // ---- Spotify calls today, so the host can see the allowance being used
+  today() { return new Date().toISOString().slice(0, 10); },
+  calls() { try { const c = JSON.parse(store.get(this.CALLS_KEY) || '{}'); return c.day === this.today() ? c : { day: this.today(), all: 0, fill: 0 }; } catch (e) { return { day: this.today(), all: 0, fill: 0 }; } },
+  countCall(fill) { const c = this.calls(); c.all++; if (fill || this._filling) c.fill++; store.set(this.CALLS_KEY, JSON.stringify(c)); },
+
+  // ---- the background filler
+  timer: null, fast: 0,
+  start() {
+    if (this.timer || !(Spot.token || store.get('spotify_refresh'))) { this.render(); return; }
+    const tick = async () => {
+      this.timer = setTimeout(tick, Date.now() < this.fast ? 6000 : 20000);
+      try { await this.step(); } catch (e) {}
+      this.render();
+    };
+    this.timer = setTimeout(tick, 4000);
+    this.render();
+  },
+  fillFaster() { this.fast = Date.now() + 10 * 60000; this.start(); this.render(); },
+  idle() { return !(typeof Quiz !== 'undefined' && Quiz.active) && !(typeof Night !== 'undefined' && Night._prefetchP); },
+  // the thinnest decade+genre first, at a random early page of results
+  nextQuery() {
+    const d = this.load(); let best = null;
+    this.DECADES.forEach(dec => this.WORDS.forEach(w => {
+      const n = d.fam[w + '|' + dec.slice(0, 4)] || 0;
+      const score = n + Math.random() * 15;
+      if (!best || score < best.score) best = { q: (w ? w + ' ' : '') + 'year:' + dec, score };
+    }));
+    return best.q;
+  },
+  async step() {
+    if (!this.idle() || Date.now() < (Spot.rateLimitedUntil || 0)) return;
+    if (this.calls().fill >= this.FILL_DAILY_CAP) return;
+    // half the time, quietly look up a TV theme nobody has looked up yet
+    if (Math.random() < 0.35 && window.TVSHOWS) {
+      const all = JSON.parse(store.get(this.EXACT_KEY) || '{}');
+      const todo = window.TVSHOWS.filter(s => !all[s + ' theme']);
+      if (todo.length) {
+        const q = todo[Math.floor(Math.random() * todo.length)] + ' theme';
+        this._filling = true;
+        try { const res = await Spot.api('/search?' + new URLSearchParams({ q, type: 'track', limit: 10 })); this.addExact(q, (res && res.tracks && res.tracks.items) || []); }
+        finally { this._filling = false; }
+        return;
+      }
+    }
+    const q = this.nextQuery();
+    const offset = 10 * Math.floor(Math.random() * 15);   // pages 1-15: well known, not obscure
+    this._filling = true;
+    try {
+      const res = await Spot.api('/search?' + new URLSearchParams({ q, type: 'track', limit: 10, offset }));
+      this.add(q, (res && res.tracks && res.tracks.items) || []);
+    } finally { this._filling = false; }
+  },
+  stats() {
+    const d = this.load(), by = {};
+    Object.values(d.t).forEach(s => { const y = +String(s.r).slice(0, 3); if (y) by[y + '0s'] = (by[y + '0s'] || 0) + 1; });
+    let themes = 0; try { themes = Object.keys(JSON.parse(store.get(this.EXACT_KEY) || '{}')).length; } catch (e) {}
+    return { total: Object.keys(d.t).length, by, themes };
+  },
+  render() {
+    const el = $('libNote'); if (!el) return;
+    const st = this.stats(), c = this.calls();
+    const decs = Object.entries(st.by).filter(([k]) => +k.slice(0, 4) >= 1960).sort().map(([k, v]) => k.slice(2) + ' ' + v).join(' · ');
+    const state = !(Spot.token || store.get('spotify_refresh')) ? 'connect Spotify to start filling'
+      : Date.now() < (Spot.rateLimitedUntil || 0) ? 'paused — Spotify asked us to wait'
+      : c.fill >= this.FILL_DAILY_CAP ? 'resting until tomorrow (daily share used)'
+      : Date.now() < this.fast ? 'filling fast' : 'filling quietly';
+    el.innerHTML = '🎵 <b>Music library: ' + st.total.toLocaleString() + ' songs</b>' + (decs ? ' <span class="muted">(' + decs + ')</span>' : '') +
+      ' · ' + st.themes + ' TV themes · <span class="muted">' + state + ' · Spotify calls today: ' + c.all + '</span>' +
+      ' <button class="btn ghost small" onclick="Library.fillFaster()">Fill faster for 10 min</button>';
+  }
+};
+
 const Seen = {
   KEY: 'buzz_seen',
   // Paul plays with the same crowd regularly and is happy for favourites to
@@ -7121,11 +7303,11 @@ const Night = {
           Quiz.mode = r.mode;
           try {
             const qs = await Quiz.buildChunk(r.decade, r.count, r.style, r.extra, r.decade ? r.decade.slice(0, 4) + 's' : '');
+            // the same song can't headline two rounds: key on the track itself
             const fresh = (qs || []).filter(q => q.uri).filter(q => {
-              const k = String(q.answer).toLowerCase() + '|' + String(q.title || '').toLowerCase();
-              if (seen.has(k)) return false; seen.add(k); return true;
+              if (seen.has(q.uri)) return false; seen.add(q.uri); return true;
             });
-            if (fresh.length >= 4) r._prebuilt = fresh;
+            if (fresh.length >= 4) { r._prebuilt = fresh; fresh.forEach(q => Seen.nightUsed.add(Seen.keyOf(q))); }
           } catch (e) { /* the round will simply build itself when it starts */ }
           finally { Quiz.mode = keep; }
         }
@@ -7391,6 +7573,8 @@ const Night = {
     // rest of the night
     Wake.audioOn(); Wake.on();
     Seen.newNight();   // a fresh evening: nothing counts as used-tonight yet
+    // ...except songs already set aside for tonight's prebuilt rounds
+    this.plan.forEach(r => (r._prebuilt || []).forEach(q => Seen.nightUsed.add(Seen.keyOf(q))));
     Forfeit.used = []; Forfeit.owed = {}; Forfeit.carry = null;
     $('nightGoBtn').disabled = true;
     Sound.say('Welcome to Buzz Night. Here we go.');
