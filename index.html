@@ -6770,15 +6770,16 @@ const Bingo = {
       return;
     }
     const prize = this.STAGES[st];
+    // the number the claimant actually completed on (their tap may land a call or two later)
+    const mine = this.doneAt(tix.filter((g, i) => this.linesDone(g, (msg.marked || [])[i]) >= prize.lines), prize.lines);
     const wins = [this.award(peerId, st, msg.marked || [])];
-    // the caller's job: check EVERY ticket, so a joint winner on this number
-    // shares it even if their tap was slower (or they never tapped)
+    // the caller's job: check EVERY ticket. Someone shares only if their ticket was
+    // complete by that same number — not one called while the claimant was tapping
     for (const id of Object.keys(this.tickets)) {
       if (id === peerId || !Host.players[id]) continue;
       if (this.winners.some(w => w.id === id && w.stage === st)) continue;
       const t = this.tickets[id];
-      const lines = Math.max(...t.map(g => this.linesDone(g, this.called)));
-      if (lines >= prize.lines) wins.push(this.award(id, st, t.map(() => this.called)));
+      if (this.doneAt(t, prize.lines) <= mine) wins.push(this.award(id, st, t.map(() => this.called.slice(0, mine))));
     }
     if (st === this.stage) { this.wonAt = this.called.length; this.wonStage = st; this.stage++; }
     this.holdUntil = Date.now() + (wins.length > 1 ? 9000 : 6000);
@@ -6792,6 +6793,17 @@ const Bingo = {
     Sound.say(who + (wins.length > 1 ? ' both win ' : ' wins ') + prize.name + '!' + (next ? ' Now playing for ' + next.name + '.' : ' That’s a full house!'));
     Host.renderScores(); Host.pushBoard(); Host.saveGame(); this.renderHost();
     if (!next) { this.left = []; }   // full house ends the game (after the pause)
+  },
+  // how many calls it took before any of these tickets had `need` lines (Infinity = not yet)
+  doneAt(tix, need) {
+    let best = Infinity;
+    for (const g of tix) {
+      for (let k = 1; k <= this.called.length && k < best; k++) {
+        const c = new Set(this.called.slice(0, k));
+        if (g.filter(row => row.every(v => v == null || c.has(v))).length >= need) { best = k; break; }
+      }
+    }
+    return best;
   },
   // give one player the prize and work out which of their tickets / rows won
   award(id, st, marked) {
