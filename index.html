@@ -2718,6 +2718,10 @@ const Host = {
       // a phone joining (or rejoining) after forfeits were switched on is asked too
       if (Forfeit.on) { me.cheeky = carry ? (carry.cheeky ?? null) : null; if (me.cheeky == null) conn.send(Forfeit.askMsg()); }
       Forfeit.note();
+      if (Bingo.active) {
+        if (Bingo.tickets && Bingo.tickets[conn.peer]) Bingo.resend(conn.peer);
+        else conn.send({ type: 'bingoSetup', size: Bingo.size, label: Bingo.SIZES[Bingo.size].label, rules: Bingo.RULES });
+      }
       // joined (or came back) while the night is waiting for everyone to tap
       // Ready: without this their phone never gets the button and the round
       // sits there looking frozen
@@ -2884,6 +2888,9 @@ const Host = {
     move(Quiz.answers);
     move(Quiz.gains);
     move(Quiz.roundGains);
+    move(Bingo.tickets); move(Bingo.lockout);
+    if (Bingo.joined && Bingo.joined.has(oldId)) { Bingo.joined.delete(oldId); Bingo.joined.add(newId); }
+    (Bingo.winners || []).forEach(w => { if (w.id === oldId) w.id = newId; });
     if (Quiz.firstCorrect === oldId) Quiz.firstCorrect = newId;
     // the buzz queue holds peer ids, so a refresh mid-round would otherwise
     // leave a ghost in the running order
@@ -6447,7 +6454,7 @@ const Quiz = {
     songs: 'Song', tv: 'Theme', guess: 'Question', years: 'Song', faces: 'Face', quickfire: 'Question', logos: 'Logo', places: 'Place', buzzname: 'Song', duel: 'Question'
   },
   HOWTO: {
-    bingo: 'Tap your numbers as they’re called. One line, two lines, full house — hit BINGO! to claim. A wrong claim costs 10 points.',
+    bingo: 'Dab your numbers as they’re called. Win One line (any full row), then Two lines (2 rows on one ticket), then Full house (the whole ticket). Hit BINGO! to claim — a wrong claim costs 10.',
     covers: 'A cover flashes up, then four albums. Pick the right one.',
     backdrops: 'A scene from the film flashes up, then four titles.',
     themes: 'Listen to the theme, then pick the film.',
@@ -6545,9 +6552,12 @@ const Quiz = {
    Two good claims on the same call both win.
    ====================================================================== */
 const Bingo = {
+  // Every size uses a proper English ticket: 9 columns, 3 rows, 5 numbers a
+  // row. Smaller sizes just spread a smaller number pool across the nine
+  // columns, so the game is shorter but the ticket looks the same.
   SIZES: {
-    25:  { label: 'Quick (1–23)',  N: 23, perRow: 3 },
-    50:  { label: 'Half (1–45)',   N: 45, perRow: 4 },
+    25:  { label: 'Quick (1–23)',  N: 23, perRow: 5 },
+    50:  { label: 'Half (1–45)',   N: 45, perRow: 5 },
     100: { label: 'Full (1–90)',   N: 90, perRow: 5 }
   },
   SPEEDS: {
@@ -6555,7 +6565,19 @@ const Bingo = {
     normal: { label: 'Normal calling', ms: 5500 },
     fast:   { label: 'Fast calling',   ms: 3500 }
   },
-  STAGES: [{ name: 'One line', lines: 1, pts: 25 }, { name: 'Two lines', lines: 2, pts: 50 }, { name: 'Full house', lines: 3, pts: 100 }],
+  STAGES: [
+    { name: 'One line',   lines: 1, pts: 25,  means: 'all 5 numbers in any one row' },
+    { name: 'Two lines',  lines: 2, pts: 50,  means: 'any 2 rows complete on the SAME ticket' },
+    { name: 'Full house', lines: 3, pts: 100, means: 'all 15 numbers on one ticket' }
+  ],
+  RULES: [
+    'Numbers are called out loud and shown at the top of your phone.',
+    'If it’s on your ticket, tap it to dab it. Tap again to undo.',
+    'Prizes go in order: ① One line — all 5 numbers in any one row (25 pts). ② Two lines — any 2 rows on the SAME ticket (50 pts). ③ Full house — all 15 numbers on one ticket (100 pts).',
+    'Got it? Press BINGO! straight away — first to claim wins. Two good claims on the same number both win.',
+    'The game checks your ticket. A wrong claim costs 10 points, so check before you shout.'
+  ],
+  rulesHtml() { return '<ol style="text-align:left;margin:6px 0 0 18px;padding:0;font-size:.85rem;line-height:1.4">' + this.RULES.map(r => '<li>' + esc(r) + '</li>').join('') + '</ol>'; },
   FALSE_PENALTY: 10,
   CALLS: ['', 'Kelly’s eye', 'One little duck', 'Cup of tea', 'Knock at the door', 'Man alive', 'Half a dozen', 'Lucky seven',
     'Garden gate', 'Doctor’s orders', 'Cock and hen', 'Legs eleven', 'One dozen', 'Unlucky for some', 'Valentine’s Day',
@@ -6576,17 +6598,23 @@ const Bingo = {
   // column ranges like a real ticket: 1-9, 10-19 ... with the top number
   // folded into the last column (80-90 on a full card)
   columns(N) {
-    const cols = [[1, Math.min(9, N)]];
-    for (let lo = 10; lo <= N; lo += 10) cols.push([lo, Math.min(lo + 9, N)]);
-    const last = cols[cols.length - 1];
-    if (cols.length > 1 && last[0] === last[1] && last[0] === N) { cols.pop(); cols[cols.length - 1][1] = N; }
+    if (N === 90) {   // the real thing: 1-9, 10-19 ... 80-90
+      const cols = [[1, 9]];
+      for (let lo = 10; lo < 80; lo += 10) cols.push([lo, lo + 9]);
+      cols.push([80, 90]);
+      return cols;
+    }
+    // smaller pools: nine runs of consecutive numbers, as even as they go
+    const cols = [];
+    for (let c = 0; c < 9; c++) cols.push([Math.round(c * N / 9) + 1, Math.round((c + 1) * N / 9)]);
     return cols;
   },
   ticket(size) {
     const { N, perRow } = this.SIZES[size];
     const cols = this.columns(N), nc = cols.length;
-    for (let tries = 0; tries < 50; tries++) {
-      // which columns each of the three rows uses
+    for (let tries = 0; tries < 400; tries++) {
+      // which columns each of the three rows uses (a thin column can't be
+      // used by more rows than it has numbers — the retry sorts that out)
       const rows = [0, 1, 2].map(() => Quiz.shuffle([...Array(nc).keys()]).slice(0, perRow));
       const need = cols.map((_, c) => rows.filter(r => r.includes(c)).length);
       if (need.some((k, c) => k > cols[c][1] - cols[c][0] + 1)) continue;
@@ -6610,7 +6638,7 @@ const Bingo = {
     this.left = Quiz.shuffle(Array.from({ length: N }, (_, i) => i + 1));
     Quiz.roundGains = {};          // forfeits after the round read this
     const here = () => Object.keys(Host.players).filter(id => Host.isPresent(Host.players[id]));
-    Host.broadcast({ type: 'bingoSetup', size, label: this.SIZES[size].label });
+    Host.broadcast({ type: 'bingoSetup', size, label: this.SIZES[size].label, rules: this.RULES });
     $('nightStatus').textContent = '🎱 Bingo — ' + this.SIZES[size].label + '. Phones are picking tickets, then numbers get called.';
     this.renderHost('Waiting for everyone to pick their tickets…');
     Sound.say('Eyes down for bingo. Pick your tickets.');
@@ -6629,7 +6657,7 @@ const Bingo = {
       const n = this.left.pop();
       this.called.push(n);
       const call = this.CALLS[n] || '';
-      Host.broadcast({ type: 'bingoCall', n, call, count: this.called.length, stage: this.STAGES[this.stage].name });
+      Host.broadcast({ type: 'bingoCall', n, call, count: this.called.length, stage: this.STAGES[this.stage].name, means: this.STAGES[this.stage].means });
       $('nightStatus').textContent = '🎱 Bingo in play — ' + this.called.length + ' of ' + this.N + ' called, playing for ' + this.STAGES[this.stage].name + '.';
       this.renderHost();
       Sound.say((call ? call + '. ' : '') + this.say(n));
@@ -6642,7 +6670,8 @@ const Bingo = {
   say(n) { return n < 10 ? 'Number ' + n + ' on its own.' : String(n).split('').join(' and ') + ', ' + n + '.'; },
 
   join(peerId, count) {
-    if (!this.active || this.joined.has(peerId)) return;
+    if (!this.active) return;
+    if (this.joined.has(peerId)) return this.resend(peerId);
     const c = Math.max(1, Math.min(3, parseInt(count, 10) || 1));
     const tix = [];
     for (let i = 0; i < c; i++) tix.push(this.ticket(this.size));
@@ -6660,8 +6689,15 @@ const Bingo = {
   claim(peerId, msg) {
     if (!this.active) return;
     const p = Host.players[peerId], tix = this.tickets[peerId];
-    if (!p || !tix) return;
-    if (this.lockout[peerId] === this.called.length) return;   // one claim per call
+    if (!p) return;
+    if (!tix) {   // never silent: hand them their tickets back
+      Host.sendTo(peerId, { type: 'bingoResult', text: 'I didn’t have your tickets — sending them again. Re-mark and claim.', bad: true });
+      return this.resend(peerId);
+    }
+    if (this.lockout[peerId] === this.called.length) {
+      Host.sendTo(peerId, { type: 'bingoResult', text: 'Already checked on this number — claim again after the next call.', bad: true });
+      return;
+    }
     const best = Math.max(...tix.map((g, i) => this.linesDone(g, (msg.marked || [])[i])));
     // a good claim for the stage just won on this same call also wins (a tie)
     const tieStage = (this.wonAt === this.called.length && this.wonStage >= 0) ? this.wonStage : -1;
@@ -6672,7 +6708,7 @@ const Bingo = {
       this.lockout[peerId] = this.called.length;
       p.score -= this.FALSE_PENALTY;
       Quiz.roundGains[peerId] = (Quiz.roundGains[peerId] || 0) - this.FALSE_PENALTY;
-      Host.sendTo(peerId, { type: 'bingoResult', text: '❌ Not yet! That claim cost you ' + this.FALSE_PENALTY + ' points.', bad: true });
+      Host.sendTo(peerId, { type: 'bingoResult', text: '❌ Not yet — ' + this.why(tix, msg.marked || []) + ' (−' + this.FALSE_PENALTY + ')', bad: true });
       Sound.say(p.name + ', not yet. That is ' + this.FALSE_PENALTY + ' points off.');
       Host.renderScores(); Host.pushBoard(); this.renderHost();
       return;
@@ -6685,12 +6721,39 @@ const Bingo = {
     this.holdUntil = Date.now() + 5000;
     const next = this.STAGES[this.stage];
     const text = '🎉 ' + p.name + ' wins ' + prize.name + '! +' + prize.pts + (next ? ' · now playing for ' + next.name : '');
-    Host.broadcast({ type: 'bingoResult', text, stage: next ? next.name : '' });
+    Host.broadcast({ type: 'bingoResult', text, stage: next ? next.name : '', means: next ? next.means : '' });
     Sound.say(p.name + ' wins ' + prize.name + '!' + (next ? ' Now playing for ' + next.name + '.' : ' That’s a full house!'));
     Host.renderScores(); Host.pushBoard(); Host.saveGame(); this.renderHost();
     if (!next) { this.left = []; }   // full house ends the game (after the pause)
   },
 
+  // say exactly what the laptop saw, so a failed claim is never a mystery
+  why(tix, marked) {
+    const need = this.STAGES[this.stage] ? this.STAGES[this.stage].lines : 3;
+    const called = new Set(this.called);
+    const per = tix.map((g, i) => this.linesDone(g, marked[i]));
+    const total = per.reduce((a, b) => a + b, 0);
+    const notCalled = [...new Set([].concat(...marked.map(m => m || [])))].filter(n => !called.has(n)).sort((a, b) => a - b);
+    let missing = null;
+    tix.forEach((g, i) => g.forEach(row => {
+      const nums = row.filter(v => v != null);
+      const gaps = nums.filter(v => !called.has(v));
+      const unmarked = nums.filter(v => called.has(v) && !(marked[i] || []).includes(v));
+      if (!missing && gaps.length === 0 && unmarked.length) missing = unmarked;
+    }));
+    if (notCalled.length) return 'you’ve marked ' + notCalled.join(', ') + ', which ' + (notCalled.length === 1 ? 'hasn’t' : 'haven’t') + ' been called yet.';
+    if (missing) return 'you’ve got the numbers but haven’t marked ' + missing.join(', ') + '.';
+    if (need === 2 && total >= 2 && Math.max(...per) < 2) return 'you’ve got lines on different tickets, but two lines must be on the SAME ticket.';
+    if (need === 3 && Math.max(...per) < 3) return 'a full house is all 15 numbers on ONE ticket.';
+    const best = Math.max(...per);
+    return 'playing for ' + (this.STAGES[this.stage] ? this.STAGES[this.stage].name : 'full house') + ' and your best ticket has ' + best + ' line' + (best === 1 ? '' : 's') + '.';
+  },
+  // a phone that dropped and came back gets its own tickets again
+  resend(peerId) {
+    const tix = this.tickets[peerId];
+    if (!tix) return;
+    Host.sendTo(peerId, { type: 'bingoTickets', tickets: tix, size: this.size, stage: this.STAGES[this.stage] ? this.STAGES[this.stage].name : 'Full house', called: this.called });
+  },
   pause() { this.paused = !this.paused; this.renderHost(); },
   setSpeed(v) { if (this.SPEEDS[v]) this.speedMs = this.SPEEDS[v].ms; },
   stop() { this.active = false; },
@@ -6720,7 +6783,7 @@ const Bingo = {
     el.innerHTML = '<div class="row" style="align-items:center;gap:14px">' +
         '<div style="font-size:3rem;font-weight:900;min-width:2ch;text-align:center">' + (last || '–') + '</div>' +
         '<div class="grow"><div style="font-size:1.1rem">' + esc(last ? this.CALLS[last] || '' : (note || '')) + '</div>' +
-          '<div class="muted" style="font-size:.85rem">' + (st ? 'Playing for: <b>' + st.name + '</b>' : 'All prizes won') + ' · ' + this.called.length + ' of ' + (this.N || 90) + ' called' +
+          '<div class="muted" style="font-size:.85rem">' + (st ? 'Playing for: <b>' + st.name + '</b> (' + st.means + ')' : 'All prizes won') + ' · ' + this.called.length + ' of ' + (this.N || 90) + ' called' +
           ' · tickets in: ' + this.joined.size + (this.paused ? ' · <b>PAUSED</b>' : '') + '</div></div>' +
         '<button class="btn small" onclick="Bingo.pause()">' + (this.paused ? '▶ Resume' : '⏸ Pause') + '</button>' +
       '</div>' +
@@ -8256,7 +8319,7 @@ const Player = {
       case 'bingoSetup': this.bingoSetup(msg); break;
       case 'bingoTickets': this.bingoTickets(msg); break;
       case 'bingoCall': this.bingoCall(msg); break;
-      case 'bingoResult': this.bingoNote(msg.text, msg.bad); if (msg.stage) { const s = $('bgStage'); if (s) s.textContent = 'Playing for: ' + msg.stage; } break;
+      case 'bingoResult': this.bingoNote(msg.text, msg.bad); if (msg.stage) { const s = $('bgStage'); if (s) s.textContent = 'Playing for: ' + msg.stage; const m = $('bgMeans'); if (m && msg.means) m.textContent = 'Looking for: ' + msg.means; } break;
       case 'bingoEnd': this.bingoNote(msg.text); { const b = $('bgClaim'); if (b) b.disabled = true; } break;
       case 'forfeitRate': {
         const el = $('forfeitBox');
@@ -10249,6 +10312,7 @@ const Player = {
     el.innerHTML = '<div class="card" style="text-align:center"><div class="rc-kicker">🎱 Bingo — ' + esc(msg.label) + '</div>' +
       '<div class="rc-name" style="font-size:1.2rem;margin:6px 0">How many tickets?</div>' +
       '<div class="muted" style="font-size:.85rem">More tickets, more chances — but more to keep an eye on.</div>' +
+      '<div style="background:rgba(255,255,255,.07);border-radius:10px;padding:8px 10px;margin-top:10px;text-align:left"><b>How to win</b>' + Bingo.rulesHtml() + '</div>' +
       '<div class="row mt" style="justify-content:center;gap:8px">' +
       [1, 2, 3].map(n => '<button class="btn big" style="min-width:64px" onclick="Player.bingoJoin(' + n + ')">' + n + '</button>').join('') +
       '</div></div>';
@@ -10259,33 +10323,51 @@ const Player = {
     try { this.conn.send({ type: 'bingoJoin', count: n }); } catch (e) {}
     $('bingoBox').innerHTML = '<div class="card" style="text-align:center"><div class="rc-name">Getting your tickets…</div></div>';
   },
+  /* An English bingo ticket: a coloured frame, nine columns by three rows,
+     white boxes for numbers, coloured boxes for the blanks, a serial number,
+     and a round "dab" over each number you mark, like a dabber pen. */
+  BG_COLOURS: ['#e11d74', '#1e88e5', '#16a86a'],
   bingoTickets(msg) {
     this.bgTickets = msg.tickets;
     this.bgMarked = msg.tickets.map(() => new Set());
     const el = $('bingoBox');
-    const tix = msg.tickets.map((g, ti) => '<div style="background:#fff;border-radius:10px;padding:4px;margin:8px 0">' +
-      g.map(row => '<div style="display:flex">' + row.map(v => v == null
-        ? '<div style="flex:1;height:42px;margin:1px;background:#e7e0f5;border-radius:4px"></div>'
-        : '<button data-t="' + ti + '" data-n="' + v + '" onclick="Player.bingoTap(this)" style="flex:1;height:42px;margin:1px;border:none;border-radius:4px;background:#fff7d6;color:#1a0f35;font-weight:800;font-size:1.1rem;padding:0">' + v + '</button>'
-      ).join('') + '</div>').join('') + '</div>').join('');
+    const tix = msg.tickets.map((g, ti) => {
+      const col = this.BG_COLOURS[ti % 3];
+      const serial = String(100000 + Math.floor(Math.random() * 899999));
+      return '<div style="background:' + col + ';border-radius:6px;padding:3px 3px 4px;margin:8px 0;box-shadow:0 3px 8px #0006">' +
+        '<div style="display:flex;justify-content:space-between;color:#fff;font-size:.68rem;font-weight:800;letter-spacing:.06em;padding:1px 4px 3px">' +
+          '<span>BUZZ NIGHT BINGO</span><span>TICKET ' + (ti + 1) + ' · No. ' + serial + '</span></div>' +
+        '<div style="background:#fff;border:1px solid ' + col + '">' +
+        g.map(row => '<div style="display:flex">' + row.map(v => v == null
+          ? '<div style="flex:1;height:40px;background:' + col + '22;border:1px solid ' + col + '55"></div>'
+          : '<button data-t="' + ti + '" data-n="' + v + '" data-c="' + col + '" onclick="Player.bingoTap(this)" style="flex:1;height:40px;border:1px solid ' + col + '55;border-radius:0;background:#fff;color:#111;font-weight:800;font-size:1.05rem;padding:0;font-family:Georgia,serif">' + v + '</button>'
+        ).join('') + '</div>').join('') + '</div></div>';
+    }).join('');
     el.innerHTML = '<div class="card" style="text-align:center;padding:10px">' +
       '<div class="row" style="align-items:center;justify-content:center;gap:12px"><div id="bgNum" style="font-size:2.6rem;font-weight:900">–</div>' +
       '<div style="text-align:left"><div id="bgCall" style="font-size:1rem"></div><div id="bgStage" class="muted" style="font-size:.85rem">Playing for: ' + esc(msg.stage) + '</div></div></div>' +
+      '<div id="bgMeans" style="font-size:.9rem;font-weight:700;color:#ffd23f;margin-top:2px">Looking for: ' + esc((Bingo.STAGES.find(x => x.name === msg.stage) || Bingo.STAGES[0]).means) + '</div>' +
       '<div id="bgNote" style="min-height:1.4em;font-size:.95rem;margin:4px 0"></div>' + tix +
       '<div style="position:sticky;bottom:8px;z-index:5;padding-top:6px"><button id="bgClaim" class="btn big pink" style="width:100%;font-size:1.6rem;box-shadow:0 6px 18px #000a" onclick="Player.bingoClaim()">BINGO!</button></div>' +
-      '<div class="muted" style="font-size:.8rem;margin-top:4px">Tap a number to mark it. Claim when you have the prize — a wrong claim is −10.</div></div>';
+      '<details style="margin-top:8px;text-align:left"><summary style="font-weight:700">📖 How to win</summary>' + Bingo.rulesHtml() + '</details></div>';
     el.classList.remove('hidden');
   },
   bingoTap(b) {
-    const t = +b.dataset.t, n = +b.dataset.n, set = this.bgMarked[t];
-    if (set.has(n)) { set.delete(n); b.style.background = '#fff7d6'; b.style.color = '#1a0f35'; }
-    else { set.add(n); b.style.background = '#e11d74'; b.style.color = '#fff'; this.vibe(15); }
+    const t = +b.dataset.t, n = +b.dataset.n, set = this.bgMarked[t], c = b.dataset.c || '#e11d74';
+    if (set.has(n)) { set.delete(n); b.style.background = '#fff'; b.style.color = '#111'; }
+    else {
+      set.add(n);
+      // the dab: a translucent ink circle over the number
+      b.style.background = 'radial-gradient(circle at 50% 50%, ' + c + 'cc 0 42%, #fff 44%)';
+      b.style.color = '#fff'; this.vibe(15);
+    }
   },
   bingoCall(msg) {
     const a = $('bgNum'), c = $('bgCall');
     if (a) a.textContent = msg.n;
     if (c) c.textContent = msg.call || '';
     const s = $('bgStage'); if (s && msg.stage) s.textContent = 'Playing for: ' + msg.stage + ' · ' + msg.count + ' called';
+    const m = $('bgMeans'); if (m && msg.means) m.textContent = 'Looking for: ' + msg.means;
     this.vibe(20);
   },
   bingoClaim() {
