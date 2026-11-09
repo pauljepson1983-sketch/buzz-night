@@ -14,7 +14,7 @@
      100KB, so re-fetching it costs nothing next to spending an evening
      wondering why an edit has not appeared. -->
 <script>document.write('<script src="questions.js?v=' + Math.floor(Date.now() / 60000) + '"><\/script>');</script>
-<script>['chasers.js', 'chase-questions.js', 'chase.js', 'mrmrs.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
+<script>['itunes.js', 'chasers.js', 'chase-questions.js', 'chase.js', 'mrmrs.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
 <style>
   :root {
     --bg: #14082b;
@@ -1568,7 +1568,7 @@ const App = {
 
     // 3. Spotify, which is the thing most likely to have logged itself out
     const connected = !!(Spot.token || store.get('spotify_refresh'));
-    if (!connected) add('bad', 'Spotify is not connected — every music round will fail');
+    if (!connected) { add('warn', 'Spotify is not connected — music rounds will use iTunes 30-second previews'); add('ok', 'Spotify search is answering (via iTunes)'); }
     else {
       try {
         const me = await Spot.api('/me');
@@ -1576,7 +1576,8 @@ const App = {
         else add('ok', 'Spotify connected as ' + (me.display_name || me.id) + ' (Premium)');
         try {
           const s = await Spot.api('/search?type=track&limit=1&q=' + encodeURIComponent('year:1990-1999 pop'));
-          if (s && s.tracks && s.tracks.items && s.tracks.items.length) add('ok', 'Spotify search is answering');
+          if (Spot.useTunes() && s && s.tracks && s.tracks.items && s.tracks.items.length) add('ok', 'Spotify allowance used up — music rounds will use iTunes 30-second previews (search answering)');
+          else if (s && s.tracks && s.tracks.items && s.tracks.items.length) add('ok', 'Spotify search is answering');
           else add('warn', 'Spotify search came back empty');
         } catch (e) {
           add(e.rateLimited ? 'warn' : 'bad', 'Spotify search: ' + e.message);
@@ -1597,10 +1598,10 @@ const App = {
        had started. The one search above already proves Spotify answers; the
        music rounds are reported off that and not built here. */
     const SPOTIFY_MODES = ['covers', 'themes', 'songs', 'years', 'tv'];
-    const searchOk = lines.some(l => l.indexOf('Spotify search is answering') >= 0);
+    const searchOk = lines.some(l => l.indexOf('Spotify search is answering') >= 0 || l.indexOf('iTunes 30-second previews') >= 0);
     for (const m of modes) {
       if (SPOTIFY_MODES.includes(m)) {
-        add(searchOk ? 'ok' : 'warn', (Quiz.TITLES[m] || m) + (searchOk ? ' — Spotify ready' : ' — needs Spotify searching (see above)'));
+        add(searchOk ? 'ok' : 'warn', (Quiz.TITLES[m] || m) + (searchOk ? (Spot.useTunes() ? ' — iTunes previews ready' : ' — Spotify ready') : ' — needs Spotify searching (see above)'));
         continue;
       }
       const keep = Quiz.mode;
@@ -1786,8 +1787,23 @@ const Spot = {
   },
 
   QUOTA_PAUSE: 30 * 60000,
+  /* True when the music should come from iTunes previews instead: Spotify's
+     account quota is spent, or Spotify was never connected. */
+  useTunes() {
+    if (typeof Tunes === 'undefined') return false;
+    const q = +store.get('spotify_quota_until') || 0;
+    if (q > Date.now()) { this.quotaHit = true; this.rateLimitedUntil = Math.max(this.rateLimitedUntil || 0, q); return true; }
+    return !(this.token || store.get('spotify_refresh'));
+  },
+  async tunesSearch(path) {
+    const p = new URLSearchParams(path.split('?')[1] || '');
+    const items = await Tunes.search(p.get('q'), +p.get('offset') || 0, +p.get('limit') || 10);
+    return { tracks: { items }, playlists: { items: [] } };
+  },
   async api(path, opts = {}) {
     if (!this.rateLimitedUntil) { const q = +store.get('spotify_quota_until') || 0; if (q > Date.now()) { this.rateLimitedUntil = q; this.quotaHit = true; } }
+    const isSearch = path.indexOf('/search?') === 0;
+    if (isSearch && this.useTunes()) return this.tunesSearch(path);
     /* Spotify hands out 429s when it has had enough, with a Retry-After
        saying how long to wait. Carrying on regardless is what turns a brief
        slow-down into a dead evening: every music round fires a dozen
@@ -1818,6 +1834,7 @@ const Spot = {
         this.rateLimitedUntil = Date.now() + this.QUOTA_PAUSE;
         this.quotaHit = true;
         store.set('spotify_quota_until', String(this.rateLimitedUntil));
+        if (isSearch && typeof Tunes !== 'undefined') return this.tunesSearch(path);
         const e = new Error('Spotify\'s allowance for your developer account is used up — music rounds paused for about ' + Math.round(this.QUOTA_PAUSE / 60000) + ' minutes.');
         e.rateLimited = true; e.quota = true;
         throw e;
@@ -1837,7 +1854,9 @@ const Spot = {
       throw new Error('Spotify API ' + r.status + (detail ? ': ' + detail : ''));
     }
     const txt = await r.text();
-    return txt ? JSON.parse(txt) : null;
+    const out = txt ? JSON.parse(txt) : null;
+    if (isSearch && out && out.tracks && typeof Tunes !== 'undefined') Tunes.note(out.tracks.items);
+    return out;
   },
 
   async updateStatus() {
@@ -1942,20 +1961,32 @@ const Spot = {
   },
 
   async playUri(uri, positionMs = 0) {
-    // Logging into Spotify AFTER opening the room used to leave the player
-    // unstarted forever, because it was only ever kicked off by creating the
-    // room. Anything that wants to play now starts it if it has to.
-    if (!this.deviceId) await this.initPlayer();
-    await this.unhush();
-    await this.api('/me/player/play?device_id=' + this.deviceId, {
-      method: 'PUT', body: JSON.stringify({ uris: [uri], position_ms: positionMs })
-    });
+    // iTunes clips, or any song once Spotify's quota is spent, play as a
+    // 30-second preview in this page instead
+    if (typeof Tunes !== 'undefined' && (String(uri).indexOf('itunes:') === 0 || this.useTunes())) {
+      try { if (this.player && !this.isPaused) this.player.pause(); } catch (e) {}
+      return Tunes.play(uri, positionMs);
+    }
+    try {
+      // Logging into Spotify AFTER opening the room used to leave the player
+      // unstarted forever, because it was only ever kicked off by creating the
+      // room. Anything that wants to play now starts it if it has to.
+      if (!this.deviceId) await this.initPlayer();
+      await this.unhush();
+      await this.api('/me/player/play?device_id=' + this.deviceId, {
+        method: 'PUT', body: JSON.stringify({ uris: [uri], position_ms: positionMs })
+      });
+      if (typeof Tunes !== 'undefined') { Tunes.pause(); Tunes.active = false; }
+    } catch (e) {
+      if (typeof Tunes !== 'undefined' && (e.quota || this.useTunes())) return Tunes.play(uri, positionMs);
+      throw e;
+    }
   },
 
   /* Anything that starts sound has to undo the hush. A buzz round leaves the
      volume at zero on purpose, and without this the host presses play
      afterwards, hears nothing, and reasonably concludes Spotify is broken. */
-  async togglePlay() { await this.unhush(); if (this.player) this.player.togglePlay(); },
+  async togglePlay() { if (typeof Tunes !== 'undefined' && Tunes.active) { Tunes.toggle(); return; } await this.unhush(); if (this.player) this.player.togglePlay(); },
   async nextTrack() { await this.unhush(); if (this.player) this.player.nextTrack(); },
 
   // Development-mode apps can't read playlist contents (403 on
@@ -1995,7 +2026,7 @@ const Spot = {
       row.appendChild(b);
     });
   },
-  async pause() { if (this.player && !this.isPaused) this.player.pause(); },
+  async pause() { if (typeof Tunes !== 'undefined') Tunes.pause(); if (this.player && !this.isPaused) this.player.pause(); },
 
   /* Stopping the music the instant somebody buzzes.
 
@@ -2011,19 +2042,22 @@ const Spot = {
      starts. Anything that opens a microphone can then do so almost at once
      instead of transcribing the record. */
   async hush() {
+    if (typeof Tunes !== 'undefined') Tunes.hush();
     try { if (this.player) await this.player.setVolume(0); } catch (e) {}
     this.hushed = true;
     if (this.player) Promise.resolve(this.player.pause()).catch(() => {});
-    this.api('/me/player/pause?device_id=' + this.deviceId, { method: 'PUT' }).catch(() => {});
+    if (this.deviceId && !this.useTunes()) this.api('/me/player/pause?device_id=' + this.deviceId, { method: 'PUT' }).catch(() => {});
   },
 
   // put the sound back, or the next song plays to a silent room
   async unhush() {
+    if (typeof Tunes !== 'undefined') Tunes.unhush();
     if (!this.hushed) return;
     this.hushed = false;
     try { if (this.player) await this.player.setVolume(1); } catch (e) {}
   },
   async seekMs(ms, alsoPlay) {
+    if (typeof Tunes !== 'undefined' && Tunes.active) { Tunes.seek(ms, alsoPlay); return; }
     if (!this.player) return;
     await this.player.seek(ms);
     if (alsoPlay && this.isPaused) { await this.unhush(); this.player.resume(); }
@@ -7137,7 +7171,7 @@ const Library = {
     return best.q;
   },
   async step() {
-    if (!this.idle() || Date.now() < (Spot.rateLimitedUntil || 0)) return;
+    if (!this.idle() || Date.now() < (Spot.rateLimitedUntil || 0) || Spot.useTunes()) return;
     if (this.calls().fill >= this.FILL_DAILY_CAP) return;
     // half the time, quietly look up a TV theme nobody has looked up yet
     if (Math.random() < 0.35 && window.TVSHOWS) {
