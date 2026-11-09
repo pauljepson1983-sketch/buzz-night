@@ -155,9 +155,9 @@ const Chase = {
   /* ---------- questions ---------- */
   buildPool() {
     const own = (window.CHASE_Q || []).map(q => ({ ...q, seenKey: 'cq:' + q.id }));
-    const old = (window.QUESTIONS || []).map(q => ({ id: q.id, q: q.q, a: q.a, w: q.w, c: this.CAT_MAP[q.cat] || q.cat,
-      d: (q.diff || 'medium')[0], seenKey: 'wq:' + q.id }));
-    this.pool = Seen.rank('chase', own.concat(old));
+    // its own bank only — the written bank belongs to the other rounds, so
+    // nothing you met in Fastest Finger turns up again here
+    this.pool = Seen.rank('chase', own);
     this.used = [];
   },
   take(test, second) {
