@@ -388,10 +388,22 @@ const MrMrs = {
   /* ================= THE ROUND ================= */
   async run(cfg) {
     this.active = true; this.lastTo = {}; this.qn = 0; this.used = [];
-    const here = Object.keys(Host.players).filter(id => Host.isPresent(Host.players[id]));
-    if (here.length < 2) {
-      $('nightStatus').textContent = '💍 Mr & Mrs needs two people in the room.';
-      this.active = false; return false;
+    /* Giving up the moment fewer than two phones were counted made the round
+       look as if it had never loaded — one line of small print and the night
+       was over. Wait on screen instead, until two phones are in or the host
+       skips. */
+    let here = [];
+    const count = () => (here = Object.keys(Host.players).filter(id => Host.isPresent(Host.players[id])));
+    if (count().length < 2) {
+      this.skipWait = false;
+      $('nightStatus').textContent = '💍 Mr & Mrs is waiting for two phones to join.';
+      this.view('<div class="mm-title">💍 Mr &amp; Mrs — waiting for two phones</div><div id="mmQr" style="display:inline-block;background:#fff;padding:8px;border-radius:8px;margin:10px 0"></div><p style="font-size:1.2rem">Scan this on both phones.<br>Joined so far: <b id="mmJoined">0</b> of 2</p><button class="btn mt" onclick="MrMrs.skipWait=true">Skip Mr &amp; Mrs</button>');
+      try { if (Host.roomCode && window.QRCode) new QRCode($('mmQr'), { text: joinUrlFor(Host.roomCode), width: 170, height: 170 }); } catch (e) {}
+      while (this.active && !this.skipWait && count().length < 2) {
+        const j = $('mmJoined'); if (j) j.textContent = here.length;
+        await this.sleep(1000);
+      }
+      if (here.length < 2) { $('nightStatus').textContent = '💍 Mr & Mrs skipped.'; this.active = false; return false; }
     }
     this.pair = here.slice(0, 2);
     const [A, B] = this.pair;
