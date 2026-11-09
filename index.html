@@ -7854,7 +7854,7 @@ const Night = {
     if (this._prefetchP) return this._prefetchP;
     const MUSIC = ['covers', 'themes', 'songs', 'years', 'tv'];
     const todo = this.plan.filter(r => MUSIC.includes(r.mode) && !r._prebuilt);
-    if (!todo.length || !(Spot.token || store.get('spotify_refresh'))) return Promise.resolve();
+    if (!todo.length) return Promise.resolve();   // no Spotify? the iTunes fallback builds them
     const pause = ms => new Promise(res => setTimeout(res, ms));
     const note = t => { const el = $('prefetchNote'); if (el) { el.textContent = t; el.classList.toggle('hidden', !t); } };
     const seen = new Set();
@@ -7863,8 +7863,12 @@ const Night = {
       for (const r of todo) {
         note('🎵 Getting the music ready… ' + done + ' of ' + todo.length);
         for (let attempt = 0; attempt < 2 && !r._prebuilt; attempt++) {
-          const wait = (Spot.rateLimitedUntil || 0) - Date.now();
-          if (wait > 0) { note('🎵 Spotify asked us to wait — ' + Math.ceil(wait / 1000) + 's'); await pause(wait + 500); }
+          /* A short Spotify slow-down is worth sitting out. Its account quota
+             running out is a 30-minute pause, and waiting that out froze the
+             night on "Getting the music ready" — so build from iTunes. */
+          const wait = Spot.useTunes() ? 0 : (Spot.rateLimitedUntil || 0) - Date.now();
+          if (wait > 0 && wait < 3 * 60000) { note('🎵 Spotify asked us to wait — ' + Math.ceil(wait / 1000) + 's'); await pause(wait + 500); }
+          if (Spot.useTunes()) note('🎵 Getting the music ready from iTunes… ' + done + ' of ' + todo.length);
           const keep = Quiz.mode;
           Quiz.mode = r.mode;
           try {
@@ -8159,7 +8163,9 @@ const Night = {
     // whatever route the night was opened by, make sure the music is fetched
     // (spaced out) before round one rather than in a burst at each round
     $('nightStatus').textContent = 'Getting the music ready…';
-    await this.prefetch();
+    // a head start on the music, but never hold the room up for long: what
+    // isn't ready yet carries on loading in the background
+    await Promise.race([this.prefetch(), new Promise(r => setTimeout(r, 20000))]);
     this.running = true; this.idx = -1;
     // pressing start is the gesture that lets us hold the tab awake for the
     // rest of the night
