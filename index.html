@@ -14,7 +14,7 @@
      100KB, so re-fetching it costs nothing next to spending an evening
      wondering why an edit has not appeared. -->
 <script>document.write('<script src="questions.js?v=' + Math.floor(Date.now() / 60000) + '"><\/script>');</script>
-<script>['itunes.js', 'chasers.js', 'chase-questions.js', 'chase.js', 'mrmrs.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
+<script>['itunes.js', 'uk-hits.js', 'chasers.js', 'chase-questions.js', 'chase.js', 'mrmrs.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
 <style>
   :root {
     --bg: #14082b;
@@ -1171,6 +1171,7 @@
     <div id="quizOptions"></div>
     <div id="bnBox" class="hidden">
       <button id="bnBuzz">BUZZ</button>
+      <button id="bnPass" class="btn ghost" style="width:100%;margin-top:10px">🤷 No idea</button>
       <button id="bnMic" class="hidden">🎤 Say it</button>
       <div id="bnSaid"></div>
       <input id="bnType" class="hidden" placeholder="Type the song and artist" autocomplete="off">
@@ -2946,6 +2947,7 @@ const Host = {
     if (msg.type === 'duelFreeze') { Quiz.duelUseFreeze(conn.peer); return; }
     if (msg.type === 'duelCall')   { Quiz.duelCall(conn.peer, msg.who); return; }
     if (msg.type === 'bnBuzz') { Quiz.bnBuzz(conn.peer, msg.n); return; }
+    if (msg.type === 'bnPass') { Quiz.bnPass(conn.peer, msg.n); return; }
     if (msg.type === 'bnSay')  { Quiz.bnSaid(conn.peer, msg.n, msg.guesses || ['']); return; }
     if (msg.type === 'quizP') {
       Quiz.place(conn.peer, msg.n, msg.x, msg.y);
@@ -4835,7 +4837,48 @@ const Quiz = {
     }, delayMs || 0);
   },
 
+  /* Songs a British living room actually knows: the UK hits list, each one
+     looked up for real and only used if that exact song and artist comes
+     back. The generic decade searches threw up plenty nobody had heard of. */
+  async buildBuzzNameUK(decade, count) {
+    const clean = t => String(t || '').toLowerCase().replace(/\(.*?\)|\[.*?\]| - .*$|feat\..*$/g, '').replace(/[^a-z0-9]/g, '');
+    const [lo, hi] = decade ? decade.split('-').map(Number) : [0, 9999];
+    const seenT = new Set();
+    let list = (window.UK_HITS || []).filter(([t, a, y]) => y >= lo - 1 && y <= hi + 1)
+      .filter(([t, a]) => { const k = clean(t) + '|' + clean(a); if (seenT.has(k)) return false; seenT.add(k); return true; })
+      .map(([t, a, y]) => ({ t, a, y, seenKey: 'uk:' + clean(t) + '|' + clean(a) }));
+    list = Seen.rank('buzzname', this.shuffle(list));
+    const out = [];
+    for (const s of list) {
+      if (out.length >= count) break;
+      $('quizStatus').textContent = 'Picking well-known British hits… ' + out.length + ' of ' + count;
+      let res;
+      try { res = await Spot.searchRaw('track:"' + s.t + '" artist:"' + s.a + '"'); }
+      catch (e) { if (e.rateLimited && !Spot.useTunes()) throw e; continue; }
+      const hit = (res.tracks || []).find(tr => tr && tr.uri && clean(tr.name).indexOf(clean(s.t)) === 0 &&
+        (tr.artists || []).some(ar => clean(ar.name).indexOf(clean(s.a).slice(0, 6)) >= 0 || clean(s.a).indexOf(clean(ar.name)) >= 0));
+      if (!hit) continue;
+      out.push({ uri: hit.uri, dur: hit.duration_ms || 0, label: s.t + ' — ' + s.a, title: s.t, artist: s.a, seenKey: s.seenKey });
+    }
+    return out;
+  },
+
   async buildBuzzName(decade, count, style, extra) {
+    // no flavour picked: the British hits list (with the era, if one is set)
+    if (!style && !extra && (window.UK_HITS || []).length) {
+      try {
+        let uk = await this.buildBuzzNameUK(decade, count);
+        if (uk.length < Math.min(4, count) && decade) {
+          const have = new Set(uk.map(x => x.uri));
+          uk = uk.concat((await this.buildBuzzNameUK('', count - uk.length)).filter(x => !have.has(x.uri)));
+        }
+        if (uk.length >= 2) {
+          this.bnWidened = '';
+          this.available = uk.length;
+          return uk.map(s => ({ uri: s.uri, dur: s.dur, label: s.label, answer: s.title, artist: s.artist, kind: 'buzzname', seenKey: s.seenKey }));
+        }
+      } catch (e) { if (e.rateLimited && !Spot.useTunes()) throw e; }
+    }
     /* A round in the running order carries both an era and a flavour, and some
        pairs simply have nothing behind them — britpop in the sixties, motown
        in the twenties. That used to fail the whole round, which from the sofa
@@ -4911,6 +4954,20 @@ const Quiz = {
     Sound.say(p.name, v.voice, v.style);
     // if they say nothing at all, treat it as a miss so the round moves on
     this.bnTimer = setTimeout(() => this.bnSaid(peerId, n, ['']), this.BN_SAY_MS + 900);
+  },
+
+  /* "No idea": that player sits this song out. Once nobody is left who might
+     still buzz, the answer comes up and the round moves on, instead of
+     everyone sitting through the rest of a song none of them know. */
+  bnPass(peerId, n) {
+    if (!this.active || this.mode !== 'buzzname' || n !== this.idx + 1 || this.bnHolder === peerId) return;
+    if ((this.bnLocked || []).includes(peerId)) return;
+    this.bnLocked = (this.bnLocked || []).concat(peerId);
+    const p = Host.players[peerId];
+    const stillIn = Object.keys(Host.players).filter(id => !this.bnLocked.includes(id) && Host.isPresent(Host.players[id]));
+    if (!this.bnHolder && !stillIn.length) { this.bnReveal(null, null, 0, 0); return; }
+    if (!this.bnHolder) $('quizHostView').innerHTML = '<b>' + (this.idx + 1) + '/' + this.questions.length + '</b> — 🤷 ' +
+      esc(p ? p.name : 'Someone') + ' has no idea. ' + stillIn.length + ' still in.';
   },
 
   /* What they said, marked. */
@@ -9567,8 +9624,18 @@ const Player = {
     this._bnMine = false;
     const b = $('bnBuzz');
     b.classList.remove('hidden'); b.disabled = false; b.textContent = 'BUZZ';
+    const pass = $('bnPass');
+    pass.classList.remove('hidden'); pass.disabled = false; pass.textContent = '🤷 No idea';
+    pass.onclick = () => {
+      if (this._quizAnswered) return;
+      pass.disabled = true; pass.textContent = '🤷 Passed';
+      b.disabled = true; b.textContent = 'You passed';
+      $('bnNote').textContent = 'Waiting for the others…';
+      this.conn.send({ type: 'bnPass', n: this._quizN });
+    };
     b.onclick = () => {
       if (this._quizAnswered) return;
+      $('bnPass').classList.add('hidden');
       b.disabled = true; b.textContent = 'Buzzed!';
       this.vibe([80]);
       this.conn.send({ type: 'bnBuzz', n: this._quizN });
@@ -9712,14 +9779,15 @@ const Player = {
     clearTimeout(this._bnAck);
     if (msg.n) this._quizN = msg.n;        // resync if this phone missed a song
     const b = $('bnBuzz');
-    if (msg.why === 'out') { b.disabled = true; b.textContent = 'You are out of this one'; return; }
+    if (msg.why === 'out') { b.disabled = true; b.textContent = 'You are out of this one'; $('bnPass').classList.add('hidden'); return; }
     if (msg.why === 'taken') { b.disabled = true; b.textContent = 'Someone beat you'; return; }
-    b.disabled = false; b.textContent = 'BUZZ';
+    b.disabled = false; b.textContent = 'BUZZ'; $('bnPass').classList.remove('hidden'); $('bnPass').disabled = false;
     $('bnNote').textContent = 'Just missed it — go again';
   },
 
   bnWaiting(msg) {
     $('bnBuzz').disabled = true;
+    $('bnPass').disabled = true;
     $('bnBuzz').textContent = (msg.who || 'Someone') + ' buzzed';
     $('bnNote').textContent = 'Waiting for their answer…';
   },
@@ -9729,10 +9797,12 @@ const Player = {
     $('bnNote').textContent = 'Back on — buzz to steal it';
     const b = $('bnBuzz');
     b.classList.remove('hidden'); b.disabled = false; b.textContent = 'BUZZ';
+    const pass = $('bnPass'); pass.classList.remove('hidden'); pass.disabled = false; pass.textContent = '🤷 No idea';
     this.vibe([40, 40, 40]);
   },
 
   bnWrong(msg) {
+    $('bnPass').classList.add('hidden');
     $('bnMic').classList.add('hidden');
     $('bnType').classList.add('hidden');
     $('bnSaid').textContent = 'Not quite — “' + (msg.heard || '') + '”';
@@ -9743,6 +9813,7 @@ const Player = {
   bnResult(msg) {
     clearInterval(this._quizTimer);
     $('bnBuzz').classList.add('hidden');
+    $('bnPass').classList.add('hidden');
     $('bnMic').classList.add('hidden');
     $('bnType').classList.add('hidden');
     $('bnSaid').innerHTML = '<b>' + esc(msg.title) + '</b>' + (msg.artist ? ' — ' + esc(msg.artist) : '');
