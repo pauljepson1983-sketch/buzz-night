@@ -346,9 +346,12 @@ const Chase = {
     await this.sleep(2500);
 
     // ---- 2. each player: cash builder, offer, head to head
-    for (const id of this.players) {
+    // by index, re-reading the list each turn: a phone that reconnects comes
+    // back on a new id, and Host swaps it into this.players
+    for (let i = 0; i < this.players.length; i++) {
       if (!this.active) break;
-      if (!Host.isPresent(Host.players[id])) continue;
+      const id = await this.waitFor(i);
+      if (!id) continue;
       const cash = await this.cashBuilder(id);
       if (!this.active) break;
       const offer = await this.offer(id, cash);
@@ -381,6 +384,27 @@ const Chase = {
     this.gateDraw = draw;
     while (this.active && this.gateWho && [...this.gateWho].some(id => !this.ready.has(id) && Host.isPresent(Host.players[id]))) await this.sleep(200);
     this.gateWho = null; this.gateDraw = null;
+  },
+  /* Whose turn it is, once their phone is actually there. A phone that has
+     gone to sleep while someone else played used to be skipped without a
+     word, straight to the final chase. Now the laptop waits and says why,
+     with a Skip button for anyone who really has gone home. */
+  async waitFor(i) {
+    let id = this.players[i];
+    if (Host.isPresent(Host.players[id])) return id;
+    this.skipTurn = false;
+    const name = this.nameOf(id);
+    this.view(this.head() + '<div class="ch-title">⏸ ' + esc(name) + '\'s turn</div>' +
+      '<div class="muted" style="font-size:1.15rem">' + esc(name) + '\'s phone has gone to sleep. Unlock it and open Buzz Night — it reconnects on its own.</div>' +
+      '<button class="btn ghost mt" onclick="Chase.skipTurn=true">Skip ' + esc(name) + '</button>');
+    $('nightStatus').textContent = '⛓️ The Chase — waiting for ' + name + '\'s phone.';
+    this.say(name + ', it\'s your turn. Wake your phone up!');
+    while (this.active && !this.skipTurn) {
+      id = this.players[i];
+      if (Host.isPresent(Host.players[id])) return id;
+      await this.sleep(500);
+    }
+    return null;
   },
   readyUp(id) { if (this.gateWho && this.gateWho.has(id)) { this.ready.add(id); if (this.gateDraw) this.gateDraw(); } },
   goNow() { this.gateWho = null; },

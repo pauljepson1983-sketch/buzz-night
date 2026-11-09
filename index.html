@@ -8535,6 +8535,9 @@ const Player = {
     switch (msg.type) {
       case 'ping': this.conn.send({ type: 'pong', t: msg.t }); break;
       case 'welcome':
+        // keep the screen on while in a game: a phone that dims and locks
+        // goes quiet, and the laptop then counts that player as gone
+        Wake.on();
         /* The site lets browsers keep a copy for ten minutes, so after an
            update a phone can be a version behind the laptop and simply not
            know a new round's screens. Older than the laptop: fetch a fresh
