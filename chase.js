@@ -476,7 +476,7 @@ const Chase = {
       const wantD = p >= this.STEPS - 2 ? 'h' : 'm';
       const q = this.take(x => x.d === wantD && !x.soft, x => !x.soft);
       draw(q, null, '<div class="ch-timer">🎙 Question ' + n + ' — ' + esc(CHASE_CATS[q.c] || '') + '</div>');
-      const ansP = this.put([id], q);
+      const ansP = this.put([id], q, 'one', { h2h: { p, c, steps: this.STEPS, money: this.money(offer.money), name, chaser: this.chaser.emoji, nick: this.chaser.nick, colour: this.chaser.colour } });
       await this.say('Question ' + n + ', ' + (CHASE_CATS[q.c] || '') + '. ' + this.readQ(q, true));
       if (!this.active) break;
       draw(q, null, '<div class="ch-timer">⏱ ' + this.H2H_SECS + ' seconds to answer · ' + this.chaser.emoji + ' is thinking…</div>');
@@ -500,7 +500,7 @@ const Chase = {
       if (cRight) c++;
       draw(q, { p: ans[id], c: cPick, show: 'all' }, '<div class="ch-title">' + (pRight ? '✅ ' : '❌ ') + esc(name) + ' &nbsp; ' +
         (cRight ? '✅ ' : '❌ ') + esc(this.chaser.nick) + '</div>');
-      this.sendAll({ k: 'h2hResult', name, right: pRight, chaserRight: cRight, answer: q.a, p, c, steps: this.STEPS });
+      this.sendAll({ k: 'h2hResult', name, right: pRight, chaserRight: cRight, answer: q.a, p, c, steps: this.STEPS, money: this.money(offer.money), chaser: this.chaser.emoji, nick: this.chaser.nick, colour: this.chaser.colour, moved: { p: pRight, c: cRight } });
       if (!cRight && Math.random() < 0.6) await this.taunt(this.chaser.lines.wrong);
       await this.sleep(2200);
     }
@@ -694,6 +694,36 @@ const ChasePhone = {
       '<div class="cb-pile">' + (notes || '<span style="opacity:.6;font-size:.85rem">Every right answer adds £1,000 to the pile</span>') + '</div>' +
       '<div class="cb-bar"><i id="cbBar"></i></div><div class="cb-time" id="cbTime"></div></div>';
   },
+  /* ---- Head to head: the board, you, the Chaser closing in ---- */
+  boardHtml(b, moved) {
+    this.css();
+    if (!this._bcss) {
+      this._bcss = true;
+      const st = document.createElement('style');
+      st.textContent = '.hb{background:rgba(0,0,0,.25);border-radius:14px;padding:8px;margin-bottom:8px}' +
+        '.hb-top{display:flex;justify-content:space-between;font-weight:800;font-size:.9rem;margin-bottom:6px}' +
+        '.hb-rows{display:flex;flex-direction:column;gap:3px}' +
+        '.hb-step{height:22px;border-radius:7px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.85rem}' +
+        '.hb-step.home{background:rgba(95,214,139,.3)}' +
+        '.hb-step.you{background:#ffd257;color:#241a04}.hb-step.ch{color:#120f2b}' +
+        '.hb-step.gap{background:rgba(255,90,90,.12)}' +
+        '.hb-step.mv{animation:hbMv .6s ease-out}' +
+        '@keyframes hbMv{0%{transform:scale(1.15);filter:brightness(1.8)}100%{transform:none}}' +
+        '.hb-note{font-size:.85rem;margin-top:6px;font-weight:700}';
+      document.head.appendChild(st);
+    }
+    let rows = '';
+    for (let st = 0; st <= b.steps; st++) {
+      const you = st === b.p, ch = st === b.c, home = st === b.steps;
+      const between = st > b.c && st < b.p;
+      rows += '<div class="hb-step' + (you ? ' you' : '') + (ch ? ' ch' : '') + (home && !you ? ' home' : '') + (between ? ' gap' : '') +
+        ((moved && ((you && moved.p) || (ch && moved.c))) ? ' mv' : '') + '"' + (ch ? ' style="background:' + b.colour + '"' : '') + '>' +
+        (ch ? b.chaser + ' ' + esc(b.nick) : you ? '🙂 ' + esc(b.name) + ' · ' + esc(b.money) : home ? '🏠 HOME' : '') + '</div>';
+    }
+    const toHome = b.steps - b.p, lead = b.p - b.c;
+    return '<div class="hb"><div class="hb-top"><span>⛓️ Head to head</span><span>' + esc(b.money) + '</span></div><div class="hb-rows">' + rows + '</div>' +
+      '<div class="hb-note">' + (toHome <= 0 ? '🏠 Home!' : lead <= 0 ? '⛓️ Caught!' : toHome + ' to get home · ' + lead + ' step' + (lead === 1 ? '' : 's') + ' ahead of ' + esc(b.nick)) + '</div></div>';
+  },
   cashClock(msg) {
     clearInterval(this._cbT);
     if (msg.left == null) return;
@@ -745,17 +775,16 @@ const ChasePhone = {
       Player.vibe && Player.vibe(60); return;
     }
     if (k === 'q') {
-      if (!msg.mine) { this.show('<div class="muted">' + esc(msg.cat) + '</div><div class="rc-name" style="font-size:1.1rem">' + esc(msg.text) + '</div><div class="muted">Watching…</div>'); return; }
+      if (!msg.mine) { this.show((msg.h2h ? this.boardHtml(msg.h2h) : '') + '<div class="muted">' + esc(msg.cat) + '</div><div class="rc-name" style="font-size:1.1rem">' + esc(msg.text) + '</div><div class="muted">Watching…</div>'); return; }
       this.qid = msg.qid;
       const head = msg.cash ? '' : msg.pushback ? '⏪ PUSHBACK — get it right to push them back' : msg.final ? '🏁 Final Chase · ' + msg.target + ' steps' : '⛓️ Head to head';
-      this.show((msg.cash ? this.cashHtml(msg) : '<div class="rc-kicker">' + head + '</div>') + '<div class="muted">' + esc(msg.cat) + '</div><div class="rc-name" style="font-size:1.15rem;margin:8px 0">' + esc(msg.text) + '</div>' +
+      this.show((msg.cash ? this.cashHtml(msg) : msg.h2h ? this.boardHtml(msg.h2h) : '<div class="rc-kicker">' + head + '</div>') + '<div class="muted">' + esc(msg.cat) + '</div><div class="rc-name" style="font-size:1.15rem;margin:8px 0">' + esc(msg.text) + '</div>' +
         msg.opts.map((o, i) => '<button class="btn big" style="width:100%;margin-top:8px;font-size:1.05rem" onclick="ChasePhone.pick(' + msg.qid + ',' + i + ',this)">' + esc(o) + '</button>').join(''));
       if (msg.cash) this.cashClock(msg); else clearInterval(this._cbT);
       return;
     }
     if (k === 'h2hResult') {
-      this.show('<div class="rc-name">' + (msg.right ? '✅' : '❌') + ' ' + esc(msg.name) + ' &nbsp; ' + (msg.chaserRight ? '✅' : '❌') + ' Chaser</div><div class="muted">Answer: ' + esc(msg.answer) + '</div>' +
-        '<div style="margin-top:6px">You: step ' + msg.p + ' of ' + msg.steps + ' · Chaser: step ' + msg.c + '</div>');
+      this.show(this.boardHtml(msg, msg.moved) + '<div class="rc-name">' + (msg.right ? '✅' : '❌') + ' ' + esc(msg.name) + ' &nbsp; ' + (msg.chaserRight ? '✅' : '❌') + ' ' + esc(msg.nick) + '</div><div class="muted">Answer: ' + esc(msg.answer) + '</div>');
     }
   },
   pick(qid, i, btn) {
