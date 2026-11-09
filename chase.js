@@ -407,7 +407,7 @@ const Chase = {
       const q = this.take(x => x.d !== 'h');
       asked++;
       show(q);
-      const p = this.put([id], q, 'one', { cash: true, total: right * this.CASH_PER });
+      const p = this.put([id], q, 'one', { cash: true, total: right * this.CASH_PER, right, left: (end - Date.now()) / 1000, secs: this.CASH_SECS * this.timeScale });
       this.startClock(Math.max(0.5, (end - Date.now()) / 1000 / this.timeScale));
       this.speak(this.readQ(q, false), 'host', false);
       const ans = await p;
@@ -416,7 +416,7 @@ const Chase = {
       if (ok) right++;
       if (ans[id] == null) break;           // time ran out on this one
       show(q, { p: ans[id], show: 'all' });
-      this.send(id, { k: 'fb', ok, answer: q.a });
+      this.send(id, { k: 'fb', ok, answer: q.a, total: right * this.CASH_PER, right, left: (end - Date.now()) / 1000, secs: this.CASH_SECS * this.timeScale });
       await this.sleep(700);                // see whether it was right before the next
     }
     clearInterval(clock);
@@ -663,6 +663,52 @@ const Chase = {
 };
 
 const ChasePhone = {
+  /* ---- Cash Builder graphics: a growing pile of £1,000 notes, the total,
+     and a draining clock bar ---- */
+  css() {
+    if (this._css) return; this._css = true;
+    const st = document.createElement('style');
+    st.textContent = '.cb{background:linear-gradient(160deg,#123d24,#0b2416);border-radius:14px;padding:10px;margin-bottom:8px;position:relative;overflow:hidden}' +
+      '.cb-total{font-size:2.4rem;font-weight:900;color:#7dffa8;font-variant-numeric:tabular-nums;line-height:1}' +
+      '.cb-sub{font-size:.8rem;opacity:.8;margin-bottom:6px}' +
+      '.cb-pile{display:flex;flex-wrap:wrap-reverse;justify-content:center;gap:3px;min-height:34px;max-width:280px;margin:6px auto}' +
+      '.cb-note{width:38px;height:20px;border-radius:3px;background:linear-gradient(90deg,#3fa463,#6fd28f 50%,#3fa463);border:1px solid #1d5c33;font-size:.6rem;font-weight:800;color:#0b3a1c;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 0 #0a2a15}' +
+      '.cb-note.new{animation:cbDrop .5s ease-out}' +
+      '@keyframes cbDrop{0%{transform:translateY(-60px) rotate(-12deg);opacity:0}70%{transform:translateY(4px)}100%{transform:none;opacity:1}}' +
+      '.cb-bar{height:10px;border-radius:5px;background:rgba(255,255,255,.15);overflow:hidden;margin-top:6px}' +
+      '.cb-bar i{display:block;height:100%;background:#7dffa8;transition:width .25s linear}' +
+      '.cb-bar.hot i{background:#ff5a5a}' +
+      '.cb-time{font-weight:800;font-size:.95rem;margin-top:3px}' +
+      '.cb-pop{position:absolute;right:12px;top:8px;font-size:1.5rem;font-weight:900;color:#ffd257;animation:cbPop 1s ease-out forwards}' +
+      '@keyframes cbPop{0%{transform:scale(.6);opacity:0}25%{transform:scale(1.25);opacity:1}100%{transform:translateY(-30px);opacity:0}}';
+    document.head.appendChild(st);
+  },
+  cashHtml(msg, pop) {
+    this.css();
+    const n = msg.right || 0;
+    const shown = Math.min(n, 24);
+    const notes = Array.from({ length: shown }, (_, i) => '<div class="cb-note' + (pop && i === shown - 1 ? ' new' : '') + '">£1K</div>').join('') +
+      (n > shown ? '<div class="cb-note" style="width:auto;padding:0 4px">+' + (n - shown) + '</div>' : '');
+    return '<div class="cb">' + (pop ? '<div class="cb-pop">+£1,000!</div>' : '') +
+      '<div class="cb-sub">💷 YOUR CASH BUILDER</div><div class="cb-total">' + esc(Chase.money(msg.total || 0)) + '</div>' +
+      '<div class="cb-pile">' + (notes || '<span style="opacity:.6;font-size:.85rem">Every right answer adds £1,000 to the pile</span>') + '</div>' +
+      '<div class="cb-bar"><i id="cbBar"></i></div><div class="cb-time" id="cbTime"></div></div>';
+  },
+  cashClock(msg) {
+    clearInterval(this._cbT);
+    if (msg.left == null) return;
+    const end = Date.now() + msg.left * 1000, span = (msg.secs || 60) * 1000;
+    const tick = () => {
+      const ms = Math.max(0, end - Date.now());
+      const bar = $('cbBar'), t = $('cbTime');
+      if (!bar) { clearInterval(this._cbT); return; }
+      bar.style.width = Math.min(100, ms / span * 100) + '%';
+      bar.parentNode.classList.toggle('hot', ms <= 10000 * (span / 60000));
+      t.textContent = '⏱ ' + Math.ceil(ms / 1000 * (60000 / span)) + 's left';
+      if (!ms) clearInterval(this._cbT);
+    };
+    tick(); this._cbT = setInterval(tick, 200);
+  },
   box() { return $('chaseBox'); },
   show(html) { const b = this.box(); b.innerHTML = '<div class="card" style="text-align:center">' + html + '</div>'; b.classList.remove('hidden'); },
   on(msg) {
@@ -679,7 +725,12 @@ const ChasePhone = {
         '<button class="btn big green" style="width:100%;font-size:1.4rem" onclick="ChasePhone.send({type:\'chaseReady\'});ChasePhone.show(\'<div class=rc-name>✅ Ready — waiting…</div>\')">✅ I\'m ready</button>');
       Player.vibe && Player.vibe([60, 40, 60]); return;
     }
-    if (k === 'fb') { this.show('<div class="rc-name" style="font-size:1.6rem">' + (msg.ok ? '✅ Right!' : '❌ It was ' + esc(msg.answer)) + '</div>'); return; }
+    if (k === 'fb') {
+      this.show(this.cashHtml(msg, msg.ok) + '<div class="rc-name" style="font-size:1.5rem">' + (msg.ok ? '✅ Right!' : '❌ It was ' + esc(msg.answer)) + '</div>');
+      this.cashClock(msg);
+      if (msg.ok) Player.vibe && Player.vibe(40);
+      return;
+    }
     if (k === 'wait') { this.show('<div class="rc-name" style="font-size:1.2rem">' + esc(msg.text) + '</div>'); return; }
     if (k === 'end') { this.show('<div class="rc-name">' + esc(msg.text) + '</div>'); Player.vibe && Player.vibe(msg.win ? [80, 60, 80] : 200); return; }
     if (k === 'offer') {
@@ -696,9 +747,10 @@ const ChasePhone = {
     if (k === 'q') {
       if (!msg.mine) { this.show('<div class="muted">' + esc(msg.cat) + '</div><div class="rc-name" style="font-size:1.1rem">' + esc(msg.text) + '</div><div class="muted">Watching…</div>'); return; }
       this.qid = msg.qid;
-      const head = msg.cash ? '💷 Cash Builder · ' + esc(Chase.money(msg.total)) : msg.pushback ? '⏪ PUSHBACK — get it right to push them back' : msg.final ? '🏁 Final Chase · ' + msg.target + ' steps' : '⛓️ Head to head';
-      this.show('<div class="rc-kicker">' + head + '</div><div class="muted">' + esc(msg.cat) + '</div><div class="rc-name" style="font-size:1.15rem;margin:8px 0">' + esc(msg.text) + '</div>' +
+      const head = msg.cash ? '' : msg.pushback ? '⏪ PUSHBACK — get it right to push them back' : msg.final ? '🏁 Final Chase · ' + msg.target + ' steps' : '⛓️ Head to head';
+      this.show((msg.cash ? this.cashHtml(msg) : '<div class="rc-kicker">' + head + '</div>') + '<div class="muted">' + esc(msg.cat) + '</div><div class="rc-name" style="font-size:1.15rem;margin:8px 0">' + esc(msg.text) + '</div>' +
         msg.opts.map((o, i) => '<button class="btn big" style="width:100%;margin-top:8px;font-size:1.05rem" onclick="ChasePhone.pick(' + msg.qid + ',' + i + ',this)">' + esc(o) + '</button>').join(''));
+      if (msg.cash) this.cashClock(msg); else clearInterval(this._cbT);
       return;
     }
     if (k === 'h2hResult') {
