@@ -6035,14 +6035,14 @@ const Quiz = {
       }
 
       if (this.mode === 'buzzname') {
-        this.questions = qs.filter(q => q.uri);
+        this.questions = await this.clipsReady(qs.filter(q => q.uri));
         if (!this.questions.length) throw new Error('Could not find playable tracks for that.');
       } else if (this.mode === 'places') {
         this.questions = qs;
       } else if (this.mode === 'quickfire' || this.mode === 'guess' || this.mode === 'duel') {
         this.questions = qs;
       } else if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) {
-        this.questions = qs.filter(q => q.uri);
+        this.questions = await this.clipsReady(qs.filter(q => q.uri));
         if (!this.questions.length) throw new Error('Could not find playable tracks for that.');
       } else if (this.mode === 'logos') {
         // a symbol carries no text, so there is nothing to redact — the URL
@@ -6078,7 +6078,7 @@ const Quiz = {
       // one is ignored rather than fired into this one
       this.runId = (this.runId || 0) + 1;
       this.clearTimers();
-      this.active = true; this.idx = -1; this.roundGains = {};
+      this.active = true; this.idx = -1; this._clipReadyIdx = -1; this.roundGains = {};
       // banked here rather than per question, so a round abandoned halfway
       // still counts as used and won't come straight back next time
       Seen.mark(this.mode, this.questions);
@@ -6156,6 +6156,22 @@ const Quiz = {
     });
   },
 
+  /* With Spotify out, every song has to be found on iTunes before it can
+     play — a queued search, then the download. Doing that as each question
+     started meant the clock ran while nothing played, and a TV theme could
+     come in halfway through. So the round finds all its clips first, and
+     drops any song iTunes has no clip for rather than asking it in silence. */
+  async clipsReady(list) {
+    const tunes = typeof Tunes !== 'undefined' && Spot.useTunes();
+    if (!tunes) return list;
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+      $('quizStatus').textContent = '🎵 Getting the clips ready… ' + (i + 1) + ' of ' + list.length;
+      try { await Tunes.resolve(list[i].uri); out.push(list[i]); } catch (e) { /* no clip: leave it out */ }
+    }
+    return out;
+  },
+
   next() {
     if (!this.active) return;
     this.idx++;
@@ -6163,6 +6179,14 @@ const Quiz = {
     if (this.mode === 'duel' && this.idx >= this.questions.length) return this.duelFinish();
     if (this.idx >= this.questions.length) return this.finish();
     const q = this.questions[this.idx];
+    /* the clock must not start before the music can: load this clip first
+       (instant when the previous question already preloaded it) */
+    if (['themes', 'years', 'songs', 'tv', 'buzzname'].includes(this.mode) && q.uri && typeof Tunes !== 'undefined' &&
+        (String(q.uri).indexOf('itunes:') === 0 || Spot.useTunes()) && this._clipReadyIdx !== this.idx) {
+      const i = this.idx; this.idx--;
+      Tunes.ready(q.uri).catch(() => {}).then(() => { if (!this.active) return; this._clipReadyIdx = i; this.next(); });
+      return;
+    }
     this.answers = {};
     this.gains = {};
     this.firstCorrect = null;
@@ -7890,7 +7914,9 @@ const Night = {
             const fresh = (qs || []).filter(q => q.uri).filter(q => {
               if (seen.has(q.uri)) return false; seen.add(q.uri); return true;
             });
-            if (fresh.length >= 4) { r._prebuilt = fresh; fresh.forEach(q => Seen.nightUsed.add(Seen.keyOf(q))); }
+            // with Spotify out, find the clips now too, so the round starts at once
+            const playable = (typeof Tunes !== 'undefined' && Spot.useTunes()) ? await Quiz.clipsReady(fresh) : fresh;
+            if (playable.length >= 4) { r._prebuilt = playable; playable.forEach(q => Seen.nightUsed.add(Seen.keyOf(q))); }
           } catch (e) { /* the round will simply build itself when it starts */ }
           finally { Quiz.mode = keep; this._itemP = null; release(); }
         }

@@ -163,6 +163,17 @@
         this.spare = s;
       } catch (e) {}
     },
+    /* Resolves once this clip is downloaded enough to start without a pause,
+       by loading it into the spare player (which play() then swaps in). */
+    async ready(uri) {
+      const url = await this.resolve(uri);
+      if (!(this.spare && this.spare.src === url)) {
+        const s = new Audio(); s.preload = 'auto'; s.crossOrigin = 'anonymous'; s.src = url; s.load(); this.spare = s;
+      }
+      const sp = this.spare;
+      if (sp.readyState >= 3) return;
+      await new Promise(r => { sp.addEventListener('canplay', r, { once: true }); sp.addEventListener('error', r, { once: true }); setTimeout(r, 6000); });
+    },
     async play(uri, positionMs) {
       const url = await this.resolve(uri);
       if (this.spare && this.spare.src === url) {   // swap the ready one in
