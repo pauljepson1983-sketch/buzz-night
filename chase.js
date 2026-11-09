@@ -409,12 +409,12 @@ const Chase = {
      gone to sleep while someone else played used to be skipped without a
      word, straight to the final chase. Now the laptop waits and says why,
      with a Skip button for anyone who really has gone home. */
-  async waitFor(i) {
+  async waitFor(i, what) {
     let id = this.players[i];
     if (Host.isPresent(Host.players[id])) return id;
     this.skipTurn = false;
     const name = this.nameOf(id);
-    this.view(this.head() + '<div class="ch-title">⏸ ' + esc(name) + '\'s turn</div>' +
+    this.view(this.head() + '<div class="ch-title">⏸ ' + (what ? 'Waiting for ' + esc(name) + ' — ' + esc(what) : esc(name) + '\'s turn') + '</div>' +
       '<div class="muted" style="font-size:1.15rem">' + esc(name) + '\'s phone has gone to sleep. Unlock it and open Buzz Night — it reconnects on its own.</div>' +
       '<button class="btn ghost mt" onclick="Chase.skipTurn=true">Skip ' + esc(name) + '</button>');
     $('nightStatus').textContent = '⛓️ The Chase — waiting for ' + name + '\'s phone.';
@@ -589,8 +589,19 @@ const Chase = {
 
   /* ---------- Final Chase ---------- */
   async finalChase() {
-    let team = Object.keys(this.home).filter(id => Host.isPresent(Host.players[id]));
+    /* Everyone who got home is in the final, and their money is in the pot,
+       whether or not their phone happens to be awake this second. Dropping
+       a sleeping phone used to take its winnings out of the pot and its
+       player out of the points. Wait for them instead (Skip if they've gone),
+       and a skipped player still shares the result. */
+    let team = Object.keys(this.home).filter(id => Host.players[id]);
     let pot = team.reduce((s, id) => s + this.home[id], 0);
+    for (const id of team.slice()) {
+      if (Host.isPresent(Host.players[id])) continue;
+      const i = this.players.indexOf(id);
+      if (i >= 0) { const got = await this.waitFor(i, 'the Final Chase'); if (got && got !== id) team = team.map(x => x === id ? got : x); }
+      if (!this.active) return;
+    }
     let lazarus = false;
     if (!team.length) {
       team = this.players.filter(id => Host.isPresent(Host.players[id]));
