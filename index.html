@@ -7875,9 +7875,15 @@ const Night = {
   // flavour both mean something and both get a picker in the running order
   NO_DECADE: ['tv', 'guess', 'quickfire', 'logos', 'places', 'duel', 'bingo', 'chase', 'mrmrs'],
 
+  /* A round picked by name is wanted now: it goes next in line (straight
+     after the round being played, or to the top before a night starts)
+     rather than to the bottom, where it quietly waited behind five others. */
   quickAdd(mode) {
-    this.plan.push(this.defaultsFor(mode));
+    const at = this.running ? Math.max(0, (this.idx || 0) + 1) : 0;
+    this.plan.splice(Math.min(at, this.plan.length), 0, this.defaultsFor(mode));
     this.save(); this.render();
+    const name = this.LABELS[mode] || mode;
+    $('nightStatus').textContent = name + ' added — it\'s up next' + (this.running ? ', after this round.' : '. Press Start when you\'re ready.');
   },
 
   // A whole night decided for you — random era, random mix, shuffled order.
