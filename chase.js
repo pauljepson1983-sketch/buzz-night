@@ -612,52 +612,75 @@ const Chase = {
     if (!this.active) return;
     await this.countIn('⛓️ ' + this.chaser.nick + '\'s chase');
 
-    // --- the Chaser's run, with pushbacks. The clock is the Chaser's own
-    // pace (answers a minute); every question is still read out.
-    let got = 0, used = 0, pushes = 0;
+    // --- the Chaser's run, with pushbacks. A real clock: it ticks while the
+    // Chaser is answering and stops dead for a pushback, as on the telly.
+    // It used to drop in five-second lumps, one per question, so it never
+    // looked like a clock at all.
+    let got = 0, pushes = 0, used = 0, runFrom = 0;
     const per = 60000 / this.chaser.speed;
     const total = this.FINAL_SECS * 1000;
+    const usedNow = () => used + (runFrom ? (Date.now() - runFrom) / this.timeScale : 0);
+    const leftMs = () => Math.max(0, total - usedNow());
+    const leftS = () => Math.ceil(leftMs() / 1000);
+    const run = () => { if (!runFrom) runFrom = Date.now(); };
+    const halt = () => { if (runFrom) { used += (Date.now() - runFrom) / this.timeScale; runFrom = 0; } };
     const draw = (q, rv, note) => this.view(this.head() + '<div class="ch-final"><div><div class="muted">Target</div><div class="ch-big">' + target + '</div></div>' +
       '<div><div class="muted">' + esc(this.chaser.nick) + '</div><div class="ch-big" style="color:var(--cc);filter:brightness(1.5)">' + got + '</div></div>' +
-      '<div><div class="muted">Clock</div><div class="ch-big' + ((total - used) <= 10000 ? ' ch-hot' : '') + '">' + Math.max(0, Math.ceil((total - used) / 1000)) + 's</div></div></div>' +
+      '<div><div class="muted">Clock' + (runFrom ? '' : ' ⏸') + '</div><div class="ch-big ch-clock' + (leftMs() <= 10000 ? ' ch-hot' : '') + '">' + leftS() + 's</div></div></div>' +
       this.track(target, got, 'chase') + '<div class="ch-timer" style="text-align:center">' + esc(this.chaser.nick) + ' needs ' + Math.max(0, target - got) + ' more to catch you</div>' +
       (note || '') + (q ? this.qHtml(q, rv) : ''));
-    // the phones get the same track
-    const trackOut = () => this.sendAll({ k: 'track', target, got, nick: this.chaser.nick, emoji: this.chaser.emoji, colour: this.chaser.colour, left: Math.max(0, Math.ceil((total - used) / 1000)) });
+    const tick = setInterval(() => {
+      const t = document.querySelector('#chaseHost .ch-clock');
+      if (t) { t.textContent = leftS() + 's'; t.classList.toggle('ch-hot', leftMs() <= 10000); }
+      ChaseMusic.setUrgent(!!runFrom && leftMs() <= 10000);
+    }, 100);
+    // the phones get the same track, and count the clock down themselves
+    const trackOut = (note) => this.sendAll({ k: 'track', target, got, nick: this.chaser.nick, emoji: this.chaser.emoji, colour: this.chaser.colour,
+      leftMs: leftMs(), running: !!runFrom, note: note || '' });
     ChaseMusic.start('chaser');
     trackOut();
-    while (this.active && used < total && got < target) {
+    while (this.active && leftMs() > 0 && got < target) {
       const q = this.take(x => !x.soft);
       const pressure = target - got <= 2 ? 1 : 0;
       const hit = this.chaserAnswers(q, pressure, 'final');
       const cPick = hit ? q.correct : [0, 1, 2].filter(i => i !== q.correct)[Math.floor(Math.random() * 2)];
-      draw(q);
-      await this.say(q.q);
+      run(); draw(q); trackOut();
+      // the Chaser answers at their own pace while the question is read; a
+      // long question gets cut off when they buzz in
+      this.say(q.q);
+      const thinkUntil = Date.now() + Math.max(2500, per - 1200) * this.timeScale;
+      while (this.active && Date.now() < thinkUntil && leftMs() > 0) await this.sleep(50);
+      try { speechSynthesis.cancel(); } catch (e) {}
+      if (!this.active || leftMs() <= 0) break;         // time up mid-question: doesn't count
       await this.taunt(q.opts[cPick]);
-      used += per;
-      ChaseMusic.setUrgent(total - used <= 10000);
-      if (hit) { got++; draw(q, { c: cPick, show: 'all' }); trackOut(); await this.sleep(500); continue; }
-      trackOut();
-      draw(q, { c: cPick, show: 'all' }, '<div class="ch-title">❌ Wrong! PUSHBACK — answer on your phones</div>');
-      if (used >= total) break;
-      // pushback: the Chaser's clock stops, you get a go
+      if (hit) { got++; draw(q, { c: cPick, show: 'all' }); trackOut(); await this.sleep(400); continue; }
+
+      // pushback: the clock stops until it's settled
+      halt();
+      draw(q, { c: cPick, show: 'all' }, '<div class="ch-title">❌ Wrong! PUSHBACK — clock stopped</div>');
+      trackOut('Pushback coming!');
       ChaseMusic.duck(true);
-      this.sendAll({ k: 'wait', text: 'Pushback!' });
       await this.say('Wrong! Pushback!');
       const pq = this.take(x => x.c === q.c && !x.soft, x => !x.soft);
-      draw(pq, null, '<div class="ch-title">⏪ PUSHBACK — answer on your phones</div>');
+      draw(pq, null, '<div class="ch-title">⏪ PUSHBACK — clock stopped, answer on your phones</div>');
       const pr = this.put(team, pq, 'first', { pushback: true });
       await this.say(this.readQ(pq, true));
       this.startClock(this.PUSH_SECS);
       const ans = await pr;
       if (!this.active) break;
       const ok = team.some(id => ans[id] === pq.correct);
-      draw(pq, { show: 'all' }, '<div class="ch-title">' + (ok ? (got > 0 ? '✅ Pushed back!' : '✅ Right — but nothing to push back yet') : '❌ No pushback') + '</div>');
-      if (ok && got > 0) { got--; pushes++; trackOut(); await this.say('Yes! Pushed back!'); }
-      else await this.say(ok ? 'Right, but there was nothing to push back yet.' : 'No pushback. The answer was ' + pq.a + '.');
+      const pushed = ok && got > 0;
+      if (pushed) { got--; pushes++; }
+      const line = pushed ? '✅ Pushed back!' : ok ? '✅ Right — but nothing to push back yet' : '❌ No pushback — it was ' + pq.a;
+      draw(pq, { show: 'all' }, '<div class="ch-title">' + esc(line) + '</div>');
+      // clear EVERY phone straight away — one of you answering used to leave
+      // the other still looking at the pushback while the Chaser carried on
+      trackOut(line);
+      await this.say(pushed ? 'Yes! Pushed back!' : ok ? 'Right, but there was nothing to push back yet.' : 'No pushback. The answer was ' + pq.a + '.');
       ChaseMusic.duck(false);
       await this.sleep(800);
     }
+    halt(); clearInterval(tick);
     ChaseMusic.stop();
     if (!this.active) return;
     const caught = got >= target;
@@ -805,9 +828,15 @@ const ChasePhone = {
     }
     if (k === 'track') {
       const need = Math.max(0, msg.target - msg.got);
+      if (msg.leftMs != null) msg.left = Math.ceil(msg.leftMs / 1000);
       this.show('<div class="rc-kicker">' + esc(msg.emoji + ' ' + msg.nick) + ' is chasing you</div>' + this.trackHtml(msg.target, msg.got, 'chase', msg.colour) +
-        '<div style="display:flex;justify-content:space-around;font-weight:800"><span>🎯 ' + msg.target + '</span><span style="color:' + msg.colour + ';filter:brightness(1.5)">' + esc(msg.nick) + ' ' + msg.got + '</span><span>⏱ ' + msg.left + 's</span></div>' +
-        '<div class="rc-name" style="font-size:1.2rem;margin-top:8px">' + (need ? 'Needs ' + need + ' more to catch you' : '⛓️ Caught!') + '</div><div class="muted">Be ready for a pushback</div>');
+        '<div style="display:flex;justify-content:space-around;font-weight:800"><span>🎯 ' + msg.target + '</span><span style="color:' + msg.colour + ';filter:brightness(1.5)">' + esc(msg.nick) + ' ' + msg.got + '</span><span>⏱ <b id="chTrkClock">' + msg.left + '</b>s' + (msg.running ? '' : ' ⏸') + '</span></div>' +
+        '<div class="rc-name" style="font-size:1.2rem;margin-top:8px">' + (need ? 'Needs ' + need + ' more to catch you' : '⛓️ Caught!') + '</div>' + (msg.note ? '<div class="rc-name" style="font-size:1.3rem">' + esc(msg.note) + '</div>' : '<div class="muted">Be ready for a pushback</div>'));
+      clearInterval(this._trkT);
+      if (msg.running && msg.leftMs != null) {
+        const end = Date.now() + msg.leftMs;
+        this._trkT = setInterval(() => { const e = document.getElementById('chTrkClock'); if (!e) return clearInterval(this._trkT); e.textContent = Math.max(0, Math.ceil((end - Date.now()) / 1000)); }, 200);
+      }
       return;
     }
     if (k === 'fb') {
