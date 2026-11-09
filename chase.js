@@ -332,7 +332,7 @@ const Chase = {
     await this.sleep(800);
     await this.taunt(ch.lines.intro);
     await this.say(ch.nick + ' is strongest on ' + CHASE_CATS[sorted[0][0]] + ' and ' + CHASE_CATS[sorted[1][0]] +
-      ', and weakest on ' + CHASE_CATS[sorted[sorted.length - 1][0]] + '. Remember that when you pick your categories.');
+      ', and weakest on ' + CHASE_CATS[sorted[sorted.length - 1][0]] + '. Pray for those.');
     await this.sleep(2500);
 
     // ---- 2. each player: cash builder, offer, head to head
@@ -445,24 +445,11 @@ const Chase = {
     let n = 0;
     while (this.active && p < this.STEPS && c < p) {
       n++;
-      // player picks one of two categories
-      const cats = Quiz.shuffle(this.cats()).slice(0, 2);
-      let cat = null;
-      this.catFor = { id, set: x => { if (cats.includes(x)) cat = x; } };
-      this.sendAll({ k: 'wait', text: name + ' is picking a category…' });
-      this.send(id, { k: 'cat', cats: cats.map(x => ({ k: x, label: CHASE_CATS[x] })) });
-      draw(null, null, '<div class="ch-title">Question ' + n + ' — ' + esc(name) + ' picks:<br>' + cats.map(x => CHASE_CATS[x]).join(' or ') + '</div>');
-      await this.say('Question ' + n + '. ' + name + ', ' + CHASE_CATS[cats[0]] + ', or ' + CHASE_CATS[cats[1]] + '?');
-      const until = Date.now() + 20000 * this.timeScale;
-      while (this.active && !cat && Date.now() < until) await this.sleep(120);
-      this.catFor = null;
-      if (!this.active) break;
-      cat = cat || cats[0];
       const wantD = p >= this.STEPS - 2 ? 'h' : 'm';
-      const q = this.take(x => x.c === cat && x.d === wantD && !x.soft, x => x.c === cat && !x.soft);
-      draw(q, null, '<div class="ch-timer">🎙 Listen…</div>');
+      const q = this.take(x => x.d === wantD && !x.soft, x => !x.soft);
+      draw(q, null, '<div class="ch-timer">🎙 Question ' + n + ' — ' + esc(CHASE_CATS[q.c] || '') + '</div>');
       const ansP = this.put([id], q);
-      await this.say(this.readQ(q, true));
+      await this.say('Question ' + n + ', ' + (CHASE_CATS[q.c] || '') + '. ' + this.readQ(q, true));
       if (!this.active) break;
       draw(q, null, '<div class="ch-timer">⏱ ' + this.H2H_SECS + ' seconds to answer · ' + this.chaser.emoji + ' is thinking…</div>');
       this.startClock(this.H2H_SECS);
