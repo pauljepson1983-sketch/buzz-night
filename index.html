@@ -872,6 +872,10 @@
       <div class="card" id="nightCard">
         <h2>🎬 Tonight's running order</h2>
         <p class="muted" style="font-size:.85rem">Build the night up front, press go, and it runs itself — so you can play instead of operating it. Picture and music rounds score themselves. Add a buzzer round wherever you want to take over and judge.</p>
+        <!-- Open while the night is empty; folds itself away once rounds are
+             planned, so the list is what you see. -->
+        <details class="mb" id="buildFold" open>
+          <summary style="font-weight:700;cursor:pointer">➕ Build the night or add a round</summary>
         <div class="quick-box">
           <div class="row mb">
             <label for="quickDecade"><b>1.</b> Era</label>
@@ -923,6 +927,7 @@
             <button class="btn ghost small" onclick="Night.quickAdd('themes')">🎵 Themes</button>
           </div>
         </div>
+        </details>
         <div id="nightList"></div>
         <div class="row mb">
           <button class="btn ghost small" onclick="Night.clear()">Clear</button>
@@ -8063,6 +8068,11 @@ const Night = {
 
   render() {
     const el = $('nightList');
+    /* the builder folds away once there's a night planned, and opens again
+       when it's empty — but only when that changes, so opening it yourself
+       to add a round isn't snapped shut by the next redraw */
+    const fold = $('buildFold'), empty = !this.plan.length;
+    if (fold && this._wasEmpty !== empty) { fold.open = empty; this._wasEmpty = empty; }
     if (!this.plan.length) {
       el.innerHTML = '<p class="muted" style="font-size:.85rem">No rounds yet.</p>';
     } else {
