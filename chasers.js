@@ -20,7 +20,7 @@ window.CHASERS = [
     colour: '#3b6fd8',
     skill: { science: 92, history: 88, geography: 78, arts_and_literature: 74, general_knowledge: 72,
              society_and_culture: 62, food_and_drink: 60, sport_and_leisure: 52, film_and_tv: 46, music: 40 },
-    speed: 11, nerves: 2,
+    speed: 11.2, nerves: 2,
     lines: {
       intro: 'Good evening. I do hope you\'ve revised.',
       catch: 'Caught. Do try to read more widely.',
@@ -38,7 +38,7 @@ window.CHASERS = [
     colour: '#d83b8e',
     skill: { music: 94, film_and_tv: 90, society_and_culture: 80, food_and_drink: 70, general_knowledge: 66,
              arts_and_literature: 62, sport_and_leisure: 55, history: 54, geography: 46, science: 42 },
-    speed: 15, nerves: 7,
+    speed: 11.4, nerves: 7,
     lines: {
       intro: 'Darling, this is MY stage.',
       catch: 'And that\'s a wrap, sweetie!',
@@ -56,7 +56,7 @@ window.CHASERS = [
     colour: '#d88a1f',
     skill: { sport_and_leisure: 93, food_and_drink: 90, general_knowledge: 78, geography: 70, society_and_culture: 66,
              film_and_tv: 64, music: 62, history: 60, science: 50, arts_and_literature: 42 },
-    speed: 13, nerves: 4,
+    speed: 11.3, nerves: 4,
     lines: {
       intro: 'Right then, pet. Let\'s have you.',
       catch: 'Last orders! You\'re barred.',
@@ -74,7 +74,7 @@ window.CHASERS = [
     colour: '#2f9e6e',
     skill: { arts_and_literature: 95, geography: 88, history: 82, society_and_culture: 74, general_knowledge: 70,
              science: 66, food_and_drink: 58, film_and_tv: 54, music: 50, sport_and_leisure: 38 },
-    speed: 9, nerves: 3,
+    speed: 11, nerves: 3,
     lines: {
       intro: 'Please keep your voices down. And your hopes.',
       catch: 'Overdue. Your fine is everything.',
@@ -92,7 +92,7 @@ window.CHASERS = [
     colour: '#2b2b33', locked: true,
     skill: { general_knowledge: 86, history: 84, science: 83, geography: 83, music: 82, film_and_tv: 82,
              sport_and_leisure: 81, arts_and_literature: 80, food_and_drink: 80, society_and_culture: 80 },
-    speed: 14, nerves: 1,
+    speed: 12.2, nerves: 1,
     lines: {
       intro: 'You made it this far. That ends now.',
       catch: 'As expected.',

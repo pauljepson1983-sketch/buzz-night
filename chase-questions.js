@@ -24,7 +24,8 @@ window.CHASE_Q = [
 "Drugs"
 ],
 "c": "science",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "62602d174b176d54800e3c7e",
@@ -60,7 +61,8 @@ window.CHASE_Q = [
 "Anus"
 ],
 "c": "science",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "625698689da29df7b05f7285",
@@ -72,7 +74,8 @@ window.CHASE_Q = [
 "Spiderman"
 ],
 "c": "film_and_tv",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "64e6fd5e0b79e5bedd55c878",
@@ -156,7 +159,8 @@ window.CHASE_Q = [
 "Bread"
 ],
 "c": "science",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "645cb0e67d263fd50970438a",
@@ -192,7 +196,8 @@ window.CHASE_Q = [
 "Jochen Simon"
 ],
 "c": "music",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "622a1c397cc59eab6f950dc4",
@@ -264,7 +269,8 @@ window.CHASE_Q = [
 "Jehovah"
 ],
 "c": "society_and_culture",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "64a0966bcf8fd58080cefff5",
@@ -276,7 +282,8 @@ window.CHASE_Q = [
 "The Candy Kingdom"
 ],
 "c": "arts_and_literature",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "65056ebb7a97013de78b534b",
@@ -300,7 +307,8 @@ window.CHASE_Q = [
 "Blokes"
 ],
 "c": "science",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "6477bb12550bc819ad646b61",
@@ -492,7 +500,8 @@ window.CHASE_Q = [
 "Forbearance"
 ],
 "c": "society_and_culture",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "65056f327a97013de78b53f2",
@@ -648,7 +657,8 @@ window.CHASE_Q = [
 "Smack and flee"
 ],
 "c": "society_and_culture",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "65056ee97a97013de78b538c",
@@ -744,7 +754,8 @@ window.CHASE_Q = [
 "Lord Doit Chagrin"
 ],
 "c": "arts_and_literature",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "63b058714799123c67712f2d",
@@ -756,7 +767,8 @@ window.CHASE_Q = [
 "Leck"
 ],
 "c": "society_and_culture",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "63a03949c7d86251f9b65c35",
@@ -876,7 +888,8 @@ window.CHASE_Q = [
 "Athens"
 ],
 "c": "geography",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "64746b075a4c31088dd9d01d",
@@ -972,7 +985,8 @@ window.CHASE_Q = [
 "\"In da Club\" by 50 Cent"
 ],
 "c": "music",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "622a1c3c7cc59eab6f951a90",
@@ -996,7 +1010,8 @@ window.CHASE_Q = [
 "Infinity"
 ],
 "c": "science",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "6243347acfaae40c12961447",
@@ -1008,7 +1023,8 @@ window.CHASE_Q = [
 "A Jill"
 ],
 "c": "science",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "650570207a97013de78b553b",
@@ -1032,7 +1048,8 @@ window.CHASE_Q = [
 "Quiff"
 ],
 "c": "society_and_culture",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "65056eb27a97013de78b533e",
@@ -1104,7 +1121,8 @@ window.CHASE_Q = [
 "the signification and application of words"
 ],
 "c": "science",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "64e6fd610b79e5bedd55c89a",
@@ -1128,7 +1146,8 @@ window.CHASE_Q = [
 "Becherovka"
 ],
 "c": "food_and_drink",
-"d": "e"
+"d": "e",
+"soft": true
 },
 {
 "id": "622a1c387cc59eab6f950ae8",
@@ -1224,7 +1243,8 @@ window.CHASE_Q = [
 "San Diego Bears"
 ],
 "c": "sport_and_leisure",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "622a1c357cc59eab6f94ffa9",
@@ -1464,7 +1484,8 @@ window.CHASE_Q = [
 "Jordun"
 ],
 "c": "general_knowledge",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "65056e4f7a97013de78b52b4",
@@ -1500,7 +1521,8 @@ window.CHASE_Q = [
 "Jay Z"
 ],
 "c": "music",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "622a1c367cc59eab6f9500df",
@@ -1512,7 +1534,8 @@ window.CHASE_Q = [
 "Nebulous Endocrine Station"
 ],
 "c": "sport_and_leisure",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "63989c2f5c9a75021f310489",
@@ -1584,7 +1607,8 @@ window.CHASE_Q = [
 "the mnemonic practice of writing sentences such that the numbers of letters in the words correspond to the consecutive digits of pi"
 ],
 "c": "science",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "622a1c367cc59eab6f9503be",
@@ -1608,7 +1632,8 @@ window.CHASE_Q = [
 "Sombai"
 ],
 "c": "food_and_drink",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "62ab33135202de619af2813c",
@@ -1680,7 +1705,8 @@ window.CHASE_Q = [
 "The Vichy System"
 ],
 "c": "history",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "626288684b176d54800e3d9a",
@@ -1692,7 +1718,8 @@ window.CHASE_Q = [
 "Porsche"
 ],
 "c": "society_and_culture",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "622a1c347cc59eab6f94fad5",
@@ -1788,7 +1815,8 @@ window.CHASE_Q = [
 "The Drone"
 ],
 "c": "sport_and_leisure",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "647edb8d520523194910c341",
@@ -1812,7 +1840,8 @@ window.CHASE_Q = [
 "Davy Dylan"
 ],
 "c": "history",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "64fb150b717513cb7919038a",
@@ -1884,7 +1913,8 @@ window.CHASE_Q = [
 "Henryk Sienkiewicz"
 ],
 "c": "arts_and_literature",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "6ae2e3073f3b0b676f6e9ca0",
@@ -1908,7 +1938,8 @@ window.CHASE_Q = [
 "Life in extremely cold climates"
 ],
 "c": "science",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "622a1c357cc59eab6f94fceb",
@@ -2124,7 +2155,8 @@ window.CHASE_Q = [
 "Amir Icarlo"
 ],
 "c": "general_knowledge",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "6488deed50a27f7378a91df4",
@@ -2148,7 +2180,8 @@ window.CHASE_Q = [
 "Roman"
 ],
 "c": "arts_and_literature",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "622a1c3c7cc59eab6f9517ec",
@@ -2196,7 +2229,8 @@ window.CHASE_Q = [
 "Amity"
 ],
 "c": "music",
-"d": "m"
+"d": "m",
+"soft": true
 },
 {
 "id": "63a03999c7d86251f9b65c8b",
@@ -2352,7 +2386,8 @@ window.CHASE_Q = [
 "Alphonse Daudet"
 ],
 "c": "arts_and_literature",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "622a1c347cc59eab6f94f86d",
@@ -2424,7 +2459,8 @@ window.CHASE_Q = [
 "Frederik Pohl"
 ],
 "c": "arts_and_literature",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "622a1c3a7cc59eab6f9510d3",
@@ -2436,7 +2472,8 @@ window.CHASE_Q = [
 "Horcamel"
 ],
 "c": "science",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "623387f80161109f922aac59",
@@ -2520,7 +2557,8 @@ window.CHASE_Q = [
 "Dev"
 ],
 "c": "general_knowledge",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "62373f98cb85f7ce9e949ca8",
@@ -2628,7 +2666,8 @@ window.CHASE_Q = [
 "Music"
 ],
 "c": "society_and_culture",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "6242caf5d543524f1b19c8fe",
@@ -2688,7 +2727,8 @@ window.CHASE_Q = [
 "Mark Lancaster"
 ],
 "c": "history",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "622a1c397cc59eab6f950f4c",
@@ -2832,7 +2872,8 @@ window.CHASE_Q = [
 "Museum management"
 ],
 "c": "science",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "6471bcf37206d7c314606f66",
@@ -2928,7 +2969,8 @@ window.CHASE_Q = [
 "I'm Attractive, Not A Loser"
 ],
 "c": "society_and_culture",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "622a1c3c7cc59eab6f9518f9",
@@ -2952,7 +2994,8 @@ window.CHASE_Q = [
 "Edgar Rice Burroughs"
 ],
 "c": "arts_and_literature",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "64824ead7778562fd76a9681",
@@ -3216,7 +3259,8 @@ window.CHASE_Q = [
 "Alphonse Daudet"
 ],
 "c": "arts_and_literature",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "622a1c367cc59eab6f95018f",
@@ -3228,7 +3272,8 @@ window.CHASE_Q = [
 "Harvey Butler Shelley"
 ],
 "c": "arts_and_literature",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "622a1c357cc59eab6f94fd7f",
@@ -3336,7 +3381,8 @@ window.CHASE_Q = [
 "Detroit Canucks"
 ],
 "c": "sport_and_leisure",
-"d": "h"
+"d": "h",
+"soft": true
 },
 {
 "id": "625fd68adc0dd3b72da64cf8",

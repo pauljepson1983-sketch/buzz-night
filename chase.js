@@ -8,18 +8,107 @@
    with pushbacks on every miss.
 
    The Chaser knows nothing: each answer is a dice roll against its hit rate
-   for that category (chasers.js), nudged by difficulty, nerves and how it
-   has done against you before.
+   (chasers.js), nudged by difficulty, nerves and how it has done against
+   you before. Everything is read aloud and paced on the speech, with
+   original synth music under the timed parts.
    ===================================================================== */
+
+/* ---------- music: original synth tension bed, ticks and stingers ---------- */
+const ChaseMusic = {
+  on: false, urgent: false,
+  ok() { return Sound.enabled && (window.AudioContext || window.webkitAudioContext); },
+  start(kind) {
+    if (!this.ok()) return;
+    try {
+      Sound.ensure();
+      this.stop(true);
+      const ctx = Sound.ctx;
+      this.out = ctx.createGain(); this.out.gain.value = 0.0001;
+      this.out.gain.exponentialRampToValueAtTime(this.level = 0.22, ctx.currentTime + 1.2);
+      this.out.connect(ctx.destination);
+      this.on = true; this.urgent = false; this.step = 0;
+      this.bpm = kind === 'final' ? 136 : kind === 'chaser' ? 128 : 120;
+      this.next = ctx.currentTime + 0.1;
+      this.timer = setInterval(() => this.schedule(), 40);
+    } catch (e) {}
+  },
+  schedule() {
+    const ctx = Sound.ctx; if (!ctx || !this.on) return;
+    const spb = 60 / this.bpm / 2;             // eighth notes
+    while (this.next < ctx.currentTime + 0.2) { this.note(this.step, this.next); this.next += spb; this.step++; }
+  },
+  blip(type, f, peak, t, dur, cut) {
+    const ctx = Sound.ctx;
+    const o = ctx.createOscillator(), g = ctx.createGain(), fl = ctx.createBiquadFilter();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    fl.type = 'lowpass'; fl.frequency.value = cut || 1200;
+    g.gain.setValueAtTime(peak, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(fl); fl.connect(g); g.connect(this.out); o.start(t); o.stop(t + dur + 0.02);
+  },
+  tick(t, f, peak) {
+    const ctx = Sound.ctx, len = Math.ceil(ctx.sampleRate * 0.03);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const s = ctx.createBufferSource(), fl = ctx.createBiquadFilter(), g = ctx.createGain();
+    s.buffer = buf; fl.type = 'highpass'; fl.frequency.value = f || 6000; g.gain.value = peak || 0.25;
+    s.connect(fl); fl.connect(g); g.connect(this.out); s.start(t);
+  },
+  note(i, t) {
+    // A minor driving pulse: A A F G, one bar each
+    const roots = [55, 55, 43.65, 49];
+    const r = roots[Math.floor(i / 8) % 4];
+    this.blip('sawtooth', r, 0.5, t, 0.16, 380);
+    if (i % 8 === 0) [4, 4.76, 6].forEach(m => this.blip('square', r * m, 0.05, t, 0.5, 1800));   // minor stab
+    if (i % 2 === 1) this.tick(t, 7000, 0.12);
+    if (this.urgent) {                          // last ten seconds: the clock
+      if (i % 2 === 0) this.blip('sine', 1760, 0.18, t, 0.06, 4000);
+      if (i % 8 === 4) this.blip('square', r * 8, 0.08, t, 0.3, 2400);
+    }
+  },
+  setUrgent(v) { this.urgent = !!v; },
+  duck(down) {
+    if (!this.on || !this.out) return;
+    const t = Sound.ctx.currentTime;
+    this.out.gain.cancelScheduledValues(t);
+    this.out.gain.setTargetAtTime(down ? 0.07 : this.level, t, 0.12);
+  },
+  stop(now) {
+    clearInterval(this.timer); this.on = false; this.urgent = false;
+    const out = this.out; this.out = null;
+    if (!out) return;
+    try { const t = Sound.ctx.currentTime; out.gain.cancelScheduledValues(t); out.gain.setTargetAtTime(0.0001, t, now ? 0.02 : 0.3); setTimeout(() => out.disconnect(), 1500); } catch (e) {}
+  },
+  sting(kind) {
+    if (!this.ok()) return;
+    try {
+      Sound.ensure();
+      const ctx = Sound.ctx, t = ctx.currentTime + 0.05;
+      const g = ctx.createGain(); g.gain.value = 0.3; g.connect(ctx.destination);
+      const play = (type, f, at, dur, peak) => {
+        const o = ctx.createOscillator(), e = ctx.createGain();
+        o.type = type; o.frequency.setValueAtTime(f, t + at);
+        e.gain.setValueAtTime(peak || 0.4, t + at); e.gain.exponentialRampToValueAtTime(0.001, t + at + dur);
+        o.connect(e); e.connect(g); o.start(t + at); o.stop(t + at + dur + 0.05);
+      };
+      if (kind === 'timeup') { [880, 698, 523].forEach((f, k) => play('square', f, k * 0.22, 0.35, 0.3)); play('sawtooth', 110, 0.66, 1.2, 0.5); }
+      if (kind === 'caught') { play('sawtooth', 98, 0, 1.6, 0.6); play('sawtooth', 104, 0, 1.6, 0.5); play('square', 49, 0.1, 1.8, 0.5); }
+      if (kind === 'win') { [523, 659, 784, 1047].forEach((f, k) => play('square', f, k * 0.14, 0.5, 0.3)); [523, 659, 784].forEach(f => play('triangle', f * 2, 0.6, 1.4, 0.2)); }
+      if (kind === 'home') { [659, 988].forEach((f, k) => play('triangle', f, k * 0.12, 0.4, 0.35)); }
+      if (kind === 'reveal') { play('sawtooth', 220, 0, 0.9, 0.3); play('sawtooth', 330, 0.25, 1.2, 0.25); }
+      setTimeout(() => g.disconnect(), 3500);
+    } catch (e) {}
+  }
+};
+
 const Chase = {
   active: false,
   timeScale: 1,              // tests shrink every wait
   CASH_SECS: 60,
   CASH_PER: 1000,
   STEPS: 8,                  // board: chaser starts at 0, home is 8
-  H2H_SECS: 15,
+  H2H_SECS: 20,
   FINAL_SECS: 120,
-  PUSH_SECS: 10,
+  PUSH_SECS: 12,
   LAZARUS_POT: 4000,
   REC_KEY: 'chase_record',
 
@@ -32,6 +121,7 @@ const Chase = {
     return new Promise(async r => { while (this.active && Date.now() < until) await new Promise(x => setTimeout(x, 50)); r(); });
   },
   money(n) { return (n < 0 ? '-£' : '£') + Math.abs(n).toLocaleString('en-GB'); },
+  pounds(n) { return n.toLocaleString('en-GB') + ' pounds'; },
   here() { return Object.keys(Host.players).filter(id => Host.isPresent(Host.players[id])); },
   nameOf(id) { return (Host.players[id] || {}).name || 'Someone'; },
 
@@ -47,16 +137,20 @@ const Chase = {
     return pool[Math.floor(Math.random() * pool.length)];
   },
 
-  /* ---------- the Chaser's brain: a dice roll ---------- */
-  hitRate(cat, diff, pressure) {
+  /* ---------- the Chaser's brain: a dice roll ----------
+     Head to head: weak subjects ~68%, strong ~93% — picking the category
+     matters, but nothing is a free ride. Final chase: every Chaser is a
+     pro, 80–90% like the real show, so pushbacks are a rare lifeline. */
+  hitRate(cat, diff, pressure, phase) {
     const ch = this.chaser;
-    let p = ch.skill[cat] != null ? ch.skill[cat] : 65;
-    p += { e: 6, m: 0, h: -8 }[diff] || 0;
+    const s = ch.skill[cat] != null ? ch.skill[cat] : 65;
+    let p = phase === 'final' ? 70 + s * 0.2 : 50 + s * 0.45;
+    p += { e: 4, m: 0, h: -6 }[diff] || 0;
     p += this.adj || 0;                          // learns your league
-    p -= (pressure || 0) * ch.nerves * 1.2;      // nerves when it matters
-    return Math.max(15, Math.min(97, p));
+    p -= (pressure || 0) * ch.nerves * 0.9;      // nerves when it matters
+    return Math.max(25, Math.min(97, p));
   },
-  chaserAnswers(q, pressure) { return Math.random() * 100 < this.hitRate(q.c, q.d, pressure); },
+  chaserAnswers(q, pressure, phase) { return Math.random() * 100 < this.hitRate(q.c, q.d, pressure, phase); },
 
   /* ---------- questions ---------- */
   buildPool() {
@@ -66,8 +160,9 @@ const Chase = {
     this.pool = Seen.rank('chase', own.concat(old));
     this.used = [];
   },
-  take(test) {
+  take(test, second) {
     let i = this.pool.findIndex(test);
+    if (i < 0 && second) i = this.pool.findIndex(second);
     if (i < 0) i = this.pool.findIndex(() => true);
     if (i < 0) { this.buildPool(); i = 0; }    // ran dry: start again, oldest first
     const q = this.pool.splice(i, 1)[0];
@@ -81,13 +176,13 @@ const Chase = {
     return Object.keys(n).filter(c => n[c] > 0);
   },
 
-  /* ---------- talking ---------- */
+  /* ---------- talking: everything waits for the words ---------- */
   VOICE: {
-    professor: { male: true, rate: 0.88, pitch: 0.8 },
-    diva:      { male: false, rate: 1.18, pitch: 1.35 },
+    professor: { male: true, rate: 0.9, pitch: 0.8 },
+    diva:      { male: false, rate: 1.12, pitch: 1.35 },
     landlord:  { male: true, rate: 1.0, pitch: 0.65 },
-    librarian: { male: false, rate: 0.9, pitch: 1.05 },
-    boss:      { male: true, rate: 0.8, pitch: 0.3 }
+    librarian: { male: false, rate: 0.92, pitch: 1.05 },
+    boss:      { male: true, rate: 0.82, pitch: 0.3 }
   },
   pickVoice(male) {
     const vs = Sound.voices().filter(v => /^en(-|_)/i.test(v.lang));
@@ -97,41 +192,70 @@ const Chase = {
     const M = /\bmale|george|ryan|daniel|oliver|arthur|thomas|david|mark|james|alex/i;
     return list.find(v => male ? (M.test(v.name) && !F.test(v.name)) : F.test(v.name)) || list[0] || null;
   },
-  chaserSay(text) {
-    if (!Sound.enabled || !text) return;
-    try {
-      const cfg = this.VOICE[this.chaser.id] || {};
-      const u = new SpeechSynthesisUtterance(text);
-      const v = this.pickVoice(cfg.male);
-      if (v) { u.voice = v; u.lang = v.lang; }
-      u.rate = cfg.rate || 1; u.pitch = cfg.pitch || 1;
-      speechSynthesis.cancel(); speechSynthesis.speak(u);
-    } catch (e) {}
+  /* Speak and resolve when finished. who: 'host' (the game's own voice
+     setting) or 'chaser'. wait=false starts it and returns at once. */
+  speak(text, who, wait) {
+    if (!text) return Promise.resolve();
+    const est = 900 + text.length * 70;          // a rough reading time
+    if (!Sound.enabled || typeof speechSynthesis === 'undefined') return wait === false ? Promise.resolve() : this.sleep(Math.min(est, 6000));
+    return new Promise(resolve => {
+      let done = false;
+      const fin = () => { if (done) return; done = true; ChaseMusic.duck(false); resolve(); };
+      try {
+        const u = new SpeechSynthesisUtterance(text);
+        if (who === 'chaser') {
+          const cfg = this.VOICE[this.chaser.id] || {};
+          const v = this.pickVoice(cfg.male);
+          if (v) { u.voice = v; u.lang = v.lang; }
+          u.rate = cfg.rate || 1; u.pitch = cfg.pitch || 1;
+        } else {
+          const st = Sound.STYLES[store.get('buzz_style') || 'normal'] || Sound.STYLES.normal;
+          u.rate = Math.min(st[1], 1.05); u.pitch = st[2];
+          const want = store.get('buzz_voice');
+          const v = want && Sound.voices().find(x => x.voiceURI === want);
+          if (v) { u.voice = v; u.lang = v.lang; }
+        }
+        u.onend = fin; u.onerror = fin;
+        ChaseMusic.duck(true);
+        speechSynthesis.cancel(); speechSynthesis.speak(u);
+      } catch (e) { fin(); }
+      setTimeout(fin, est * 2 + 2000);           // never hang on a silent voice
+      if (wait === false) resolve();
+    });
   },
-  host(text) { Sound.say(text); },
+  say(text) { return this.speak(text, 'host'); },
+  taunt(text) { return this.speak(text, 'chaser'); },
+  readQ(q, withOpts) {
+    const opts = withOpts ? ' ' + q.opts.slice(0, -1).join(', ') + ', or ' + q.opts[q.opts.length - 1] + '?' : '';
+    return q.q + opts;
+  },
 
   /* ---------- phones ---------- */
   send(id, m) { this.lastTo[id] = m; Host.sendTo(id, Object.assign({ type: 'chase' }, m)); },
   sendAll(m) { Object.keys(Host.players).forEach(id => this.send(id, m)); },
   resend(id) { if (this.lastTo && this.lastTo[id]) Host.sendTo(id, Object.assign({ type: 'chase' }, this.lastTo[id])); },
 
-  /* Ask a question and wait. mode 'one': only `who` answers. mode 'first':
-     resolves on the first right answer from any of `who`. */
-  ask(who, q, secs, mode, extra) {
+  /* Put a question on the phones. mode 'one': only `who` answers. mode
+     'first': settles on the first right answer from any of `who`. The
+     clock (secs) is started separately with startClock, so it can begin
+     after the question has been read out. */
+  put(who, q, mode, extra) {
     this.cur = { q, who: new Set(who), ans: {}, mode: mode || 'one' };
-    const view = { k: 'q', qid: q.qid, text: q.q, opts: q.opts, secs, cat: CHASE_CATS[q.c] || '', ...extra };
+    const view = { k: 'q', qid: q.qid, text: q.q, opts: q.opts, cat: CHASE_CATS[q.c] || '', ...extra };
     Object.keys(Host.players).forEach(id => this.send(id, Object.assign({}, view, { mine: this.cur.who.has(id) })));
-    return new Promise(resolve => {
-      this.cur.done = resolve;
-      this.cur.timer = setTimeout(() => this.settle(), secs * 1000 * this.timeScale);
-    });
+    this.cur.p = new Promise(resolve => { this.cur.done = resolve; });
+    return this.cur.p;
+  },
+  startClock(secs) {
+    const c = this.cur; if (!c || !c.done) return;
+    clearTimeout(c.timer);
+    c.timer = setTimeout(() => this.settle(), secs * 1000 * this.timeScale);
   },
   answer(id, msg) {
     const c = this.cur;
-    if (!this.active || !c || !c.q || msg.qid !== c.q.qid || !c.who.has(id) || c.ans[id] != null) return;
+    if (!this.active || !c || !c.q || !c.done || msg.qid !== c.q.qid || !c.who.has(id) || c.ans[id] != null) return;
     c.ans[id] = msg.i;
     const right = msg.i === c.q.correct;
-    if (this.onAnswer) this.onAnswer(id, right);
     if (c.mode === 'first' && right) return this.settle();
     if ([...c.who].every(x => c.ans[x] != null || !Host.isPresent(Host.players[x]))) this.settle();
   },
@@ -162,15 +286,17 @@ const Chase = {
     }
     return '<div class="ch-board">' + rows + '</div>';
   },
+  /* reveal: { p: player's pick, c: chaser's pick, show: 'p' | 'pc' | 'all' } */
   qHtml(q, reveal) {
+    const show = reveal ? (reveal.show || 'all') : '';
     return '<div class="ch-q"><div class="muted">' + esc(CHASE_CATS[q.c] || '') + '</div><div class="ch-qt">' + esc(q.q) + '</div>' +
       '<div class="ch-opts">' + q.opts.map((o, i) => {
         let cls = '';
-        if (reveal) {
+        if (show === 'all') {
           if (i === q.correct) cls = ' right';
           else if (reveal.p === i || reveal.c === i) cls = ' wrong';
-        }
-        const tags = reveal ? (reveal.p === i ? ' <b>🙂</b>' : '') + (reveal.c === i ? ' <b>' + this.chaser.emoji + '</b>' : '') : '';
+        } else if (show && (reveal.p === i || (show === 'pc' && reveal.c === i))) cls = ' picked';
+        const tags = reveal ? (reveal.p === i ? ' <b>🙂</b>' : '') + ((show === 'pc' || show === 'all') && reveal.c === i ? ' <b>' + this.chaser.emoji + '</b>' : '') : '';
         return '<div class="ch-opt' + cls + '">' + esc(o) + tags + '</div>';
       }).join('') + '</div></div>';
   },
@@ -185,7 +311,7 @@ const Chase = {
     this.buildPool();
     Quiz.roundGains = {};
     this.players = this.here();
-    this.home = {};                     // id -> money banked
+    this.home = {};
     this.results = {};
     if (!this.players.length) { this.active = false; return false; }
 
@@ -194,16 +320,20 @@ const Chase = {
     const sorted = Object.entries(ch.skill).sort((a, b) => b[1] - a[1]);
     this.view(this.head() +
       '<p style="font-size:1.05rem">' + esc(ch.bio) + '</p>' +
-      '<div class="ch-meta">' + (ch.age ? ch.age + ' · ' : '') + esc(ch.gender) + ' · 📍 ' + esc(ch.from) + ' · ⚡ ' + ch.speed + '/min · 😰 nerves ' + ch.nerves + '/10' +
+      '<div class="ch-meta">' + (ch.age ? ch.age + ' · ' : '') + esc(ch.gender) + ' · 📍 ' + esc(ch.from) + ' · ⚡ ' + Math.round(ch.speed) + '/min · 😰 nerves ' + ch.nerves + '/10' +
       (r0.w + r0.l ? ' · record v you: won ' + r0.w + ', lost ' + r0.l : '') + '</div>' +
-      '<div class="ch-skills">' + sorted.map(([k, v]) => '<div class="ch-sk"><span>' + CHASE_CATS[k] + '</span><i style="width:' + Math.round(this.hitRate(k, 'm')) + '%"></i></div>').join('') + '</div>');
+      '<div class="ch-skills">' + sorted.map(([k, v]) => '<div class="ch-sk"><span>' + CHASE_CATS[k] + '</span><i style="width:' + v + '%"></i></div>').join('') + '</div>');
     this.sendAll({ k: 'intro', id: ch.id, nick: ch.nick, name: ch.name, bio: ch.bio, emoji: ch.emoji, colour: ch.colour,
       strong: sorted.slice(0, 3).map(x => CHASE_CATS[x[0]]), weak: sorted.slice(-3).map(x => CHASE_CATS[x[0]]) });
     $('nightStatus').textContent = '⛓️ The Chase — tonight\'s Chaser is ' + ch.nick + '.';
-    this.host('Tonight\'s Chaser is ' + ch.nick + '!');
+    ChaseMusic.sting('reveal');
+    await this.sleep(1200);
+    await this.say('Welcome to The Chase. Tonight\'s Chaser is... ' + ch.nick + '!');
+    await this.sleep(800);
+    await this.taunt(ch.lines.intro);
+    await this.say(ch.nick + ' is strongest on ' + CHASE_CATS[sorted[0][0]] + ' and ' + CHASE_CATS[sorted[1][0]] +
+      ', and weakest on ' + CHASE_CATS[sorted[sorted.length - 1][0]] + '. Remember that when you pick your categories.');
     await this.sleep(2500);
-    this.chaserSay(ch.lines.intro);
-    await this.sleep(6000);
 
     // ---- 2. each player: cash builder, offer, head to head
     for (const id of this.players) {
@@ -221,33 +351,57 @@ const Chase = {
     return this.finish();
   },
 
+  /* a visible, spoken 3-2-1 so nobody is caught cold */
+  async countIn(label) {
+    for (const n of ['3', '2', '1']) {
+      this.view(this.head() + '<div class="ch-title">' + esc(label) + '</div><div class="ch-big" style="font-size:5rem">' + n + '</div>');
+      await this.speak(n, 'host');
+      await this.sleep(350);
+    }
+  },
+
   /* ---------- Cash Builder ---------- */
   async cashBuilder(id) {
     const name = this.nameOf(id);
     let right = 0, asked = 0;
-    this.host(name + ', your cash builder. Sixty seconds. Go!');
-    this.sendAll({ k: 'wait', text: name + ' is in the Cash Builder…' });
-    await this.sleep(2500);
+    this.view(this.head() + '<div class="ch-title">💷 ' + esc(name) + '\'s Cash Builder</div><div class="muted" style="font-size:1.1rem">60 seconds. £1,000 for every right answer.</div>');
+    this.sendAll({ k: 'wait', text: name + ' is up next in the Cash Builder…' });
+    await this.say(name + ', it\'s your Cash Builder. Sixty seconds, a thousand pounds for every right answer. Answer on your phone.');
+    await this.sleep(1000);
+    await this.countIn('💷 ' + name + '\'s Cash Builder');
+    ChaseMusic.start('cash');
     const end = Date.now() + this.CASH_SECS * 1000 * this.timeScale;
-    const show = (q, flash) => this.view(this.head() + '<div class="ch-title">💷 ' + esc(name) + '\'s Cash Builder</div>' +
-      '<div class="ch-big">' + this.money(right * this.CASH_PER) + '</div><div class="ch-timer">⏱ ' + Math.max(0, Math.ceil((end - Date.now()) / 1000 / this.timeScale)) + 's</div>' +
-      (q ? this.qHtml(q) : '') + (flash || ''));
+    const left = () => Math.max(0, Math.ceil((end - Date.now()) / 1000 / this.timeScale));
+    const show = (q, rv) => this.view(this.head() + '<div class="ch-title">💷 ' + esc(name) + '\'s Cash Builder</div>' +
+      '<div class="ch-final"><div><div class="muted">Banked</div><div class="ch-big">' + this.money(right * this.CASH_PER) + '</div></div>' +
+      '<div><div class="muted">Clock</div><div class="ch-big' + (left() <= 10 ? ' ch-hot' : '') + '">' + left() + 's</div></div></div>' +
+      (q ? this.qHtml(q, rv) : ''));
+    const clock = setInterval(() => { ChaseMusic.setUrgent(left() <= 10); const t = document.querySelector('#chaseHost .ch-final > div:nth-child(2) .ch-big'); if (t) { t.textContent = left() + 's'; t.classList.toggle('ch-hot', left() <= 10); } }, 250);
     while (this.active && Date.now() < end) {
       const q = this.take(x => x.d !== 'h');
       asked++;
       show(q);
-      const left = Math.max(1, (end - Date.now()) / 1000 / this.timeScale);
-      const ans = await this.ask([id], q, left, 'one', { cash: true, total: right * this.CASH_PER });
+      const p = this.put([id], q, 'one', { cash: true, total: right * this.CASH_PER });
+      this.startClock(Math.max(0.5, (end - Date.now()) / 1000 / this.timeScale));
+      this.speak(this.readQ(q, false), 'host', false);
+      const ans = await p;
       if (!this.active) break;
-      if (ans[id] === q.correct) { right++; Sound.correct && Sound.correct(); }
+      const ok = ans[id] === q.correct;
+      if (ok) right++;
       if (ans[id] == null) break;           // time ran out on this one
+      show(q, { p: ans[id], show: 'all' });
+      this.send(id, { k: 'fb', ok, answer: q.a });
+      await this.sleep(700);                // see whether it was right before the next
     }
+    clearInterval(clock);
+    ChaseMusic.stop(); ChaseMusic.sting('timeup');
     const cash = right * this.CASH_PER;
     this.results[id] = { right, asked, cash };
-    show(null, '<div class="ch-title">' + esc(name) + ' got ' + right + ' right</div>');
+    this.view(this.head() + '<div class="ch-title">⏱ Time\'s up!</div><div class="ch-big">' + this.money(cash) + '</div><div class="muted" style="font-size:1.1rem">' + right + ' right out of ' + asked + '</div>');
     this.sendAll({ k: 'wait', text: name + ' banked ' + this.money(cash) + ' in the Cash Builder' });
-    this.host(name + ', ' + right + ' right. That\'s ' + this.money(cash).replace('£', '') + ' pounds.');
-    await this.sleep(3500);
+    await this.sleep(1600);
+    await this.say('Time\'s up! ' + name + ', ' + right + ' right. That\'s ' + this.pounds(cash) + '.');
+    await this.sleep(2000);
     return cash;
   },
 
@@ -262,17 +416,19 @@ const Chase = {
     };
     this.view(this.head() + '<div class="ch-title">' + esc(name) + ', here are my offers</div>' +
       Object.values(offers).map(o => '<div class="ch-offer"><b>' + this.money(o.money) + '</b> — ' + o.label + ' (' + o.note + ')</div>').join(''));
-    this.chaserSay('I\'ll give you ' + high + ' pounds. If you\'re brave enough.');
+    this.sendAll({ k: 'wait', text: this.chaser.nick + ' is making ' + name + ' an offer…' });
+    await this.taunt(name + ', you can play for your ' + this.pounds(cash) + '. Or take ' + this.pounds(low) + ', and start further from me. Or... be brave, and play for ' + this.pounds(high) + '.');
     let pick = null;
     this.offerFor = { id, set: p => { pick = p; } };
     this.sendAll({ k: 'wait', text: name + ' is choosing an offer…' });
     this.send(id, { k: 'offer', offers: Object.entries(offers).map(([k, o]) => ({ k, money: this.money(o.money), label: o.label, note: o.note })) });
-    const until = Date.now() + 25000 * this.timeScale;
+    const until = Date.now() + 45000 * this.timeScale;
     while (this.active && !pick && Date.now() < until) await this.sleep(150);
     this.offerFor = null;
     const o = offers[pick] || offers.mid;
-    this.host(name + ' goes for ' + this.money(o.money).replace('£', '') + ' pounds.');
-    await this.sleep(1500);
+    await this.say(name + ' is playing for ' + this.pounds(o.money) + '.');
+    if (pick === 'high') await this.taunt('Brave. Or foolish. We\'ll see.');
+    await this.sleep(1200);
     return o;
   },
   offerPick(id, k) { if (this.offerFor && this.offerFor.id === id) this.offerFor.set(k); },
@@ -284,54 +440,73 @@ const Chase = {
     const draw = (q, rv, line) => this.view(this.head() + '<div class="ch-title">' + esc(name) + ' playing for ' + this.money(offer.money) + '</div>' +
       '<div class="ch-h2h">' + this.board(p, c, name) + '<div style="flex:1">' + (q ? this.qHtml(q, rv) : '') + (line || '') + '</div></div>');
     draw(null, null, '<div class="ch-title">Head to head!</div>');
-    await this.sleep(2000);
+    await this.say('Head to head. ' + name + ', get home before ' + this.chaser.nick + ' catches you.');
+    await this.sleep(1000);
+    let n = 0;
     while (this.active && p < this.STEPS && c < p) {
+      n++;
       // player picks one of two categories
       const cats = Quiz.shuffle(this.cats()).slice(0, 2);
       let cat = null;
       this.catFor = { id, set: x => { if (cats.includes(x)) cat = x; } };
       this.sendAll({ k: 'wait', text: name + ' is picking a category…' });
       this.send(id, { k: 'cat', cats: cats.map(x => ({ k: x, label: CHASE_CATS[x] })) });
-      draw(null, null, '<div class="ch-title">' + esc(name) + ' picks: ' + cats.map(x => CHASE_CATS[x]).join(' or ') + '</div>');
-      const until = Date.now() + 12000 * this.timeScale;
+      draw(null, null, '<div class="ch-title">Question ' + n + ' — ' + esc(name) + ' picks:<br>' + cats.map(x => CHASE_CATS[x]).join(' or ') + '</div>');
+      await this.say('Question ' + n + '. ' + name + ', ' + CHASE_CATS[cats[0]] + ', or ' + CHASE_CATS[cats[1]] + '?');
+      const until = Date.now() + 20000 * this.timeScale;
       while (this.active && !cat && Date.now() < until) await this.sleep(120);
       this.catFor = null;
       if (!this.active) break;
       cat = cat || cats[0];
       const wantD = p >= this.STEPS - 2 ? 'h' : 'm';
-      const q = this.take(x => x.c === cat && x.d === wantD) ;
-      draw(q, null, '<div class="ch-timer">' + this.chaser.emoji + ' thinking…</div>');
-      const ans = await this.ask([id], q, this.H2H_SECS);
+      const q = this.take(x => x.c === cat && x.d === wantD && !x.soft, x => x.c === cat && !x.soft);
+      draw(q, null, '<div class="ch-timer">🎙 Listen…</div>');
+      const ansP = this.put([id], q);
+      await this.say(this.readQ(q, true));
+      if (!this.active) break;
+      draw(q, null, '<div class="ch-timer">⏱ ' + this.H2H_SECS + ' seconds to answer · ' + this.chaser.emoji + ' is thinking…</div>');
+      this.startClock(this.H2H_SECS);
+      const ans = await ansP;
       if (!this.active) break;
       const pressure = p >= this.STEPS - 1 ? 1 : 0;
-      const cRight = this.chaserAnswers(q, pressure);
+      const cRight = this.chaserAnswers(q, pressure, 'h2h');
       const cPick = cRight ? q.correct : [0, 1, 2].filter(i => i !== q.correct)[Math.floor(Math.random() * 2)];
       const pRight = ans[id] === q.correct;
-      draw(q, { p: ans[id], c: cPick }, '<div class="ch-timer">Locked in…</div>');
-      await this.sleep(2200);
+      // the reveal, one beat at a time
+      draw(q, { p: ans[id], show: 'p' }, '<div class="ch-timer">' + esc(name) + ' said…</div>');
+      await this.say(ans[id] == null ? name + ' ran out of time.' : name + ' said ' + q.opts[ans[id]] + '.');
+      await this.sleep(700);
+      draw(q, { p: ans[id], c: cPick, show: 'pc' }, '<div class="ch-timer">' + esc(this.chaser.nick) + ' said…</div>');
+      await this.say(this.chaser.nick + ' said ' + q.opts[cPick] + '.');
+      await this.sleep(900);
+      draw(q, { p: ans[id], c: cPick, show: 'all' }, '<div class="ch-timer">The right answer is…</div>');
+      await this.say('And the right answer is... ' + q.a + '.');
       if (pRight) p++;
       if (cRight) c++;
-      draw(q, { p: ans[id], c: cPick }, '<div class="ch-title">' + (pRight ? '✅ ' + esc(name) : '❌ ' + esc(name)) + ' &nbsp; ' +
+      draw(q, { p: ans[id], c: cPick, show: 'all' }, '<div class="ch-title">' + (pRight ? '✅ ' : '❌ ') + esc(name) + ' &nbsp; ' +
         (cRight ? '✅ ' : '❌ ') + esc(this.chaser.nick) + '</div>');
       this.sendAll({ k: 'h2hResult', name, right: pRight, chaserRight: cRight, answer: q.a, p, c, steps: this.STEPS });
-      if (!cRight && Math.random() < 0.6) this.chaserSay(this.chaser.lines.wrong);
-      await this.sleep(3000);
+      if (!cRight && Math.random() < 0.6) await this.taunt(this.chaser.lines.wrong);
+      await this.sleep(2200);
     }
     if (!this.active) return;
     if (p >= this.STEPS) {
       this.home[id] = offer.money;
       Quiz.roundGains[id] = (Quiz.roundGains[id] || 0) + 10;
       Host.players[id].score += 10;
+      ChaseMusic.sting('home');
       this.view(this.head() + '<div class="ch-big">🏠 ' + esc(name) + ' is HOME!</div><div class="ch-title">' + this.money(offer.money) + ' goes into the Final Chase (+10 points)</div>');
       this.sendAll({ k: 'wait', text: '🏠 ' + name + ' got home with ' + this.money(offer.money) + '!' });
-      this.host(name + ' is home! ' + this.money(offer.money).replace('£', '') + ' pounds goes through.');
+      await this.say(name + ' is home! ' + this.pounds(offer.money) + ' goes through to the final chase.');
     } else {
+      ChaseMusic.sting('caught');
       this.view(this.head() + '<div class="ch-big">⛓️ Caught!</div><div class="ch-title">' + esc(name) + ' is out</div>');
       this.sendAll({ k: 'wait', text: '⛓️ ' + name + ' was caught by ' + this.chaser.nick });
-      this.chaserSay(this.chaser.lines.catch);
+      await this.sleep(1200);
+      await this.taunt(this.chaser.lines.catch);
     }
-    Host.renderScores(); Host.pushBoard();
-    await this.sleep(4000);
+    Host.renderScores();
+    await this.sleep(3500);
   },
 
   /* ---------- Final Chase ---------- */
@@ -345,85 +520,121 @@ const Chase = {
     }
     if (!team.length) return;
     this.finalTeam = team; this.pot = pot;
-    const names = team.map(id => this.nameOf(id)).join(' & ');
+    const names = team.map(id => this.nameOf(id)).join(' and ');
     this.view(this.head() + '<div class="ch-big">🏁 FINAL CHASE</div><div class="ch-title">' + esc(names) + ' playing for ' + this.money(pot) +
-      (lazarus ? ' — nobody got home, so this is a second chance' : '') + '</div><div class="muted">Two minutes. Answer on your phones — first right answer moves you on. One step head start for each player.</div>');
+      (lazarus ? ' — nobody got home, so this is a second chance' : '') + '</div><div class="muted" style="font-size:1.1rem">Two minutes. Answer on your phones — the first right answer moves you a step. One step head start for each player.</div>');
     this.sendAll({ k: 'wait', text: '🏁 Final Chase for ' + this.money(pot) + ' — get ready!' });
-    this.host('The final chase, for ' + this.money(pot).replace('£', '') + ' pounds. Two minutes. Answer on your phones. Go!');
-    await this.sleep(5000);
+    await this.say(lazarus ? 'Nobody made it home, so you get one last chance, for ' + this.pounds(pot) + '.' : 'The final chase. ' + names + ', playing for ' + this.pounds(pot) + '.');
+    await this.say('You have two minutes. The questions are on your phones, not read out, so go as fast as you can. The first right answer moves you on a step. You start with ' + team.length + (team.length === 1 ? ' step.' : ' steps.'));
+    await this.sleep(1000);
+    await this.countIn('🏁 Final Chase');
 
     // --- the team's run
     let target = team.length;            // head start
     const end = Date.now() + this.FINAL_SECS * 1000 * this.timeScale;
     const secsLeft = () => Math.max(0, Math.ceil((end - Date.now()) / 1000 / this.timeScale));
+    ChaseMusic.start('final');
+    const clock = setInterval(() => { ChaseMusic.setUrgent(secsLeft() <= 10); const t = document.querySelector('#chaseHost .ch-clock'); if (t) { t.textContent = secsLeft() + 's'; t.classList.toggle('ch-hot', secsLeft() <= 10); } }, 250);
     while (this.active && Date.now() < end) {
-      const q = this.take(x => x.d !== 'h' || Math.random() < 0.3);
-      this.view(this.head() + '<div class="ch-title">🏁 Your run</div><div class="ch-big">' + target + ' steps</div><div class="ch-timer">⏱ ' + secsLeft() + 's</div>' + this.qHtml(q));
-      const ans = await this.ask(team, q, Math.min(10, Math.max(1, secsLeft())), 'first', { final: true, target });
+      // short, sharp and not read out: the point is to get through as many as you can
+      const q = this.take(x => !x.soft && x.q.length <= 75 && x.d !== 'h', x => !x.soft && x.q.length <= 90);
+      this.view(this.head() + '<div class="ch-final"><div><div class="muted">Your steps</div><div class="ch-big">' + target + '</div></div>' +
+        '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.qHtml(q));
+      const pr = this.put(team, q, 'first', { final: true, target });
+      this.startClock(Math.min(8, Math.max(0.5, (end - Date.now()) / 1000 / this.timeScale)));
+      const ans = await pr;
       if (!this.active) break;
-      if (team.some(id => ans[id] === q.correct)) target++;
+      const ok = team.some(id => ans[id] === q.correct);
+      if (ok) target++;
+      this.view(this.head() + '<div class="ch-final"><div><div class="muted">Your steps</div><div class="ch-big">' + target + '</div></div>' +
+        '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.qHtml(q, { show: 'all' }));
+      await this.sleep(250);
     }
+    clearInterval(clock);
     if (!this.active) return;
+    ChaseMusic.stop(); ChaseMusic.sting('timeup');
     this.view(this.head() + '<div class="ch-big">🎯 Target: ' + target + '</div><div class="ch-title">' + esc(this.chaser.nick) + ' has two minutes to catch you</div>');
-    this.sendAll({ k: 'wait', text: '🎯 You set ' + target + '. Now ' + this.chaser.nick + ' chases — watch for pushbacks!' });
-    this.host('You have set a target of ' + target + '. ' + this.chaser.nick + ', two minutes on the clock. Go!');
-    await this.sleep(4500);
+    this.sendAll({ k: 'wait', text: '🎯 You set ' + target + '. Now ' + this.chaser.nick + ' chases — be ready for pushbacks!' });
+    await this.sleep(1500);
+    await this.say('Time\'s up! You\'ve set a target of ' + target + '. ' + this.chaser.nick + ' needs ' + target + ' right answers in two minutes to catch you.');
+    await this.say('If the Chaser gets one wrong, you get a pushback on your phones. Get it right and you push them back a step.');
+    await this.sleep(800);
+    await this.countIn('⛓️ ' + this.chaser.nick + '\'s chase');
 
-    // --- the Chaser's run, with pushbacks
-    let got = 0, used = 0;
-    const per = 60000 / this.chaser.speed;           // ms per answer
+    // --- the Chaser's run, with pushbacks. The clock is the Chaser's own
+    // pace (answers a minute); every question is still read out.
+    let got = 0, used = 0, pushes = 0;
+    const per = 60000 / this.chaser.speed;
     const total = this.FINAL_SECS * 1000;
+    const draw = (q, rv, note) => this.view(this.head() + '<div class="ch-final"><div><div class="muted">Target</div><div class="ch-big">' + target + '</div></div>' +
+      '<div><div class="muted">' + esc(this.chaser.nick) + '</div><div class="ch-big" style="color:var(--cc);filter:brightness(1.5)">' + got + '</div></div>' +
+      '<div><div class="muted">Clock</div><div class="ch-big' + ((total - used) <= 10000 ? ' ch-hot' : '') + '">' + Math.max(0, Math.ceil((total - used) / 1000)) + 's</div></div></div>' +
+      (note || '') + (q ? this.qHtml(q, rv) : ''));
+    ChaseMusic.start('chaser');
     while (this.active && used < total && got < target) {
-      const q = this.take(() => true);
+      const q = this.take(x => !x.soft);
       const pressure = target - got <= 2 ? 1 : 0;
-      const hit = this.chaserAnswers(q, pressure);
+      const hit = this.chaserAnswers(q, pressure, 'final');
+      const cPick = hit ? q.correct : [0, 1, 2].filter(i => i !== q.correct)[Math.floor(Math.random() * 2)];
+      draw(q);
+      await this.say(q.q);
+      await this.taunt(q.opts[cPick]);
       used += per;
-      const left = Math.max(0, Math.ceil((total - used) / 1000));
-      this.view(this.head() + '<div class="ch-final"><div><div class="muted">Target</div><div class="ch-big">' + target + '</div></div>' +
-        '<div><div class="muted">' + esc(this.chaser.nick) + '</div><div class="ch-big" style="color:var(--cc)">' + got + '</div></div>' +
-        '<div><div class="muted">Clock</div><div class="ch-big">' + left + 's</div></div></div>' + this.qHtml(q, { c: hit ? q.correct : (q.correct + 1) % 3 }));
-      await this.sleep(per);
-      if (hit) { got++; continue; }
+      ChaseMusic.setUrgent(total - used <= 10000);
+      if (hit) { got++; draw(q, { c: cPick, show: 'all' }); await this.sleep(500); continue; }
+      draw(q, { c: cPick, show: 'all' }, '<div class="ch-title">❌ Wrong! PUSHBACK — answer on your phones</div>');
       if (used >= total) break;
-      // pushback: clock stops, you get a go
-      this.view(this.head() + '<div class="ch-title">❌ ' + esc(this.chaser.nick) + ' got it wrong — PUSHBACK! Answer on your phones</div>' + this.qHtml(q));
+      // pushback: the Chaser's clock stops, you get a go
+      ChaseMusic.duck(true);
       this.sendAll({ k: 'wait', text: 'Pushback!' });
-      this.host('Pushback!');
-      const pq = { ...q, qid: (this.qn = (this.qn || 0) + 1) };
-      const ans = await this.ask(team, pq, this.PUSH_SECS, 'first', { pushback: true });
+      await this.say('Wrong! Pushback!');
+      const pq = this.take(x => x.c === q.c && !x.soft, x => !x.soft);
+      draw(pq, null, '<div class="ch-title">⏪ PUSHBACK — answer on your phones</div>');
+      const pr = this.put(team, pq, 'first', { pushback: true });
+      await this.say(this.readQ(pq, true));
+      this.startClock(this.PUSH_SECS);
+      const ans = await pr;
       if (!this.active) break;
-      if (team.some(id => ans[id] === q.correct) && got > 0) { got--; this.host('Pushed back!'); }
-      else if (team.some(id => ans[id] === q.correct)) this.host('Right, but nothing to push back yet.');
-      await this.sleep(1500);
+      const ok = team.some(id => ans[id] === pq.correct);
+      draw(pq, { show: 'all' }, '<div class="ch-title">' + (ok ? (got > 0 ? '✅ Pushed back!' : '✅ Right — but nothing to push back yet') : '❌ No pushback') + '</div>');
+      if (ok && got > 0) { got--; pushes++; await this.say('Yes! Pushed back!'); }
+      else await this.say(ok ? 'Right, but there was nothing to push back yet.' : 'No pushback. The answer was ' + pq.a + '.');
+      ChaseMusic.duck(false);
+      await this.sleep(800);
     }
+    ChaseMusic.stop();
     if (!this.active) return;
     const caught = got >= target;
     const r = this.record(); const cr = r[this.chaser.id] = r[this.chaser.id] || { w: 0, l: 0, adj: 0 };
     if (caught) {
-      cr.w++; cr.adj = Math.max(-12, (cr.adj || 0) - 3);
-      this.view(this.head() + '<div class="ch-big">⛓️ CAUGHT</div><div class="ch-title">' + esc(this.chaser.nick) + ' caught you with ' + Math.max(0, Math.round((total - used) / 1000)) + 's to spare</div>');
+      cr.w++; cr.adj = Math.max(-8, (cr.adj || 0) - 2);
+      ChaseMusic.sting('caught');
+      this.view(this.head() + '<div class="ch-big">⛓️ CAUGHT</div><div class="ch-title">' + esc(this.chaser.nick) + ' caught you with ' + Math.max(0, Math.round((total - used) / 1000)) + ' seconds to spare</div>');
       this.sendAll({ k: 'end', win: false, text: '⛓️ ' + this.chaser.nick + ' caught you. The ' + this.money(pot) + ' is gone!' });
-      this.chaserSay(this.chaser.lines.catch);
+      await this.sleep(1500);
+      await this.taunt(this.chaser.lines.catch);
+      await this.say(this.chaser.nick + ' caught you, with ' + Math.max(0, Math.round((total - used) / 1000)) + ' seconds to spare. The ' + this.pounds(pot) + ' is gone.');
     } else {
-      cr.l++; cr.adj = Math.min(9, (cr.adj || 0) + 3);
+      cr.l++; cr.adj = Math.min(6, (cr.adj || 0) + 2);
       // pot → game points, capped so one Chase can't swamp a whole night
       const each = Math.min(150, 30 + Math.round(pot / 1000));
       team.forEach(id => { Host.players[id].score += each; Quiz.roundGains[id] = (Quiz.roundGains[id] || 0) + each; });
+      ChaseMusic.sting('win');
       this.view(this.head() + '<div class="ch-big">🎉 YOU BEAT THE CHASER!</div><div class="ch-title">' + this.money(pot) + ' — ' + each + ' points each to ' + esc(names) + '</div>');
       this.sendAll({ k: 'end', win: true, text: '🎉 You beat ' + this.chaser.nick + '! ' + each + ' points each.' });
-      this.chaserSay(this.chaser.lines.lose);
-      if (!this.bossBefore && this.bossUnlocked()) {
-        setTimeout(() => this.host('You have beaten every Chaser. The Boss is coming.'), 4000);
-      }
+      await this.sleep(1800);
+      await this.say('Time\'s up! You beat ' + this.chaser.nick + ', with ' + (target - got) + (target - got === 1 ? ' step' : ' steps') + ' to spare! ' + each + ' points each.');
+      await this.taunt(this.chaser.lines.lose);
+      if (!this.bossBefore && this.bossUnlocked()) { await this.sleep(1000); await this.say('You have now beaten every Chaser. Next time... The Boss is waiting.'); }
     }
     this.saveRecord(r);
-    Host.renderScores(); Host.pushBoard(); Host.saveGame();
-    await this.sleep(7000);
+    Host.renderScores(); Host.saveGame();
+    await this.sleep(5000);
   },
 
   async finish() {
-    const was = this.active;
     this.active = false;
+    ChaseMusic.stop(true);
     if (this.cur) this.settle();
     if (this.used && this.used.length) Seen.mark('chase', this.used);
     Host.snapshotRound('The Chase');
@@ -431,10 +642,9 @@ const Chase = {
     setTimeout(() => { const el = $('chaseHost'); if (el && !this.active) el.classList.add('hidden'); }, 12000);
     return true;
   },
-  stop() { this.active = false; if (this.cur) this.settle(); }
+  stop() { this.active = false; ChaseMusic.stop(true); try { speechSynthesis.cancel(); } catch (e) {} if (this.cur) this.settle(); }
 };
 
-/* ================= the phone side ================= */
 const ChasePhone = {
   box() { return $('chaseBox'); },
   show(html) { const b = this.box(); b.innerHTML = '<div class="card" style="text-align:center">' + html + '</div>'; b.classList.remove('hidden'); },
@@ -447,6 +657,7 @@ const ChasePhone = {
         '<div style="font-size:.9rem"><b style="color:#5fd68b">Strong:</b> ' + msg.strong.map(esc).join(', ') + '<br><b style="color:#ff7a7a">Weak:</b> ' + msg.weak.map(esc).join(', ') + '</div>');
       return;
     }
+    if (k === 'fb') { this.show('<div class="rc-name" style="font-size:1.6rem">' + (msg.ok ? '✅ Right!' : '❌ It was ' + esc(msg.answer)) + '</div>'); return; }
     if (k === 'wait') { this.show('<div class="rc-name" style="font-size:1.2rem">' + esc(msg.text) + '</div>'); return; }
     if (k === 'end') { this.show('<div class="rc-name">' + esc(msg.text) + '</div>'); Player.vibe && Player.vibe(msg.win ? [80, 60, 80] : 200); return; }
     if (k === 'offer') {

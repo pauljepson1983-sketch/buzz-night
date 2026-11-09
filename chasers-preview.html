@@ -38,7 +38,7 @@ document.getElementById('g').innerHTML = CHASERS.map(ch => {
     <p class="meta">👍 ${ch.likes}<br>👎 ${ch.hates}<br>🌀 ${ch.quirk}</p>
     <div><span class="strong">Strong:</span> ${best} &nbsp; <span class="weak">Weak:</span> ${worst}</div>
     <div class="bars">${sorted.map(([k,v])=>`<div class="bar"><span>${cats[k]}</span><span class="t"><i style="width:${v}%"></i></span><b>${v}%</b></div>`).join('')}</div>
-    <div class="stats"><span>⚡ ${ch.speed} answers/min</span><span>😰 Nerves ${ch.nerves}/10</span></div>
+    <div class="stats"><span>⚡ ${Math.round(ch.speed)} answers/min</span><span>😰 Nerves ${ch.nerves}/10</span></div>
     <div class="quote">"${ch.lines.intro}"</div><div class="quote">On catching you: "${ch.lines.catch}"</div><div class="quote">On losing: "${ch.lines.lose}"</div>
   </div>`;
 }).join('');

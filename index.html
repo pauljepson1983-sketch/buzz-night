@@ -541,6 +541,9 @@
   .ch-opts { display: grid; gap: 8px }
   .ch-opt { background: rgba(255,255,255,.1); border-radius: 12px; padding: 12px 14px; font-size: 1.25rem; font-weight: 700 }
   .ch-opt.right { background: #2e9e5b } .ch-opt.wrong { background: #a8323e }
+  .ch-opt.picked { outline: 4px solid #ffd257 }
+  .ch-hot { color: #ff5a5a; animation: chHot .5s ease-in-out infinite alternate }
+  @keyframes chHot { to { transform: scale(1.08) } }
   .ch-h2h { display: flex; gap: 16px; align-items: flex-start }
   .ch-board { display: flex; flex-direction: column; gap: 4px; width: 230px; flex: none }
   .ch-step { height: 34px; border-radius: 8px; background: rgba(255,255,255,.07); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .95rem }
