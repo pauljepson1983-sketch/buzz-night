@@ -108,6 +108,7 @@ const Chase = {
   STEPS: 8,                  // board: chaser starts at 0, home is 8
   H2H_SECS: 20,
   FINAL_SECS: 120,
+  FINAL_PACE: 1.33,     // the Chaser answers about a third faster in the final (≈15 a minute)
   PUSH_SECS: 12,
   LAZARUS_POT: 4000,
   REC_KEY: 'chase_record',
@@ -384,7 +385,7 @@ const Chase = {
     Object.keys(Host.players).forEach(id => this.send(id, this.gateWho.has(id)
       ? { k: 'ready', label, text: line || '' }
       : { k: 'wait', text: '⏸ ' + label + ' — waiting for ' + names }));
-    await this.say(label + '. ' + names + ', press I\'m ready when you are.');
+    await this.say(names + ', press ready.');
     this.gateDraw = draw;
     while (this.active && this.gateWho && [...this.gateWho].some(id => !this.ready.has(id) && Host.isPresent(Host.players[id]))) await this.sleep(200);
     this.gateWho = null; this.gateDraw = null;
@@ -410,6 +411,14 @@ const Chase = {
     }
     return null;
   },
+  /* The rules get explained the first time on this laptop; after that just
+     the name of the stage. Hearing the cash builder explained twice a game
+     was most of the gap between turns. */
+  firstTime(k) {
+    let t = {}; try { t = JSON.parse(store.get('chase_told') || '{}') || {}; } catch (e) {}
+    if (t[k]) return false;
+    t[k] = 1; store.set('chase_told', JSON.stringify(t)); return true;
+  },
   readyUp(id) { if (this.gateWho && this.gateWho.has(id)) { this.ready.add(id); if (this.gateDraw) this.gateDraw(); } },
   goNow() { this.gateWho = null; },
 
@@ -430,8 +439,8 @@ const Chase = {
     this.sendAll({ k: 'wait', text: name + ' is up next in the Cash Builder…' });
     await this.gate([id], name + '\'s Cash Builder', '60 seconds. £1,000 for every right answer.');
     if (!this.active) return 0;
-    await this.say(name + ', it\'s your Cash Builder. Sixty seconds, a thousand pounds for every right answer. Answer on your phone.');
-    await this.sleep(1000);
+    await this.say(this.firstTime('cash') ? name + ', it\'s your Cash Builder. Sixty seconds, a thousand pounds for every right answer. Answer on your phone.' : name + '\'s Cash Builder.');
+    await this.sleep(400);
     await this.countIn('💷 ' + name + '\'s Cash Builder');
     ChaseMusic.start('cash');
     const end = Date.now() + this.CASH_SECS * 1000 * this.timeScale;
@@ -463,9 +472,9 @@ const Chase = {
     this.results[id] = { right, asked, cash };
     this.view(this.head() + '<div class="ch-title">⏱ Time\'s up!</div><div class="ch-big">' + this.money(cash) + '</div><div class="muted" style="font-size:1.1rem">' + right + ' right out of ' + asked + '</div>');
     this.sendAll({ k: 'wait', text: name + ' banked ' + this.money(cash) + ' in the Cash Builder' });
-    await this.sleep(1600);
+    await this.sleep(800);
     await this.say('Time\'s up! ' + name + ', ' + right + ' right. That\'s ' + this.pounds(cash) + '.');
-    await this.sleep(2000);
+    await this.sleep(900);
     return cash;
   },
 
@@ -492,7 +501,7 @@ const Chase = {
     const o = offers[pick] || offers.mid;
     await this.say(name + ' is playing for ' + this.pounds(o.money) + '.');
     if (pick === 'high') await this.taunt('Brave. Or foolish. We\'ll see.');
-    await this.sleep(1200);
+    await this.sleep(600);
     return o;
   },
   offerPick(id, k) { if (this.offerFor && this.offerFor.id === id) this.offerFor.set(k); },
@@ -506,8 +515,8 @@ const Chase = {
     await this.gate([id], name + ' — head to head', 'Playing for ' + this.money(offer.money) + '. Get home before you are caught.');
     if (!this.active) return;
     draw(null, null, '<div class="ch-title">Head to head!</div>');
-    await this.say('Head to head. ' + name + ', get home before ' + this.chaser.nick + ' catches you.');
-    await this.sleep(1000);
+    await this.say(this.firstTime('h2h') ? 'Head to head. ' + name + ', get home before ' + this.chaser.nick + ' catches you.' : 'Head to head, ' + name + '.');
+    await this.sleep(400);
     let n = 0;
     while (this.active && p < this.STEPS && c < p) {
       n++;
@@ -528,10 +537,10 @@ const Chase = {
       // the reveal, one beat at a time
       draw(q, { p: ans[id], show: 'p' }, '<div class="ch-timer">' + esc(name) + ' said…</div>');
       await this.say(ans[id] == null ? name + ' ran out of time.' : name + ' said ' + q.opts[ans[id]] + '.');
-      await this.sleep(700);
+      await this.sleep(400);
       draw(q, { p: ans[id], c: cPick, show: 'pc' }, '<div class="ch-timer">' + esc(this.chaser.nick) + ' said…</div>');
       await this.say(this.chaser.nick + ' said ' + q.opts[cPick] + '.');
-      await this.sleep(900);
+      await this.sleep(500);
       draw(q, { p: ans[id], c: cPick, show: 'all' }, '<div class="ch-timer">The right answer is…</div>');
       await this.say('And the right answer is... ' + q.a + '.');
       if (pRight) p++;
@@ -540,7 +549,7 @@ const Chase = {
         (cRight ? '✅ ' : '❌ ') + esc(this.chaser.nick) + '</div>');
       this.sendAll({ k: 'h2hResult', name, right: pRight, chaserRight: cRight, answer: q.a, p, c, steps: this.STEPS, money: this.money(offer.money), chaser: this.chaser.emoji, nick: this.chaser.nick, colour: this.chaser.colour, moved: { p: pRight, c: cRight } });
       if (!cRight && Math.random() < 0.6) await this.taunt(this.chaser.lines.wrong);
-      await this.sleep(2200);
+      await this.sleep(1200);
     }
     if (!this.active) return;
     if (p >= this.STEPS) {
@@ -578,7 +587,7 @@ const Chase = {
       (lazarus ? ' — nobody got home, so this is a second chance' : '') + '</div><div class="muted" style="font-size:1.1rem">Two minutes. Answer on your phones — the first right answer moves you a step. One step head start for each player.</div>');
     this.sendAll({ k: 'wait', text: '🏁 Final Chase for ' + this.money(pot) + ' — get ready!' });
     await this.say(lazarus ? 'Nobody made it home, so you get one last chance, for ' + this.pounds(pot) + '.' : 'The final chase. ' + names + ', playing for ' + this.pounds(pot) + '.');
-    await this.say('You have two minutes. The questions are on your phones, not read out, so go as fast as you can. The first right answer moves you on a step. You start with ' + team.length + (team.length === 1 ? ' step.' : ' steps.'));
+    if (this.firstTime('final')) await this.say('You have two minutes. The questions are on your phones, not read out, so go as fast as you can. The first right answer moves you on a step. You start with ' + team.length + (team.length === 1 ? ' step.' : ' steps.'));
     await this.gate(team, 'The Final Chase', 'Two minutes. Questions on your phones — go fast!');
     if (!this.active) return;
     await this.countIn('🏁 Final Chase');
@@ -591,7 +600,8 @@ const Chase = {
     const clock = setInterval(() => { ChaseMusic.setUrgent(secsLeft() <= 10); const t = document.querySelector('#chaseHost .ch-clock'); if (t) { t.textContent = secsLeft() + 's'; t.classList.toggle('ch-hot', secsLeft() <= 10); } }, 250);
     while (this.active && Date.now() < end) {
       // short, sharp and not read out: the point is to get through as many as you can
-      const q = this.take(x => !x.soft && x.q.length <= 75 && x.d !== 'h', x => !x.soft && x.q.length <= 90);
+      // medium and hard only — the easy ones let a pair of you rattle off 29
+      const q = this.take(x => !x.soft && x.d !== 'e' && x.q.length <= 100, x => !x.soft && x.q.length <= 100);
       this.view(this.head() + '<div class="ch-final"><div><div class="muted">Your steps</div><div class="ch-big">' + target + '</div></div>' +
         '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.track(target, 0, 'run') + this.qHtml(q));
       const pr = this.put(team, q, 'buzz', { final: true, target });
@@ -599,10 +609,15 @@ const Chase = {
       const ans = await pr;
       if (!this.active) break;
       const ok = team.some(id => ans[id] === q.correct);
+      const wrong = !ok && Object.keys(ans).length > 0;
       if (ok) target++;
       this.view(this.head() + '<div class="ch-final"><div><div class="muted">Your steps</div><div class="ch-big">' + target + '</div></div>' +
-        '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.track(target, 0, 'run') + this.qHtml(q, { show: 'all' }));
-      await this.sleep(250);
+        '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.track(target, 0, 'run') + this.qHtml(q, { show: 'all' }) +
+        (wrong ? '<div class="ch-title">❌ Wrong — 2 second freeze</div>' : ''));
+      // a wrong answer costs time, as a pass does on the telly — no point
+      // jabbing at a guess to get to the next one
+      if (wrong) { team.forEach(id => this.send(id, { k: 'wait', text: '❌ Wrong — 2 second freeze' })); await this.sleep(2000); }
+      else await this.sleep(250);
     }
     clearInterval(clock);
     if (!this.active) return;
@@ -611,7 +626,7 @@ const Chase = {
     this.sendAll({ k: 'wait', text: '🎯 You set ' + target + '. Now ' + this.chaser.nick + ' chases — be ready for pushbacks!' });
     await this.sleep(1500);
     await this.say('Time\'s up! You\'ve set a target of ' + target + '. ' + this.chaser.nick + ' needs ' + target + ' right answers in two minutes to catch you.');
-    await this.say('If the Chaser gets one wrong, you get a pushback on your phones. Get it right and you push them back a step.');
+    if (this.firstTime('push')) await this.say('If the Chaser gets one wrong, you get a pushback on your phones. Get it right and you push them back a step.');
     await this.gate(team, this.chaser.nick + '\'s chase', 'Be ready for pushbacks on your phone.');
     if (!this.active) return;
     await this.countIn('⛓️ ' + this.chaser.nick + '\'s chase');
@@ -621,7 +636,8 @@ const Chase = {
     // It used to drop in five-second lumps, one per question, so it never
     // looked like a clock at all.
     let got = 0, pushes = 0, used = 0, runFrom = 0;
-    const per = 60000 / this.chaser.speed;
+    // quicker in the final than in head to heads, as on the telly
+    const per = 60000 / (this.chaser.speed * this.FINAL_PACE);
     const total = this.FINAL_SECS * 1000;
     const usedNow = () => used + (runFrom ? (Date.now() - runFrom) / this.timeScale : 0);
     const leftMs = () => Math.max(0, total - usedNow());
@@ -652,7 +668,7 @@ const Chase = {
       // the Chaser answers at their own pace while the question is read; a
       // long question gets cut off when they buzz in
       this.say(q.q);
-      const thinkUntil = Date.now() + Math.max(2500, per - 1200) * this.timeScale;
+      const thinkUntil = Date.now() + Math.max(1800, per - 1200) * this.timeScale;
       while (this.active && Date.now() < thinkUntil && leftMs() > 0) await this.sleep(50);
       try { speechSynthesis.cancel(); } catch (e) {}
       if (!this.active || leftMs() <= 0) break;         // time up mid-question: doesn't count
