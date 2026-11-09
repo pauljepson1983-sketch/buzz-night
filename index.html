@@ -684,7 +684,6 @@
       </div>
       <p id="spotifyStatus" class="muted mb"></p>
       <div class="row">
-        <button class="btn ghost small" onclick="App.createRoom()">Open a room without starting a night</button>
         <button class="btn alt small hidden" id="resumeBtn" onclick="App.resumeRoom()">Carry on last game</button>
       </div>
       <p class="muted mt hidden" id="resumeNote" style="font-size:.85rem"></p>
@@ -727,6 +726,33 @@
           <button class="btn ghost small" onclick="Night.skip()">Skip round</button>
           <button class="btn ghost small" onclick="Night.stop()">Stop</button>
         </div>
+        <label class="muted mt" style="display:block;font-size:.9rem"><input type="checkbox" id="hideAnsToggle" onchange="App.setHideAnswers(this.checked)"> 🙈 I'm playing too — blur answers on this screen (tap one to peek)</label>
+
+        <!-- Folded away: players pick their own buzzer and accent on their
+             phones, so these are only the fallback for anyone who hasn't.
+             They were sitting above ARM BUZZERS, which is the button actually
+             needed mid-game. -->
+        <details class="fold mt" style="background:transparent">
+          <summary style="font-size:.9rem">🔊 Sound &amp; voice defaults</summary>
+          <div class="fold-body">
+            <label class="muted mb" style="display:block; font-size:.85rem"><input type="checkbox" id="announceToggle" checked> Buzzer sound + speak the buzzer's name</label>
+            <div class="row mb sound-settings">
+              <label for="buzzSound">Buzzer</label>
+              <select id="buzzSound" onchange="Sound.setBuzzChoice(this.value)"></select>
+              <button class="btn ghost small" onclick="Sound.buzz()">▶ Test</button>
+              <button class="btn ghost small" id="recBtn" onclick="Sound.toggleRecord()">🎙 Record your own</button>
+              <button class="btn ghost small" onclick="document.getElementById('soundFile').click()">📁 Upload</button>
+              <input type="file" id="soundFile" accept="audio/*" class="hidden" onchange="Sound.loadFile(this.files[0]); this.value=''">
+            </div>
+            <div class="row sound-settings">
+              <label for="voicePick">Accent</label>
+              <select id="voicePick" onchange="Sound.setVoice(this.value)"></select>
+              <label for="stylePick">Character</label>
+              <select id="stylePick" onchange="Sound.setStyle(this.value)"></select>
+              <button class="btn ghost small" onclick="Sound.testVoice()">▶ Test</button>
+            </div>
+          </div>
+        </details>
         <p class="mt" id="nightStatus" style="font-size:1rem">Nothing planned yet — set up a round below and add it.</p>
       <div id="quizHostView" class="hidden" style="margin-top:10px;font-size:1rem"></div>
       <div id="bingoHost" class="hidden" style="margin-top:10px"></div>
@@ -754,6 +780,12 @@
         </div>
       </div>
 
+      <!-- The old play-your-own-music mode. The night never uses it, so it
+           lives folded away rather than taking half the screen. Kept, not
+           deleted: the buzz code still drives these elements. -->
+      <details class="fold" id="manualFold">
+        <summary>🎧 Manual mode — DJ your own music &amp; buzzers</summary>
+        <div class="fold-body">
       <div class="card">
         <h2>🎵 Music (only you see answers)</h2>
         <div id="spotifyOffline">
@@ -782,7 +814,7 @@
       </div>
 
       <div class="card">
-        <h2>🚨 Manual buzzer <span class="muted" style="font-size:.8rem">— only for playing your own music. The night runs from 🎬 Tonight at the top.</span></h2>
+        <h2>🚨 Manual buzzer</h2>
         <div class="row">
           <button class="btn alt hidden" id="armBtn" onclick="App.armBuzzers()" style="display:none">ARM BUZZERS</button>
         </div>
@@ -800,34 +832,9 @@
           <button class="btn ghost small" onclick="App.endRound()">End round / reset buzzers</button>
           <button class="btn small" onclick="App.finale()">🏁 Final scores</button>
         </div>
-        <label class="muted mt" style="display:block;font-size:.9rem"><input type="checkbox" id="hideAnsToggle" onchange="App.setHideAnswers(this.checked)"> 🙈 I'm playing too — blur answers on this screen (tap one to peek)</label>
-
-        <!-- Folded away: players pick their own buzzer and accent on their
-             phones, so these are only the fallback for anyone who hasn't.
-             They were sitting above ARM BUZZERS, which is the button actually
-             needed mid-game. -->
-        <details class="fold mt" style="background:transparent">
-          <summary style="font-size:.9rem">🔊 Sound &amp; voice defaults</summary>
-          <div class="fold-body">
-            <label class="muted mb" style="display:block; font-size:.85rem"><input type="checkbox" id="announceToggle" checked> Buzzer sound + speak the buzzer's name</label>
-            <div class="row mb sound-settings">
-              <label for="buzzSound">Buzzer</label>
-              <select id="buzzSound" onchange="Sound.setBuzzChoice(this.value)"></select>
-              <button class="btn ghost small" onclick="Sound.buzz()">▶ Test</button>
-              <button class="btn ghost small" id="recBtn" onclick="Sound.toggleRecord()">🎙 Record your own</button>
-              <button class="btn ghost small" onclick="document.getElementById('soundFile').click()">📁 Upload</button>
-              <input type="file" id="soundFile" accept="audio/*" class="hidden" onchange="Sound.loadFile(this.files[0]); this.value=''">
-            </div>
-            <div class="row sound-settings">
-              <label for="voicePick">Accent</label>
-              <select id="voicePick" onchange="Sound.setVoice(this.value)"></select>
-              <label for="stylePick">Character</label>
-              <select id="stylePick" onchange="Sound.setStyle(this.value)"></select>
-              <button class="btn ghost small" onclick="Sound.testVoice()">▶ Test</button>
-            </div>
-          </div>
-        </details>
       </div>
+        </div>
+      </details>
 
       <div class="card hidden" id="afterNight">
         <h2 id="afterHead">That’s the night</h2>
@@ -843,13 +850,12 @@
         </div>
       </div>
 
-      <div class="card" id="statsCard">
-        <h2>📊 Stats <span class="muted" style="font-size:.8rem">— every game since you last pressed Start over</span></h2>
-        <div id="statsBody" class="muted">Play a round and they fill in.</div>
-      </div>
       <details class="fold" id="hallCard">
-        <summary>🏅 All-time records</summary>
+        <summary>📊 Stats &amp; all-time records</summary>
         <div class="fold-body">
+        <div id="statsCard"><h3 style="margin:0 0 6px">This run <span class="muted" style="font-size:.8rem">— every game since you last pressed Start over</span></h3>
+        <div id="statsBody" class="muted mb">Play a round and they fill in.</div></div>
+        <h3 style="margin:10px 0 6px">🏅 All-time</h3>
         <p class="muted" style="font-size:.85rem">Kept on this laptop across every night. Players are matched by name, so tell people to use the same one each time. "Strongest at" needs at least two rounds in a category before it will call it.</p>
         <div id="hallBody"></div>
         <div class="row mt">
@@ -3126,7 +3132,7 @@ const Host = {
     this.phase = phase;
     const b = $('phaseBanner');
     b.className = 'phase-banner';
-    if (phase === 'idle') b.textContent = 'Play a song — buzzers go live automatically';
+    if (phase === 'idle') b.textContent = 'Get everyone scanned in, then press ▶ Start the night';
     if (phase === 'armed') { b.textContent = '🟢 BUZZERS LIVE'; b.classList.add('armed'); }
     if (phase === 'judging') { b.classList.add('buzzed'); }
     /* Only pointless while they are already armed. It used to require the
