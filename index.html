@@ -4796,6 +4796,9 @@ const Quiz = {
       try {
         await Spot.playUri(q.uri, this.startOffset(q.dur));
         this.bnPlayedAt = Date.now();
+        // while this one plays, fetch the next clip so it starts instantly
+        const nx = this.questions && this.questions[(this.idx || 0) + 1];
+        if (nx && nx.uri && typeof Tunes !== 'undefined' && (Tunes.active || String(nx.uri).indexOf('itunes:') === 0)) Tunes.preload(nx.uri);
       } catch (e) {
         const m = String((e && e.message) || e);
         const why = /401|token|expired/i.test(m) ? 'Spotify has logged out — reconnect it on the host screen.'

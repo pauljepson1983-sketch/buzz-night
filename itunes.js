@@ -152,8 +152,23 @@
       if (!this.audio) { this.audio = new Audio(); this.audio.preload = 'auto'; this.audio.crossOrigin = 'anonymous'; }
       return this.audio;
     },
+    /* Load the next clip in a spare player while this one plays. Held in
+       memory only, and dropped once used or replaced; nothing is saved. */
+    spare: null,
+    async preload(uri) {
+      try {
+        const url = await this.resolve(uri);
+        if (this.spare && this.spare.src === url) return;
+        const s = new Audio(); s.preload = 'auto'; s.crossOrigin = 'anonymous'; s.src = url; s.load();
+        this.spare = s;
+      } catch (e) {}
+    },
     async play(uri, positionMs) {
       const url = await this.resolve(uri);
+      if (this.spare && this.spare.src === url) {   // swap the ready one in
+        if (this.audio) { this.audio.pause(); this.audio.removeAttribute('src'); }
+        this.audio = this.spare; this.spare = null;
+      }
       const a = this.el();
       if (a.src !== url) { a.src = url; await new Promise(r => { a.onloadedmetadata = r; a.onerror = r; setTimeout(r, 4000); }); }
       // a clip is 30 seconds: an offset meant for the full song starts it from the top
