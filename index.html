@@ -7436,6 +7436,16 @@ const Hall = {
    at a grown-up party without anyone being put on the spot. */
 const Forfeit = {
   on: false, used: [], owed: {}, pending: null,
+  /* Forfeits already dealt, kept across nights on this laptop — it used to
+     be wiped at every Start, so the next game could hand out the same one.
+     Ranked oldest-first, so a repeat only comes once the rest have had a go. */
+  USED_KEY: 'forfeit_used',
+  loadUsed() { try { this.used = JSON.parse(store.get(this.USED_KEY) || '[]') || []; } catch (e) { this.used = []; } return this.used; },
+  markUsed(t) { this.used = this.used.filter(x => x !== t); this.used.push(t); if (this.used.length > 400) this.used = this.used.slice(-400); store.set(this.USED_KEY, JSON.stringify(this.used)); },
+  freshest(deck) {   // never-used first (shuffled), then the longest-ago
+    const age = t => this.used.indexOf(t);
+    return this.shuffle(deck.slice()).sort((a, b) => age(a) - age(b));
+  },
   DECKS: {
     silly: [
       ['Do your best impression of {winner} answering a question.',
@@ -7681,10 +7691,10 @@ const Forfeit = {
     const judgeId = tops[0][0];
     const draw = () => {
       const deck = this.deckFor(roundNo).filter(fits);
-      let pool = deck.filter(t => !this.used.includes(t));
-      if (!pool.length) pool = deck;
-      const card = pool[Math.floor(Math.random() * pool.length)];
-      this.used.push(card);
+      const ranked = this.freshest(deck);
+      const unused = ranked.filter(t => !this.used.includes(t));
+      const card = unused.length ? unused[Math.floor(Math.random() * unused.length)] : ranked[0];
+      this.markUsed(card);
       return card.split('{winner}').join(winner);
     };
     // bottled last time? then this one is a double: two forfeits back to back
@@ -7694,8 +7704,7 @@ const Forfeit = {
        the loser presses STOP and it coasts to a halt — too slowly to aim. */
     const options = [];
     const deck = this.deckFor(roundNo).filter(fits);
-    const pool = this.shuffle(deck.filter(t => !this.used.includes(t)));
-    const fill = pool.length >= 8 ? pool : pool.concat(this.shuffle(deck.filter(t => !pool.includes(t))));
+    const fill = this.freshest(deck);
     fill.slice(0, 8).forEach(t => options.push(t.split('{winner}').join(winner)));
     const raw = fill.slice(0, 8);
     const fid = Date.now();
@@ -7719,7 +7728,7 @@ const Forfeit = {
     if (!f || f.fid !== msg.fid || peerId !== f.loserId || f.stage !== 'spinning') return;
     clearTimeout(f.spinTimer);
     const idx = Math.max(0, Math.min(f.options.length - 1, parseInt(msg.idx, 10) || 0));
-    this.used.push(f.raw[idx]);
+    this.markUsed(f.raw[idx]);
     const first = f.options[idx];
     f.text = f.doubled ? 'DOUBLE — you bottled the last one, so both of these: ① ' + first + ' ② ' + f.draw() : first;
     f.stage = 'doing';
@@ -8158,7 +8167,7 @@ const Night = {
     Seen.newNight();   // a fresh evening: nothing counts as used-tonight yet
     // ...except songs already set aside for tonight's prebuilt rounds
     this.plan.forEach(r => (r._prebuilt || []).forEach(q => Seen.nightUsed.add(Seen.keyOf(q))));
-    Forfeit.used = []; Forfeit.owed = {}; Forfeit.carry = null;
+    Forfeit.loadUsed(); Forfeit.owed = {}; Forfeit.carry = null;
     $('nightGoBtn').disabled = true;
     Sound.say('Welcome to Buzz Night. Here we go.');
     await this.wait(2600);
