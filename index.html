@@ -1388,7 +1388,25 @@ const App = {
     this.showView('playerJoin');
     if (roomCode) $('joinRoomInput').value = roomCode.toUpperCase();
     $('joinNameInput').value = store.get('player_name') || '';
+    // back after a fresh-copy reload: rejoin straight away, same name, score kept
+    if (roomCode && new URLSearchParams(location.search).has('v') && $('joinNameInput').value) setTimeout(() => Player.join(), 400);
   },
+  /* The laptop checks the site for a newer copy (the browser may hold one
+     for ten minutes) and offers an update — never forced mid-game. */
+  async checkFresh() {
+    try {
+      const r = await fetch(location.pathname, { method: 'HEAD', cache: 'no-store' });
+      const live = r.headers.get('last-modified');
+      if (!live || !(Date.parse(live) > Date.parse(document.lastModified))) return;
+      if ($('freshBanner')) return;
+      const d = document.createElement('div');
+      d.id = 'freshBanner';
+      d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;background:#ffd257;color:#241a04;padding:10px;text-align:center;font-weight:800';
+      d.innerHTML = '🔄 A newer version of Buzz Night is available. <button class="btn small" style="margin-left:8px" onclick="App.updateNow()">Update now</button> <button class="btn ghost small" onclick="this.parentNode.remove()">Later</button>';
+      document.body.appendChild(d);
+    } catch (e) {}
+  },
+  updateNow() { const u = new URL(location.href); u.searchParams.set('v', Date.now()); location.replace(u.toString()); },
 
   /* ================= host ================= */
   spotifyLogin() { Spot.login(); },
@@ -1396,6 +1414,7 @@ const App = {
      the QR code. Previously this was Create room, then scroll past four cards,
      then build a plan, then find Start the night. */
   quickStart() {
+    this.checkFresh();
     // ask for the one-off Wi-Fi permission on this click, while it counts as
     // the host's own gesture — otherwise phones on the home Wi-Fi cannot join
     Host.autoLan();
@@ -2769,6 +2788,7 @@ const Host = {
       const me = this.players[conn.peer];
       conn.send({
         type: 'welcome', name: me.name, teamMode: this.teamMode, team: me.team, score: me.score,
+        build: document.lastModified,   // phones on an older copy reload themselves
         // only the host has speakers, so players choose from the host's lists
         buzzers: Sound.PRESETS, voices: Sound.voiceList(),
         // blank already means normal on the phone, so don't offer it twice
@@ -8021,6 +8041,7 @@ const Night = {
   },
 
   async start() {
+    App.checkFresh();
     if (!Host.peer) { alert('Create the room first.'); return; }
     if (!this.plan.length) { alert('Add some rounds first.'); return; }
     if (this.running) return;
@@ -8409,6 +8430,19 @@ const Player = {
     switch (msg.type) {
       case 'ping': this.conn.send({ type: 'pong', t: msg.t }); break;
       case 'welcome':
+        /* The site lets browsers keep a copy for ten minutes, so after an
+           update a phone can be a version behind the laptop and simply not
+           know a new round's screens. Older than the laptop: fetch a fresh
+           copy (a new address skips the cache). Twice at most, never a loop. */
+        if (msg.build && Date.parse(msg.build) > Date.parse(document.lastModified)) {
+          const n = +(sessionStorage.getItem('bn_fresh') || 0);
+          if (n < 2) {
+            sessionStorage.setItem('bn_fresh', n + 1);
+            const u = new URL(location.href); u.searchParams.set('v', Date.now());
+            location.replace(u.toString());
+            return;
+          }
+        } else sessionStorage.removeItem('bn_fresh');
         $('pScore').textContent = (msg.score || 0) + ' pts';
         if (msg.teamMode && msg.team) $('pTeam').textContent = '· Team ' + msg.team;
         this.renderKit(msg);
