@@ -286,6 +286,16 @@ const Chase = {
     }
     return '<div class="ch-board">' + rows + '</div>';
   },
+  /* The Final Chase track: your steps in gold, the Chaser eating into them */
+  track(target, got, mode) {
+    const cells = mode === 'run' ? Math.max(target + 4, 16) : Math.max(target, 1);
+    let html = '';
+    for (let i = 0; i < cells; i++) {
+      const cls = mode === 'run' ? (i < target ? ' you' : '') : (i < got ? ' chs' : ' you');
+      html += '<div class="ch-cell' + cls + '">' + (mode === 'chase' && i === cells - 1 ? '🏁' : '') + '</div>';
+    }
+    return '<div class="ch-track">' + html + '</div>';
+  },
   /* reveal: { p: player's pick, c: chaser's pick, show: 'p' | 'pc' | 'all' } */
   qHtml(q, reveal) {
     const show = reveal ? (reveal.show || 'all') : '';
@@ -555,7 +565,7 @@ const Chase = {
       // short, sharp and not read out: the point is to get through as many as you can
       const q = this.take(x => !x.soft && x.q.length <= 75 && x.d !== 'h', x => !x.soft && x.q.length <= 90);
       this.view(this.head() + '<div class="ch-final"><div><div class="muted">Your steps</div><div class="ch-big">' + target + '</div></div>' +
-        '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.qHtml(q));
+        '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.track(target, 0, 'run') + this.qHtml(q));
       const pr = this.put(team, q, 'first', { final: true, target });
       this.startClock(Math.min(8, Math.max(0.5, (end - Date.now()) / 1000 / this.timeScale)));
       const ans = await pr;
@@ -563,7 +573,7 @@ const Chase = {
       const ok = team.some(id => ans[id] === q.correct);
       if (ok) target++;
       this.view(this.head() + '<div class="ch-final"><div><div class="muted">Your steps</div><div class="ch-big">' + target + '</div></div>' +
-        '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.qHtml(q, { show: 'all' }));
+        '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.track(target, 0, 'run') + this.qHtml(q, { show: 'all' }));
       await this.sleep(250);
     }
     clearInterval(clock);
@@ -586,8 +596,12 @@ const Chase = {
     const draw = (q, rv, note) => this.view(this.head() + '<div class="ch-final"><div><div class="muted">Target</div><div class="ch-big">' + target + '</div></div>' +
       '<div><div class="muted">' + esc(this.chaser.nick) + '</div><div class="ch-big" style="color:var(--cc);filter:brightness(1.5)">' + got + '</div></div>' +
       '<div><div class="muted">Clock</div><div class="ch-big' + ((total - used) <= 10000 ? ' ch-hot' : '') + '">' + Math.max(0, Math.ceil((total - used) / 1000)) + 's</div></div></div>' +
+      this.track(target, got, 'chase') + '<div class="ch-timer" style="text-align:center">' + esc(this.chaser.nick) + ' needs ' + Math.max(0, target - got) + ' more to catch you</div>' +
       (note || '') + (q ? this.qHtml(q, rv) : ''));
+    // the phones get the same track
+    const trackOut = () => this.sendAll({ k: 'track', target, got, nick: this.chaser.nick, emoji: this.chaser.emoji, colour: this.chaser.colour, left: Math.max(0, Math.ceil((total - used) / 1000)) });
     ChaseMusic.start('chaser');
+    trackOut();
     while (this.active && used < total && got < target) {
       const q = this.take(x => !x.soft);
       const pressure = target - got <= 2 ? 1 : 0;
@@ -598,7 +612,8 @@ const Chase = {
       await this.taunt(q.opts[cPick]);
       used += per;
       ChaseMusic.setUrgent(total - used <= 10000);
-      if (hit) { got++; draw(q, { c: cPick, show: 'all' }); await this.sleep(500); continue; }
+      if (hit) { got++; draw(q, { c: cPick, show: 'all' }); trackOut(); await this.sleep(500); continue; }
+      trackOut();
       draw(q, { c: cPick, show: 'all' }, '<div class="ch-title">❌ Wrong! PUSHBACK — answer on your phones</div>');
       if (used >= total) break;
       // pushback: the Chaser's clock stops, you get a go
@@ -614,7 +629,7 @@ const Chase = {
       if (!this.active) break;
       const ok = team.some(id => ans[id] === pq.correct);
       draw(pq, { show: 'all' }, '<div class="ch-title">' + (ok ? (got > 0 ? '✅ Pushed back!' : '✅ Right — but nothing to push back yet') : '❌ No pushback') + '</div>');
-      if (ok && got > 0) { got--; pushes++; await this.say('Yes! Pushed back!'); }
+      if (ok && got > 0) { got--; pushes++; trackOut(); await this.say('Yes! Pushed back!'); }
       else await this.say(ok ? 'Right, but there was nothing to push back yet.' : 'No pushback. The answer was ' + pq.a + '.');
       ChaseMusic.duck(false);
       await this.sleep(800);
@@ -724,6 +739,15 @@ const ChasePhone = {
     return '<div class="hb"><div class="hb-top"><span>⛓️ Head to head</span><span>' + esc(b.money) + '</span></div><div class="hb-rows">' + rows + '</div>' +
       '<div class="hb-note">' + (toHome <= 0 ? '🏠 Home!' : lead <= 0 ? '⛓️ Caught!' : toHome + ' to get home · ' + lead + ' step' + (lead === 1 ? '' : 's') + ' ahead of ' + esc(b.nick)) + '</div></div>';
   },
+  trackHtml(target, got, mode, colour) {
+    const cells = mode === 'run' ? Math.max(target + 4, 16) : Math.max(target, 1);
+    let h = '';
+    for (let i = 0; i < cells; i++) {
+      const c = mode === 'run' ? (i < target ? '#ffd257' : 'rgba(255,255,255,.1)') : (i < got ? colour : '#ffd257');
+      h += '<div style="flex:1;height:22px;border-radius:4px;background:' + c + ';filter:' + (mode !== 'run' && i < got ? 'brightness(1.3)' : 'none') + '"></div>';
+    }
+    return '<div style="display:flex;gap:2px;margin:6px 0">' + h + '</div>';
+  },
   cashClock(msg) {
     clearInterval(this._cbT);
     if (msg.left == null) return;
@@ -755,6 +779,13 @@ const ChasePhone = {
         '<button class="btn big green" style="width:100%;font-size:1.4rem" onclick="ChasePhone.send({type:\'chaseReady\'});ChasePhone.show(\'<div class=rc-name>✅ Ready — waiting…</div>\')">✅ I\'m ready</button>');
       Player.vibe && Player.vibe([60, 40, 60]); return;
     }
+    if (k === 'track') {
+      const need = Math.max(0, msg.target - msg.got);
+      this.show('<div class="rc-kicker">' + esc(msg.emoji + ' ' + msg.nick) + ' is chasing you</div>' + this.trackHtml(msg.target, msg.got, 'chase', msg.colour) +
+        '<div style="display:flex;justify-content:space-around;font-weight:800"><span>🎯 ' + msg.target + '</span><span style="color:' + msg.colour + ';filter:brightness(1.5)">' + esc(msg.nick) + ' ' + msg.got + '</span><span>⏱ ' + msg.left + 's</span></div>' +
+        '<div class="rc-name" style="font-size:1.2rem;margin-top:8px">' + (need ? 'Needs ' + need + ' more to catch you' : '⛓️ Caught!') + '</div><div class="muted">Be ready for a pushback</div>');
+      return;
+    }
     if (k === 'fb') {
       this.show(this.cashHtml(msg, msg.ok) + '<div class="rc-name" style="font-size:1.5rem">' + (msg.ok ? '✅ Right!' : '❌ It was ' + esc(msg.answer)) + '</div>');
       this.cashClock(msg);
@@ -778,7 +809,7 @@ const ChasePhone = {
       if (!msg.mine) { this.show((msg.h2h ? this.boardHtml(msg.h2h) : '') + '<div class="muted">' + esc(msg.cat) + '</div><div class="rc-name" style="font-size:1.1rem">' + esc(msg.text) + '</div><div class="muted">Watching…</div>'); return; }
       this.qid = msg.qid;
       const head = msg.cash ? '' : msg.pushback ? '⏪ PUSHBACK — get it right to push them back' : msg.final ? '🏁 Final Chase · ' + msg.target + ' steps' : '⛓️ Head to head';
-      this.show((msg.cash ? this.cashHtml(msg) : msg.h2h ? this.boardHtml(msg.h2h) : '<div class="rc-kicker">' + head + '</div>') + '<div class="muted">' + esc(msg.cat) + '</div><div class="rc-name" style="font-size:1.15rem;margin:8px 0">' + esc(msg.text) + '</div>' +
+      this.show((msg.cash ? this.cashHtml(msg) : msg.h2h ? this.boardHtml(msg.h2h) : '<div class="rc-kicker">' + head + '</div>' + (msg.final ? this.trackHtml(msg.target, 0, 'run') : '')) + '<div class="muted">' + esc(msg.cat) + '</div><div class="rc-name" style="font-size:1.15rem;margin:8px 0">' + esc(msg.text) + '</div>' +
         msg.opts.map((o, i) => '<button class="btn big" style="width:100%;margin-top:8px;font-size:1.05rem" onclick="ChasePhone.pick(' + msg.qid + ',' + i + ',this)">' + esc(o) + '</button>').join(''));
       if (msg.cash) this.cashClock(msg); else clearInterval(this._cbT);
       return;
