@@ -157,7 +157,9 @@ const Chase = {
     const own = (window.CHASE_Q || []).map(q => ({ ...q, seenKey: 'cq:' + q.id }));
     // its own bank only — the written bank belongs to the other rounds, so
     // nothing you met in Fastest Finger turns up again here
-    this.pool = Seen.rank('chase', own);
+    /* medium and hard first; the easy third only once those have all been
+       seen. With the bank roughly a third easy, it played too gentle. */
+    this.pool = Seen.rank('chase', own.filter(q => q.d !== 'e')).concat(Seen.rank('chase', own.filter(q => q.d === 'e')));
     this.used = [];
   },
   take(test, second) {
