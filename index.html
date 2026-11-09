@@ -1622,6 +1622,20 @@ const App = {
       Quiz.mode = keep;
     }
 
+    /* Bingo, The Chase and Mr & Mrs run themselves rather than through
+       buildChunk, so they get their own checks: is the code loaded, is the
+       question bank there, and is the running order going to reach them. */
+    add(typeof Bingo !== 'undefined' ? 'ok' : 'bad', '🎱 Bingo — ' + (typeof Bingo !== 'undefined' ? 'loaded' : 'not loaded, refresh the page'));
+    const chQ = (window.CHASE_Q || []).length;
+    add(typeof Chase !== 'undefined' && chQ > 100 && window.CHASERS ? 'ok' : 'bad',
+      '⛓️ The Chase — ' + (typeof Chase !== 'undefined' ? chQ.toLocaleString() + ' questions, ' + Object.keys(window.CHASERS || {}).length + ' Chasers' : 'not loaded, refresh the page'));
+    const mmN = window.MM_Q ? ['me', 'who', 'num'].reduce((s, k) => s + (window.MM_Q[k] || []).length, 0) : 0;
+    const mmOwn = typeof MrMrs !== 'undefined' && MrMrs.custom ? (MrMrs.custom() || []).length : 0;
+    add(typeof MrMrs !== 'undefined' && mmN > 0 ? 'ok' : 'bad',
+      '💍 Mr & Mrs — ' + (typeof MrMrs !== 'undefined' ? mmN + ' questions' + (mmOwn ? ' + ' + mmOwn + ' of yours' : '') + ', needs two phones joined' : 'not loaded, refresh the page'));
+    const order = (Night.plan || []).map(r => Night.LABELS[r.mode] || r.mode);
+    add(order.length ? 'ok' : 'warn', 'Running order: ' + (order.length ? order.join(' → ') : 'empty — add rounds first'));
+
     const bad = lines.filter(l => l.indexOf('"bad"') >= 0).length;
     const warn = lines.filter(l => l.indexOf('"warn"') >= 0).length;
     lines.push('');
