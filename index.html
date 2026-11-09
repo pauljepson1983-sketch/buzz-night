@@ -1785,7 +1785,9 @@ const Spot = {
     return 'Spotify player is starting…';
   },
 
+  QUOTA_PAUSE: 30 * 60000,
   async api(path, opts = {}) {
+    if (!this.rateLimitedUntil) { const q = +store.get('spotify_quota_until') || 0; if (q > Date.now()) { this.rateLimitedUntil = q; this.quotaHit = true; } }
     /* Spotify hands out 429s when it has had enough, with a Retry-After
        saying how long to wait. Carrying on regardless is what turns a brief
        slow-down into a dead evening: every music round fires a dozen
@@ -1806,6 +1808,20 @@ const Spot = {
     });
     if (r.status === 204) return null;
     if (r.status === 429) {
+      /* Since July 2026 Spotify also answers 429 with reason QUOTA_EXCEEDED:
+         the developer account's whole allowance is spent, not a burst. Asking
+         again every few seconds just keeps it spent. Back right off (and
+         remember it across reloads), so the night falls back to rounds that
+         don't need Spotify instead of hammering it. */
+      let body = ''; try { body = await r.text(); } catch (e) {}
+      if (/QUOTA_EXCEEDED/.test(body)) {
+        this.rateLimitedUntil = Date.now() + this.QUOTA_PAUSE;
+        this.quotaHit = true;
+        store.set('spotify_quota_until', String(this.rateLimitedUntil));
+        const e = new Error('Spotify\'s allowance for your developer account is used up — music rounds paused for about ' + Math.round(this.QUOTA_PAUSE / 60000) + ' minutes.');
+        e.rateLimited = true; e.quota = true;
+        throw e;
+      }
       // Retry-After is in seconds. Capped so a wild value cannot park the
       // whole night, but long enough to actually stop asking.
       const wait = Math.min(120, Math.max(2, +(r.headers.get('Retry-After') || 5) || 5));
@@ -7007,7 +7023,7 @@ const Bingo = {
 const Library = {
   KEY: 'music_library', EXACT_KEY: 'music_exact', CALLS_KEY: 'spotify_calls',
   MAX_TRACKS: 4500, MAX_EXACT: 500, EXACT_DAYS: 60,
-  FILL_DAILY_CAP: 300,      // the background filler's own share of the day
+  FILL_DAILY_CAP: 60,       // the background filler's own share of the day — kept small since Spotify's July 2026 shared account quota
   MIN_TO_SERVE: 40,         // fewer matching songs than this and we search live
   DECADES: ['1960-1969', '1970-1979', '1980-1989', '1990-1999', '2000-2009', '2010-2019', '2020-2029'],
   WORDS: ['', 'pop', 'rock', 'dance', 'indie', 'soul', 'hip hop', 'r&b', 'disco', 'country',
@@ -8171,7 +8187,7 @@ const Night = {
        a reason to wait. The cool-off is seconds, the round is one somebody
        chose, and skipping it silently is how a planned night turns into half
        a night. Sit it out once, then have another go. */
-    if (!ok && !ownRunner && this.running && Date.now() < (Spot.rateLimitedUntil || 0)) {
+    if (!ok && !ownRunner && this.running && Date.now() < (Spot.rateLimitedUntil || 0) && Spot.rateLimitedUntil - Date.now() < 3 * 60000) {
       const secs = Math.ceil((Spot.rateLimitedUntil - Date.now()) / 1000) + 1;
       $('nightStatus').textContent = 'Round ' + n + ' — Spotify asked us to slow down. Waiting ' + secs + 's, then trying this round again.';
       Sound.say('Spotify needs a moment. Holding this round.');
