@@ -14,7 +14,7 @@
      100KB, so re-fetching it costs nothing next to spending an evening
      wondering why an edit has not appeared. -->
 <script>document.write('<script src="questions.js?v=' + Math.floor(Date.now() / 60000) + '"><\/script>');</script>
-<script>['chasers.js', 'chase-questions.js', 'chase.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
+<script>['chasers.js', 'chase-questions.js', 'chase.js', 'mrmrs.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
 <style>
   :root {
     --bg: #14082b;
@@ -525,6 +525,18 @@
   .duel-side.holds .duel-bank { color: #ffd257 }
   .duel-side.me .duel-who { opacity: 1; font-weight: 800; text-decoration: underline }
 
+
+  /* Mr & Mrs */
+  .mm-wrap { background: linear-gradient(160deg, rgba(255,122,184,.15), rgba(127,220,255,.1)); border-radius: 16px; padding: 14px; border-top: 6px solid #ff7ab8 }
+  .mm-title { font-size: 1.5rem; font-weight: 900; color: #ff9bcb }
+  .mm-score { display: flex; justify-content: space-between; align-items: center; font-size: 1.2rem; margin: 8px 0; padding: 8px 12px; background: rgba(0,0,0,.25); border-radius: 10px }
+  .mm-sync { font-weight: 800; color: #ff9bcb }
+  .mm-q { font-size: 1.7rem; font-weight: 800; margin: 12px 0 }
+  .mm-wait { font-size: 1.1rem; opacity: .85 }
+  .mm-rev { display: flex; gap: 12px } .mm-ans { flex: 1; background: rgba(255,255,255,.08); border-radius: 12px; padding: 12px; text-align: center }
+  .mm-big { font-size: 2rem; font-weight: 900 }
+  .mm-verdict { font-size: 1.6rem; font-weight: 900; text-align: center; margin-top: 10px; padding: 10px; border-radius: 12px }
+  .mm-verdict.yes { background: rgba(255,122,184,.3) } .mm-verdict.no { background: rgba(255,255,255,.06) }
   /* The Chase */
   .chase-wrap { background: rgba(0,0,0,.25); border-radius: 16px; padding: 14px; border-top: 6px solid var(--cc) }
   .ch-head { display: flex; gap: 12px; align-items: center; margin-bottom: 6px }
@@ -719,6 +731,7 @@
       <div id="quizHostView" class="hidden" style="margin-top:10px;font-size:1rem"></div>
       <div id="bingoHost" class="hidden" style="margin-top:10px"></div>
       <div id="chaseHost" class="hidden" style="margin-top:10px"></div>
+      <div id="mmHost" class="hidden" style="margin-top:10px"></div>
   </div>
 
   <div class="host-grid">
@@ -892,6 +905,7 @@
             <button class="btn ghost small" onclick="Night.quickAdd('places')">🌍 Where is it?</button>
             <button class="btn ghost small" onclick="Night.quickAdd('bingo')">🎱 Bingo</button>
             <button class="btn ghost small" onclick="Night.quickAdd('chase')">⛓️ The Chase</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('mrmrs')">💍 Mr &amp; Mrs</button>
             <button class="btn ghost small" onclick="Night.quickAdd('buzzname')">🎤 Buzz and name it</button>
             <button class="btn ghost small" onclick="Night.quickAdd('guess')">🎯 Closest wins</button>
             <button class="btn ghost small" onclick="Night.quickAdd('faces')">⭐ Faces</button>
@@ -907,6 +921,18 @@
         <div class="row mb">
           <button class="btn ghost small" onclick="Night.clear()">Clear</button>
         </div>
+        <details class="mb" ontoggle="MrMrs.renderCustom()">
+          <summary style="font-weight:700;cursor:pointer">💍 Your own Mr &amp; Mrs questions</summary>
+          <p class="muted" style="font-size:.85rem;margin:6px 0">Write it as a question about the other person, using <b>{n}</b> for their name — e.g. <i>What's {n}'s favourite biscuit?</i> They get asked the same thing about themselves ("your favourite biscuit"). Mixed into every Mr &amp; Mrs round.</p>
+          <div class="row" style="gap:6px;flex-wrap:wrap">
+            <select id="mmType"><option value="me">🙋 About one of you (pick an answer)</option><option value="who">👉 Who's more likely to…</option><option value="num">🔢 A number</option></select>
+            <select id="mmTier"><option value="0">Clean</option><option value="1">😘 Flirty</option><option value="2">🔥 Sexy</option></select>
+          </div>
+          <input id="mmText" placeholder="What's {n}'s favourite biscuit?" style="width:100%;margin-top:6px">
+          <input id="mmOpts" placeholder="Answers, separated by commas: Hobnob, Digestive, Custard cream, Bourbon" style="width:100%;margin-top:6px">
+          <div class="row mt" style="gap:8px;align-items:center"><button class="btn small" onclick="MrMrs.addCustom()">➕ Add question</button><span id="mmNote" class="muted" style="font-size:.85rem"></span></div>
+          <div id="mmList" class="mt"></div>
+        </details>
         <label class="muted mb" style="display:block; font-size:.85rem">
           <input type="checkbox" id="nightPause" checked> Wait for me before each round starts
         </label>
@@ -1121,6 +1147,7 @@
   <div id="roundCard" class="hidden"></div>
   <div id="bingoBox" class="hidden"></div>
   <div id="chaseBox" class="hidden"></div>
+  <div id="mmBox" class="hidden"></div>
   <div id="quizPanel" class="hidden">
     <div id="quizRound"></div>
     <div id="quizProgress" class="muted"></div>
@@ -2753,6 +2780,7 @@ const Host = {
       if (Forfeit.on) { me.cheeky = carry ? (carry.cheeky ?? null) : null; if (me.cheeky == null) conn.send(Forfeit.askMsg()); }
       Forfeit.note();
       if (Chase.active) Chase.resend(conn.peer);
+      if (MrMrs.active) MrMrs.resend(conn.peer);
       if (Bingo.active) {
         if (Bingo.tickets && Bingo.tickets[conn.peer]) Bingo.resend(conn.peer);
         else conn.send({ type: 'bingoSetup', size: Bingo.size, label: Bingo.SIZES[Bingo.size].label, rules: Bingo.RULES });
@@ -2783,6 +2811,7 @@ const Host = {
     if (msg.type === 'bingoJoin') { Bingo.join(conn.peer, msg.count); return; }
     if (msg.type === 'bingoClaim') { Bingo.claim(conn.peer, msg); return; }
     if (msg.type === 'chaseAns') { Chase.answer(conn.peer, msg); return; }
+    if (msg.type === 'mmAns') { MrMrs.answer(conn.peer, msg); return; }
     if (msg.type === 'chaseReady') { Chase.readyUp(conn.peer); return; }
     if (msg.type === 'chaseOffer') { Chase.offerPick(conn.peer, msg.pick); return; }
     if (msg.type === 'chaseCat') { if (Chase.catFor && Chase.catFor.id === conn.peer) Chase.catFor.set(msg.cat); return; }
@@ -6495,7 +6524,8 @@ const Quiz = {
     songs: '🎧 Name the song', tv: '📺 TV theme tunes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces',
     quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel',
     bingo: '🎱 Bingo',
-    chase: '⛓️ The Chase'
+    chase: '⛓️ The Chase',
+    mrmrs: '💍 Mr & Mrs'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
@@ -6503,6 +6533,7 @@ const Quiz = {
   },
   HOWTO: {
     bingo: 'Dab your numbers as they’re called. Win One line (any full row), then Two lines (2 rows on one ticket), then Full house (the whole ticket). Hit BINGO! to claim — a wrong claim costs 10.',
+    mrmrs: 'How well do you know each other? Round 1: one of you answers about yourself in secret, the other guesses. Round 2: who is more likely to… — tap the same name to score. Round 3: guess a number about each other for double points. 70% in sync wins you both a bonus.',
     chase: 'You v a computer Chaser. Each of you plays a 60-second Cash Builder, picks an offer, then goes head to head on random questions — hope for the Chaser’s weak subjects. Get home and your money goes into the Final Chase. Two minutes to set a target, then the Chaser comes after you; every Chaser miss is a pushback chance.',
     covers: 'A cover flashes up, then four albums. Pick the right one.',
     backdrops: 'A scene from the film flashes up, then four titles.',
@@ -6522,6 +6553,7 @@ const Quiz = {
   ROUND_NAMES: {
     bingo: 'bingo round',
     chase: 'Chase',
+    mrmrs: 'Mr and Mrs round',
     covers: 'album cover round', backdrops: 'film stills round',
     themes: 'film themes round',
     songs: 'name the song round',
@@ -7669,7 +7701,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel', buzzer: '🔔 Buzzer round (you judge)', bingo: '🎱 Bingo', chase: '⛓️ The Chase'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel', buzzer: '🔔 Buzzer round (you judge)', bingo: '🎱 Bingo', chase: '⛓️ The Chase', mrmrs: '💍 Mr & Mrs'
   },
 
   load() {
@@ -7821,7 +7853,7 @@ const Night = {
      in three separate places, which is exactly what happened here. */
   // buzzname is deliberately absent: it searches Spotify, so an era and a
   // flavour both mean something and both get a picker in the running order
-  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos', 'places', 'duel', 'bingo', 'chase'],
+  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos', 'places', 'duel', 'bingo', 'chase', 'mrmrs'],
 
   quickAdd(mode) {
     this.plan.push(this.defaultsFor(mode));
@@ -8091,8 +8123,8 @@ const Night = {
     await this.wait(2200);
     if (!this.running) return;
 
-    let ok = r.mode === 'bingo' ? await Bingo.run(r) : r.mode === 'chase' ? await Chase.run(r) : await Quiz.runRound(r);
-    const ownRunner = r.mode === 'bingo' || r.mode === 'chase';   // never rebuilt as a quiz round
+    let ok = r.mode === 'bingo' ? await Bingo.run(r) : r.mode === 'chase' ? await Chase.run(r) : r.mode === 'mrmrs' ? await MrMrs.run(r) : await Quiz.runRound(r);
+    const ownRunner = r.mode === 'bingo' || r.mode === 'chase' || r.mode === 'mrmrs';   // never rebuilt as a quiz round
 
     /* Spotify asking us to wait is not a reason to throw a round away. It is
        a reason to wait. The cool-off is seconds, the round is one somebody
@@ -8243,6 +8275,7 @@ const Night = {
     if (this._go) { this.releaseGo(); this.runNext(); return; }
     if (Bingo.active) { Bingo.stop(); return; }
     if (Chase.active) { Chase.stop(); return; }
+    if (MrMrs.active) { MrMrs.stop(); return; }
     if (Quiz.active) { Quiz.stop(); return; }
     if (this.waiting) { this.waiting = false; Host.endRound(false); }
     this.runNext();
@@ -8258,6 +8291,7 @@ const Night = {
     this.releaseGo();
     if (Bingo.active) Bingo.stop();
     if (Chase.active) Chase.stop();
+    if (MrMrs.active) MrMrs.stop();
     if (Quiz.active) Quiz.stop();
     $('nightGoBtn').classList.remove('hidden');
     $('nightGoBtn').disabled = false;
@@ -8473,6 +8507,7 @@ const Player = {
       case 'forfeitWheel': { this.wheel(msg); break; }
       case 'bingoSetup': this.bingoSetup(msg); break;
       case 'chase': ChasePhone.on(msg); break;
+      case 'mm': MrMrsPhone.on(msg); break;
       case 'bingoTickets': this.bingoTickets(msg); break;
       case 'bingoCall': this.bingoCall(msg); break;
       case 'bingoResult': this.bingoNote(msg.text, msg.bad); if (msg.stage) { const s = $('bgStage'); if (s) s.textContent = 'Playing for: ' + msg.stage; const m = $('bgMeans'); if (m && msg.means) m.textContent = 'Looking for: ' + msg.means; } break;
@@ -10548,6 +10583,7 @@ const Player = {
     $('roundCard').classList.add('hidden');
     $('bingoBox').classList.add('hidden');
     $('chaseBox').classList.add('hidden');
+    $('mmBox').classList.add('hidden');
     $('finaleBox').classList.add('hidden');
     $('stealTimer').classList.add('hidden');
     $('revealBox').classList.add('hidden');
