@@ -7983,7 +7983,7 @@ const Night = {
       startAt: 'skip',
       crop: 'crop',
       ...(mode === 'bingo' ? { size: 100, speed: 'normal' } : {}),
-      ...(mode === 'chase' ? { chaser: 'random' } : {}),
+      ...(mode === 'chase' ? { chaser: 'random', level: store.get('chase_level') || 'normal' } : {}),
       roundLabel: ''
     };
   },
@@ -8146,7 +8146,9 @@ const Night = {
           : '';
         const chasePick = r.mode === 'chase' && !locked
           ? '<div class="night-opts"><select onchange="Night.setField(' + i + ',\'chaser\',this.value)">' +
-              opts([['random', '🎲 Random Chaser']].concat(CHASERS.filter(c => !c.locked || Chase.bossUnlocked()).map(c => [c.id, c.emoji + ' ' + c.nick])), r.chaser || 'random') + '</select></div>'
+              opts([['random', '🎲 Random Chaser']].concat(CHASERS.filter(c => !c.locked || Chase.bossUnlocked()).map(c => [c.id, c.emoji + ' ' + c.nick])), r.chaser || 'random') + '</select>' +
+              ' <select onchange="Night.setField(' + i + ',\'level\',this.value)" title="Question difficulty">' +
+              opts(Object.entries(Chase.LEVELS).map(([k, v]) => [k, v.label + ' questions']), r.level || 'normal') + '</select></div>'
           : '';
         const pickers = bingoPick || chasePick || ((usesEra || usesStyle) && !locked
           ? '<div class="night-opts">' +

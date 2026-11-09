@@ -158,13 +158,26 @@ const Chase = {
     const own = (window.CHASE_Q || []).map(q => ({ ...q, seenKey: 'cq:' + q.id }));
     // its own bank only — the written bank belongs to the other rounds, so
     // nothing you met in Fastest Finger turns up again here
-    /* medium and hard first; the easy third only once those have all been
-       seen. With the bank roughly a third easy, it played too gentle. */
-    this.pool = Seen.rank('chase', own.filter(q => q.d !== 'e')).concat(Seen.rank('chase', own.filter(q => q.d === 'e')));
+    this.pool = Seen.rank('chase', own);
     this.used = [];
   },
-  take(test, second) {
-    let i = this.pool.findIndex(test);
+  /* Difficulty levels: easy / medium / hard percentages. "main" is the cash
+     builder and head to heads, "final" the Final Chase. The Chaser is the same
+     whichever you pick — only the questions change. */
+  LEVELS: {
+    gentle: { label: '🙂 Gentle', main: [50, 45, 5],  final: [40, 55, 5] },
+    normal: { label: '⚖️ Normal', main: [30, 60, 10], final: [20, 70, 10] },
+    tough:  { label: '🔥 Tough',  main: [0, 90, 10],  final: [0, 90, 10] }
+  },
+  mix(stage) { const L = this.LEVELS[this.level] || this.LEVELS.normal; return L[stage] || L.main; },
+  pickD(mix) {
+    const r = Math.random() * (mix[0] + mix[1] + mix[2]);
+    return r < mix[0] ? 'e' : r < mix[0] + mix[1] ? 'm' : 'h';
+  },
+  take(test, second, mix) {
+    let i = -1;
+    if (mix) { const d = this.pickD(mix); i = this.pool.findIndex(x => x.d === d && test(x)); }
+    if (i < 0) i = this.pool.findIndex(test);
     if (i < 0 && second) i = this.pool.findIndex(second);
     if (i < 0) i = this.pool.findIndex(() => true);
     if (i < 0) { this.buildPool(); i = 0; }    // ran dry: start again, oldest first
@@ -320,6 +333,8 @@ const Chase = {
   async run(cfg) {
     this.active = true; this.lastTo = {}; this.qn = 0;
     this.chaser = this.pickChaser(cfg && cfg.chaser);
+    this.level = (cfg && cfg.level) || store.get('chase_level') || 'normal';
+    store.set('chase_level', this.level);
     const rec = this.record(); const r0 = rec[this.chaser.id] || { w: 0, l: 0, adj: 0 };
     this.adj = r0.adj || 0;
     this.bossBefore = this.bossUnlocked();
@@ -451,7 +466,7 @@ const Chase = {
       (q ? this.qHtml(q, rv) : ''));
     const clock = setInterval(() => { ChaseMusic.setUrgent(left() <= 10); const t = document.querySelector('#chaseHost .ch-final > div:nth-child(2) .ch-big'); if (t) { t.textContent = left() + 's'; t.classList.toggle('ch-hot', left() <= 10); } }, 250);
     while (this.active && Date.now() < end) {
-      const q = this.take(x => x.d !== 'h');
+      const q = this.take(() => true, null, this.mix('main'));
       asked++;
       show(q);
       const p = this.put([id], q, 'one', { cash: true, total: right * this.CASH_PER, right, left: (end - Date.now()) / 1000, secs: this.CASH_SECS * this.timeScale });
@@ -520,8 +535,9 @@ const Chase = {
     let n = 0;
     while (this.active && p < this.STEPS && c < p) {
       n++;
-      const wantD = p >= this.STEPS - 2 ? 'h' : 'm';
-      const q = this.take(x => x.d === wantD && !x.soft, x => !x.soft);
+      // a notch harder for the last two steps before home
+      const m0 = this.mix('main'), nearHome = p >= this.STEPS - 2;
+      const q = this.take(x => !x.soft, null, nearHome ? [m0[0] / 2, m0[1], m0[2] + m0[0] / 2 + 10] : m0);
       draw(q, null, '<div class="ch-timer">🎙 Question ' + n + ' — ' + esc(CHASE_CATS[q.c] || '') + '</div>');
       const ansP = this.put([id], q, 'one', { h2h: { p, c, steps: this.STEPS, money: this.money(offer.money), name, chaser: this.chaser.emoji, nick: this.chaser.nick, colour: this.chaser.colour } });
       await this.say('Question ' + n + ', ' + (CHASE_CATS[q.c] || '') + '. ' + this.readQ(q, true));
@@ -601,7 +617,7 @@ const Chase = {
     while (this.active && Date.now() < end) {
       // short, sharp and not read out: the point is to get through as many as you can
       // medium and hard only — the easy ones let a pair of you rattle off 29
-      const q = this.take(x => !x.soft && x.d !== 'e' && x.q.length <= 100, x => !x.soft && x.q.length <= 100);
+      const q = this.take(x => !x.soft && x.q.length <= 100, x => !x.soft, this.mix('final'));
       this.view(this.head() + '<div class="ch-final"><div><div class="muted">Your steps</div><div class="ch-big">' + target + '</div></div>' +
         '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.track(target, 0, 'run') + this.qHtml(q));
       const pr = this.put(team, q, 'buzz', { final: true, target });
@@ -660,7 +676,7 @@ const Chase = {
     ChaseMusic.start('chaser');
     trackOut();
     while (this.active && leftMs() > 0 && got < target) {
-      const q = this.take(x => !x.soft);
+      const q = this.take(x => !x.soft, null, this.mix('final'));
       const pressure = target - got <= 2 ? 1 : 0;
       const hit = this.chaserAnswers(q, pressure, 'final');
       const cPick = hit ? q.correct : [0, 1, 2].filter(i => i !== q.correct)[Math.floor(Math.random() * 2)];
@@ -681,7 +697,7 @@ const Chase = {
       trackOut('Pushback coming!');
       ChaseMusic.duck(true);
       await this.say('Wrong! Pushback!');
-      const pq = this.take(x => x.c === q.c && !x.soft, x => !x.soft);
+      const pq = this.take(x => x.c === q.c && !x.soft, x => !x.soft, this.mix('final'));
       draw(pq, null, '<div class="ch-title">⏪ PUSHBACK — clock stopped, answer on your phones</div>');
       const pr = this.put(team, pq, 'buzz', { pushback: true });
       await this.say(this.readQ(pq, true));
