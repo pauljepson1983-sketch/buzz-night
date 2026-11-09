@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meet the Chasers</title>
+<style>
+  body{margin:0;font-family:system-ui,sans-serif;background:#120f2b;color:#fff;padding:16px}
+  h1{text-align:center;margin:8px 0 16px;font-size:1.8rem}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;max-width:1200px;margin:auto}
+  .card{background:#1d1942;border-radius:18px;padding:16px;border-top:6px solid var(--c)}
+  .top{display:flex;gap:14px;align-items:center}
+  .nick{font-size:1.4rem;font-weight:900;color:var(--c);filter:brightness(1.4)}
+  .name{font-weight:700}.meta{font-size:.85rem;opacity:.8;line-height:1.5}
+  p{font-size:.9rem;line-height:1.45;margin:8px 0}
+  .bars{margin-top:8px}
+  .bar{display:grid;grid-template-columns:120px 1fr 34px;gap:6px;align-items:center;font-size:.8rem;margin:3px 0}
+  .bar i{display:block;height:10px;border-radius:5px;background:var(--c);filter:brightness(1.3)}
+  .bar .t{background:rgba(255,255,255,.1);border-radius:5px}
+  .strong{color:#5fd68b;font-weight:700}.weak{color:#ff7a7a;font-weight:700}
+  .quote{font-style:italic;opacity:.9;border-left:3px solid var(--c);padding-left:8px;font-size:.85rem;margin:4px 0}
+  .stats{display:flex;gap:10px;font-size:.85rem;margin-top:8px;flex-wrap:wrap}
+  .stats span{background:rgba(255,255,255,.08);padding:4px 8px;border-radius:8px}
+  .lock{background:#000;color:#ffd257;font-size:.75rem;padding:2px 8px;border-radius:8px;margin-left:6px}
+</style></head><body>
+<h1>⛓️ Meet the Chasers</h1>
+<div class="grid" id="g"></div>
+<script src="chasers.js"></script>
+<script>
+const cats = window.CHASE_CATS;
+document.getElementById('g').innerHTML = CHASERS.map(ch => {
+  const sorted = Object.entries(ch.skill).sort((a,b)=>b[1]-a[1]);
+  const best = sorted.slice(0,2).map(x=>cats[x[0]]).join(' & ');
+  const worst = sorted.slice(-2).map(x=>cats[x[0]]).join(' & ');
+  return `<div class="card" style="--c:${ch.colour === '#2b2b33' ? '#9a8cff' : ch.colour}">
+    <div class="top">${chaserPortrait(ch.id,130)}
+      <div><div class="nick">${ch.emoji} ${ch.nick}${ch.locked?'<span class="lock">🔒 unlock</span>':''}</div>
+      <div class="name">${ch.name}</div>
+      <div class="meta">${ch.age ? ch.age + ' · ' : 'Age: won\'t say · '}${ch.gender}<br>📍 ${ch.from}</div></div></div>
+    <p><b>Day job:</b> ${ch.job}</p><p>${ch.bio}</p>
+    <p class="meta">👍 ${ch.likes}<br>👎 ${ch.hates}<br>🌀 ${ch.quirk}</p>
+    <div><span class="strong">Strong:</span> ${best} &nbsp; <span class="weak">Weak:</span> ${worst}</div>
+    <div class="bars">${sorted.map(([k,v])=>`<div class="bar"><span>${cats[k]}</span><span class="t"><i style="width:${v}%"></i></span><b>${v}%</b></div>`).join('')}</div>
+    <div class="stats"><span>⚡ ${ch.speed} answers/min</span><span>😰 Nerves ${ch.nerves}/10</span></div>
+    <div class="quote">"${ch.lines.intro}"</div><div class="quote">On catching you: "${ch.lines.catch}"</div><div class="quote">On losing: "${ch.lines.lose}"</div>
+  </div>`;
+}).join('');
+</script></body></html>

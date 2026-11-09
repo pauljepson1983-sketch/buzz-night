@@ -14,6 +14,7 @@
      100KB, so re-fetching it costs nothing next to spending an evening
      wondering why an edit has not appeared. -->
 <script>document.write('<script src="questions.js?v=' + Math.floor(Date.now() / 60000) + '"><\/script>');</script>
+<script>['chasers.js', 'chase-questions.js', 'chase.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
 <style>
   :root {
     --bg: #14082b;
@@ -523,6 +524,30 @@
   .duel-bank { font-size: 1.5rem; font-weight: 900; font-variant-numeric: tabular-nums }
   .duel-side.holds .duel-bank { color: #ffd257 }
   .duel-side.me .duel-who { opacity: 1; font-weight: 800; text-decoration: underline }
+
+  /* The Chase */
+  .chase-wrap { background: rgba(0,0,0,.25); border-radius: 16px; padding: 14px; border-top: 6px solid var(--cc) }
+  .ch-head { display: flex; gap: 12px; align-items: center; margin-bottom: 6px }
+  .ch-nick { font-size: 1.6rem; font-weight: 900; color: var(--cc); filter: brightness(1.5) }
+  .ch-meta { opacity: .8; font-size: .9rem; margin: 6px 0 }
+  .ch-skills { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin-top: 8px }
+  .ch-sk { display: grid; grid-template-columns: 130px 1fr; align-items: center; font-size: .85rem }
+  .ch-sk i { display: block; height: 10px; border-radius: 5px; background: var(--cc); filter: brightness(1.4) }
+  .ch-title { font-size: 1.35rem; font-weight: 800; margin: 8px 0 }
+  .ch-big { font-size: 3rem; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1.1 }
+  .ch-timer { font-size: 1.3rem; font-weight: 700; opacity: .9 }
+  .ch-q { margin-top: 10px }
+  .ch-qt { font-size: 1.6rem; font-weight: 800; margin: 6px 0 10px }
+  .ch-opts { display: grid; gap: 8px }
+  .ch-opt { background: rgba(255,255,255,.1); border-radius: 12px; padding: 12px 14px; font-size: 1.25rem; font-weight: 700 }
+  .ch-opt.right { background: #2e9e5b } .ch-opt.wrong { background: #a8323e }
+  .ch-h2h { display: flex; gap: 16px; align-items: flex-start }
+  .ch-board { display: flex; flex-direction: column; gap: 4px; width: 230px; flex: none }
+  .ch-step { height: 34px; border-radius: 8px; background: rgba(255,255,255,.07); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .95rem }
+  .ch-step.home { background: rgba(95,214,139,.25) }
+  .ch-step.player { background: #3b6fd8 } .ch-step.chaser { background: var(--cc); filter: brightness(1.2) }
+  .ch-offer { font-size: 1.3rem; margin: 8px 0; padding: 10px; background: rgba(255,255,255,.07); border-radius: 10px }
+  .ch-final { display: flex; justify-content: space-around; text-align: center; margin: 8px 0 }
   #duelPot { font-size: 2.6rem; font-weight: 900; color: #ffd257; font-variant-numeric: tabular-nums;
              text-shadow: 0 0 18px rgba(255,210,87,.45) }
   #duelPot.grew { animation: duelPop .45s ease-out }
@@ -687,6 +712,7 @@
         <p class="mt" id="nightStatus" style="font-size:1rem">Nothing planned yet — set up a round below and add it.</p>
       <div id="quizHostView" class="hidden" style="margin-top:10px;font-size:1rem"></div>
       <div id="bingoHost" class="hidden" style="margin-top:10px"></div>
+      <div id="chaseHost" class="hidden" style="margin-top:10px"></div>
   </div>
 
   <div class="host-grid">
@@ -859,6 +885,7 @@
             <button class="btn ghost small" onclick="Night.quickAdd('logos')">🏷️ Logos</button>
             <button class="btn ghost small" onclick="Night.quickAdd('places')">🌍 Where is it?</button>
             <button class="btn ghost small" onclick="Night.quickAdd('bingo')">🎱 Bingo</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('chase')">⛓️ The Chase</button>
             <button class="btn ghost small" onclick="Night.quickAdd('buzzname')">🎤 Buzz and name it</button>
             <button class="btn ghost small" onclick="Night.quickAdd('guess')">🎯 Closest wins</button>
             <button class="btn ghost small" onclick="Night.quickAdd('faces')">⭐ Faces</button>
@@ -1087,6 +1114,7 @@
   <div id="forfeitBox" class="card hidden" style="text-align:center;border:2px solid #ff5fae"></div>
   <div id="roundCard" class="hidden"></div>
   <div id="bingoBox" class="hidden"></div>
+  <div id="chaseBox" class="hidden"></div>
   <div id="quizPanel" class="hidden">
     <div id="quizRound"></div>
     <div id="quizProgress" class="muted"></div>
@@ -2718,6 +2746,7 @@ const Host = {
       // a phone joining (or rejoining) after forfeits were switched on is asked too
       if (Forfeit.on) { me.cheeky = carry ? (carry.cheeky ?? null) : null; if (me.cheeky == null) conn.send(Forfeit.askMsg()); }
       Forfeit.note();
+      if (Chase.active) Chase.resend(conn.peer);
       if (Bingo.active) {
         if (Bingo.tickets && Bingo.tickets[conn.peer]) Bingo.resend(conn.peer);
         else conn.send({ type: 'bingoSetup', size: Bingo.size, label: Bingo.SIZES[Bingo.size].label, rules: Bingo.RULES });
@@ -2747,6 +2776,9 @@ const Host = {
     if (msg.type === 'roundReady') { Night.playerReady(conn.peer); return; }
     if (msg.type === 'bingoJoin') { Bingo.join(conn.peer, msg.count); return; }
     if (msg.type === 'bingoClaim') { Bingo.claim(conn.peer, msg); return; }
+    if (msg.type === 'chaseAns') { Chase.answer(conn.peer, msg); return; }
+    if (msg.type === 'chaseOffer') { Chase.offerPick(conn.peer, msg.pick); return; }
+    if (msg.type === 'chaseCat') { if (Chase.catFor && Chase.catFor.id === conn.peer) Chase.catFor.set(msg.cat); return; }
     if (msg.type === 'cheekyVote') { p.cheeky = !!msg.yes; Forfeit.note(); return; }
     if (msg.type === 'forfeitDone') { Forfeit.done(conn.peer, msg); return; }
     if (msg.type === 'forfeitSpun') { Forfeit.landed(conn.peer, msg); return; }
@@ -2889,6 +2921,13 @@ const Host = {
     move(Quiz.gains);
     move(Quiz.roundGains);
     move(Bingo.tickets); move(Bingo.lockout);
+    if (Chase.active) {
+      move(Chase.home); move(Chase.lastTo);
+      Chase.players = (Chase.players || []).map(x => x === oldId ? newId : x);
+      Chase.finalTeam = (Chase.finalTeam || []).map(x => x === oldId ? newId : x);
+      if (Chase.cur && Chase.cur.who && Chase.cur.who.has(oldId)) { Chase.cur.who.delete(oldId); Chase.cur.who.add(newId); }
+      ['offerFor', 'catFor'].forEach(k => { if (Chase[k] && Chase[k].id === oldId) Chase[k].id = newId; });
+    }
     if (Bingo.joined && Bingo.joined.has(oldId)) { Bingo.joined.delete(oldId); Bingo.joined.add(newId); }
     (Bingo.winners || []).forEach(w => { if (w.id === oldId) w.id = newId; });
     if (Quiz.firstCorrect === oldId) Quiz.firstCorrect = newId;
@@ -6447,7 +6486,8 @@ const Quiz = {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills', themes: '🎵 Film themes',
     songs: '🎧 Name the song', tv: '📺 TV theme tunes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces',
     quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel',
-    bingo: '🎱 Bingo'
+    bingo: '🎱 Bingo',
+    chase: '⛓️ The Chase'
   },
   NOUNS: {
     covers: 'Cover', backdrops: 'Still', themes: 'Theme',
@@ -6455,6 +6495,7 @@ const Quiz = {
   },
   HOWTO: {
     bingo: 'Dab your numbers as they’re called. Win One line (any full row), then Two lines (2 rows on one ticket), then Full house (the whole ticket). Hit BINGO! to claim — a wrong claim costs 10.',
+    chase: 'You v a computer Chaser. Each of you plays a 60-second Cash Builder, picks an offer, then goes head to head — pick the category the Chaser is weakest at. Get home and your money goes into the Final Chase. Two minutes to set a target, then the Chaser comes after you; every Chaser miss is a pushback chance.',
     covers: 'A cover flashes up, then four albums. Pick the right one.',
     backdrops: 'A scene from the film flashes up, then four titles.',
     themes: 'Listen to the theme, then pick the film.',
@@ -6472,6 +6513,7 @@ const Quiz = {
 
   ROUND_NAMES: {
     bingo: 'bingo round',
+    chase: 'Chase',
     covers: 'album cover round', backdrops: 'film stills round',
     themes: 'film themes round',
     songs: 'name the song round',
@@ -7619,7 +7661,7 @@ const Night = {
 
   LABELS: {
     covers: '🖼️ Album covers', backdrops: '🎬 Film stills',
-    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel', buzzer: '🔔 Buzzer round (you judge)', bingo: '🎱 Bingo'
+    themes: '🎵 Film themes', songs: '🎧 Name the song', tv: '📺 TV themes', guess: '🎯 Closest wins', years: '📅 Year of release', faces: '⭐ Famous faces', quickfire: '⚡ Fastest finger', logos: '🏷️ Logos', places: '🌍 Where is it?', buzzname: '🎤 Buzz and name it', duel: '⚔️ The Duel', buzzer: '🔔 Buzzer round (you judge)', bingo: '🎱 Bingo', chase: '⛓️ The Chase'
   },
 
   load() {
@@ -7687,6 +7729,7 @@ const Night = {
 
   describe(r) {
     if (r.mode === 'buzzer') return this.LABELS.buzzer;
+    if (r.mode === 'chase') { const c = CHASERS.find(x => x.id === r.chaser); return this.LABELS.chase + ' — ' + (c ? c.emoji + ' ' + c.nick : 'random Chaser'); }
     if (r.mode === 'bingo') return this.LABELS.bingo + ' — ' + Bingo.SIZES[r.size || 100].label + ', ' + (Bingo.SPEEDS[r.speed || 'normal'] || Bingo.SPEEDS.normal).label;
     const bits = [];
     if (r.style) bits.push(r.style);
@@ -7760,6 +7803,7 @@ const Night = {
       startAt: 'skip',
       crop: 'crop',
       ...(mode === 'bingo' ? { size: 100, speed: 'normal' } : {}),
+      ...(mode === 'chase' ? { chaser: 'random' } : {}),
       roundLabel: ''
     };
   },
@@ -7769,7 +7813,7 @@ const Night = {
      in three separate places, which is exactly what happened here. */
   // buzzname is deliberately absent: it searches Spotify, so an era and a
   // flavour both mean something and both get a picker in the running order
-  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos', 'places', 'duel', 'bingo'],
+  NO_DECADE: ['tv', 'guess', 'quickfire', 'logos', 'places', 'duel', 'bingo', 'chase'],
 
   quickAdd(mode) {
     this.plan.push(this.defaultsFor(mode));
@@ -7909,7 +7953,11 @@ const Night = {
             '<select onchange="Night.setField(' + i + ',\'speed\',this.value)">' +
               opts(Object.entries(Bingo.SPEEDS).map(([k, v]) => [k, v.label]), r.speed || 'normal') + '</select></div>'
           : '';
-        const pickers = bingoPick || ((usesEra || usesStyle) && !locked
+        const chasePick = r.mode === 'chase' && !locked
+          ? '<div class="night-opts"><select onchange="Night.setField(' + i + ',\'chaser\',this.value)">' +
+              opts([['random', '🎲 Random Chaser']].concat(CHASERS.filter(c => !c.locked || Chase.bossUnlocked()).map(c => [c.id, c.emoji + ' ' + c.nick])), r.chaser || 'random') + '</select></div>'
+          : '';
+        const pickers = bingoPick || chasePick || ((usesEra || usesStyle) && !locked
           ? '<div class="night-opts">' +
               (usesEra ? '<select onchange="Night.setField(' + i + ',\'decade\',this.value)">' + opts(DECADES, r.decade) + '</select>' : '') +
               (usesStyle ? '<select onchange="Night.setField(' + i + ',\'style\',this.value)">' + opts(styleList, r.style) + '</select>' : '') +
@@ -8035,13 +8083,14 @@ const Night = {
     await this.wait(2200);
     if (!this.running) return;
 
-    let ok = r.mode === 'bingo' ? await Bingo.run(r) : await Quiz.runRound(r);
+    let ok = r.mode === 'bingo' ? await Bingo.run(r) : r.mode === 'chase' ? await Chase.run(r) : await Quiz.runRound(r);
+    const ownRunner = r.mode === 'bingo' || r.mode === 'chase';   // never rebuilt as a quiz round
 
     /* Spotify asking us to wait is not a reason to throw a round away. It is
        a reason to wait. The cool-off is seconds, the round is one somebody
        chose, and skipping it silently is how a planned night turns into half
        a night. Sit it out once, then have another go. */
-    if (!ok && this.running && Date.now() < (Spot.rateLimitedUntil || 0)) {
+    if (!ok && !ownRunner && this.running && Date.now() < (Spot.rateLimitedUntil || 0)) {
       const secs = Math.ceil((Spot.rateLimitedUntil - Date.now()) / 1000) + 1;
       $('nightStatus').textContent = 'Round ' + n + ' — Spotify asked us to slow down. Waiting ' + secs + 's, then trying this round again.';
       Sound.say('Spotify needs a moment. Holding this round.');
@@ -8056,7 +8105,7 @@ const Night = {
        thin — and simply asking again fixes them. Substituting a different
        round on the first stumble takes the round off the host for no good
        reason. */
-    if (!ok && this.running) {
+    if (!ok && !ownRunner && this.running) {
       $('nightStatus').textContent = 'Round ' + n + ' did not build first time — reloading it…';
       await this.wait(1200);
       if (!this.running) return;
@@ -8185,6 +8234,7 @@ const Night = {
     // skipping while held at the gate should drop that round, not start it
     if (this._go) { this.releaseGo(); this.runNext(); return; }
     if (Bingo.active) { Bingo.stop(); return; }
+    if (Chase.active) { Chase.stop(); return; }
     if (Quiz.active) { Quiz.stop(); return; }
     if (this.waiting) { this.waiting = false; Host.endRound(false); }
     this.runNext();
@@ -8199,6 +8249,7 @@ const Night = {
     clearTimeout(this.timer);
     this.releaseGo();
     if (Bingo.active) Bingo.stop();
+    if (Chase.active) Chase.stop();
     if (Quiz.active) Quiz.stop();
     $('nightGoBtn').classList.remove('hidden');
     $('nightGoBtn').disabled = false;
@@ -8413,6 +8464,7 @@ const Player = {
       }
       case 'forfeitWheel': { this.wheel(msg); break; }
       case 'bingoSetup': this.bingoSetup(msg); break;
+      case 'chase': ChasePhone.on(msg); break;
       case 'bingoTickets': this.bingoTickets(msg); break;
       case 'bingoCall': this.bingoCall(msg); break;
       case 'bingoResult': this.bingoNote(msg.text, msg.bad); if (msg.stage) { const s = $('bgStage'); if (s) s.textContent = 'Playing for: ' + msg.stage; const m = $('bgMeans'); if (m && msg.means) m.textContent = 'Looking for: ' + msg.means; } break;
@@ -10487,6 +10539,7 @@ const Player = {
   hideExtras() {
     $('roundCard').classList.add('hidden');
     $('bingoBox').classList.add('hidden');
+    $('chaseBox').classList.add('hidden');
     $('finaleBox').classList.add('hidden');
     $('stealTimer').classList.add('hidden');
     $('revealBox').classList.add('hidden');
