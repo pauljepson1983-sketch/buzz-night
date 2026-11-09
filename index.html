@@ -4478,7 +4478,8 @@ const Quiz = {
   runRound(cfg) {
     return new Promise(resolve => {
       this.onFinish = () => { this.onFinish = null; resolve(true); };
-      this.start(cfg).then(ok => { if (!ok) { this.onFinish = null; resolve(false); } });
+      this.start(cfg).then(ok => { this._starting = false; if (!ok) { this.onFinish = null; resolve(false); } },
+                           e => { this._starting = false; this.onFinish = null; resolve(false); });
     });
   },
 
@@ -5045,13 +5046,15 @@ const Quiz = {
        logged out or rate limited. A duel without music is still a duel, so a
        failure quietly costs the leg rather than the round. */
     try {
-      const tunes = await this.buildSongs('', songs, '', '');
-      tunes.filter(q => q.uri).forEach(q => { q.kind = 'song'; qs.push(q); });
+      // capped: with Spotify out the songs come from iTunes, and a slow search
+      // shouldn't hold the duel up — fewer songs, quicker start
+      const tunes = await Promise.race([this.buildSongs('', songs, '', ''), new Promise((_, no) => setTimeout(() => no(new Error('slow')), 12000))]);
+      tunes.filter(q => q.uri).forEach(q => { q.kind = 'song'; q.prompt = q.prompt || '🎵 Name this song — it’s playing on the laptop'; qs.push(q); });
     } catch (e) {}
 
     try {
       const pics = await this.buildLogos(logos);
-      pics.forEach(q => { q.img = q.url; });
+      pics.forEach(q => { q.img = q.url; q.prompt = q.prompt || 'Whose logo is this?'; });
       qs = qs.concat(pics);
     } catch (e) {
       // no logos tonight is a thinner duel, not a dead one
@@ -5968,6 +5971,13 @@ const Quiz = {
     // is worth keeping though — without it a decade search is full of
     // remasters carrying their re-release date.
     const c = cfg || this.readControls();
+    /* The background music build (Night.prefetch) borrows Quiz.mode while it
+       works. Starting a round in the middle of that let it flip this round's
+       mode underneath it — a duel turned into a covers or themes round, with
+       no questions and no Bank button. So wait for any build in progress to
+       finish; it then holds off until this round is over. */
+    this._starting = true; this._startingAt = Date.now();
+    try { await Night.prefetchIdle(); } catch (e) {}
     this.mode = c.mode;
     const decade = c.decade, style = c.style, extra = c.extra;
     const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
@@ -7861,6 +7871,8 @@ const Night = {
     this._prefetchP = (async () => {
       let done = 0;
       for (const r of todo) {
+        // never build while a round is starting or running: they share Quiz.mode
+        while (Quiz.active || (Quiz._starting && Date.now() - (Quiz._startingAt || 0) < 90000)) await pause(1000);
         note('🎵 Getting the music ready… ' + done + ' of ' + todo.length);
         for (let attempt = 0; attempt < 2 && !r._prebuilt; attempt++) {
           /* A short Spotify slow-down is worth sitting out. Its account quota
@@ -7871,6 +7883,7 @@ const Night = {
           if (Spot.useTunes()) note('🎵 Getting the music ready from iTunes… ' + done + ' of ' + todo.length);
           const keep = Quiz.mode;
           Quiz.mode = r.mode;
+          let release; this._itemP = new Promise(res => { release = res; });
           try {
             const qs = await Quiz.buildChunk(r.decade, r.count, r.style, r.extra, r.decade ? r.decade.slice(0, 4) + 's' : '');
             // the same song can't headline two rounds: key on the track itself
@@ -7879,7 +7892,7 @@ const Night = {
             });
             if (fresh.length >= 4) { r._prebuilt = fresh; fresh.forEach(q => Seen.nightUsed.add(Seen.keyOf(q))); }
           } catch (e) { /* the round will simply build itself when it starts */ }
-          finally { Quiz.mode = keep; }
+          finally { Quiz.mode = keep; this._itemP = null; release(); }
         }
         done++;
         await pause(2500);   // spread the calls out — that is the whole point
@@ -7890,6 +7903,9 @@ const Night = {
     })();
     return this._prefetchP;
   },
+
+  // resolves once no background build is mid-flight
+  prefetchIdle() { return this._itemP || Promise.resolve(); },
 
   describe(r) {
     if (r.mode === 'buzzer') return this.LABELS.buzzer;
