@@ -259,6 +259,8 @@ const Chase = {
     c.ans[id] = msg.i;
     const right = msg.i === c.q.correct;
     if (c.mode === 'first' && right) return this.settle();
+    // like the show: whoever buzzes first answers for the team, right or wrong
+    if (c.mode === 'buzz') return this.settle();
     if ([...c.who].every(x => c.ans[x] != null || !Host.isPresent(Host.players[x]))) this.settle();
   },
   settle() {
@@ -592,7 +594,7 @@ const Chase = {
       const q = this.take(x => !x.soft && x.q.length <= 75 && x.d !== 'h', x => !x.soft && x.q.length <= 90);
       this.view(this.head() + '<div class="ch-final"><div><div class="muted">Your steps</div><div class="ch-big">' + target + '</div></div>' +
         '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.track(target, 0, 'run') + this.qHtml(q));
-      const pr = this.put(team, q, 'first', { final: true, target });
+      const pr = this.put(team, q, 'buzz', { final: true, target });
       this.startClock(Math.min(8, Math.max(0.5, (end - Date.now()) / 1000 / this.timeScale)));
       const ans = await pr;
       if (!this.active) break;
@@ -665,7 +667,7 @@ const Chase = {
       await this.say('Wrong! Pushback!');
       const pq = this.take(x => x.c === q.c && !x.soft, x => !x.soft);
       draw(pq, null, '<div class="ch-title">⏪ PUSHBACK — clock stopped, answer on your phones</div>');
-      const pr = this.put(team, pq, 'first', { pushback: true });
+      const pr = this.put(team, pq, 'buzz', { pushback: true });
       await this.say(this.readQ(pq, true));
       this.startClock(this.PUSH_SECS);
       const ans = await pr;
