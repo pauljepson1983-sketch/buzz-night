@@ -351,6 +351,30 @@ const Chase = {
     return this.finish();
   },
 
+  /* Nothing starts until the people involved say they're ready — someone
+     might be at the door. Phones get an "I'm ready" button; the laptop has
+     a Start button as an override. */
+  async gate(who, label, line) {
+    if (!this.active) return;
+    this.ready = new Set();
+    this.gateWho = new Set(who.filter(id => Host.isPresent(Host.players[id])));
+    const names = [...this.gateWho].map(id => this.nameOf(id)).join(' and ');
+    const draw = () => this.view(this.head() + '<div class="ch-title">⏸ ' + esc(label) + '</div>' +
+      '<div class="muted" style="font-size:1.1rem">Waiting for ' + esc(names) + ' to press <b>I\'m ready</b> on ' + (this.gateWho.size > 1 ? 'their phones' : 'their phone') +
+      ' (' + this.ready.size + ' of ' + this.gateWho.size + ')</div>' +
+      '<button class="btn big green mt" onclick="Chase.goNow()">▶ Start now</button>');
+    draw();
+    Object.keys(Host.players).forEach(id => this.send(id, this.gateWho.has(id)
+      ? { k: 'ready', label, text: line || '' }
+      : { k: 'wait', text: '⏸ ' + label + ' — waiting for ' + names }));
+    await this.say(label + '. ' + names + ', press I\'m ready when you are.');
+    this.gateDraw = draw;
+    while (this.active && this.gateWho && [...this.gateWho].some(id => !this.ready.has(id) && Host.isPresent(Host.players[id]))) await this.sleep(200);
+    this.gateWho = null; this.gateDraw = null;
+  },
+  readyUp(id) { if (this.gateWho && this.gateWho.has(id)) { this.ready.add(id); if (this.gateDraw) this.gateDraw(); } },
+  goNow() { this.gateWho = null; },
+
   /* a visible, spoken 3-2-1 so nobody is caught cold */
   async countIn(label) {
     for (const n of ['3', '2', '1']) {
@@ -366,6 +390,8 @@ const Chase = {
     let right = 0, asked = 0;
     this.view(this.head() + '<div class="ch-title">💷 ' + esc(name) + '\'s Cash Builder</div><div class="muted" style="font-size:1.1rem">60 seconds. £1,000 for every right answer.</div>');
     this.sendAll({ k: 'wait', text: name + ' is up next in the Cash Builder…' });
+    await this.gate([id], name + '\'s Cash Builder', '60 seconds. £1,000 for every right answer.');
+    if (!this.active) return 0;
     await this.say(name + ', it\'s your Cash Builder. Sixty seconds, a thousand pounds for every right answer. Answer on your phone.');
     await this.sleep(1000);
     await this.countIn('💷 ' + name + '\'s Cash Builder');
@@ -439,6 +465,8 @@ const Chase = {
     let p = offer.start, c = 0;
     const draw = (q, rv, line) => this.view(this.head() + '<div class="ch-title">' + esc(name) + ' playing for ' + this.money(offer.money) + '</div>' +
       '<div class="ch-h2h">' + this.board(p, c, name) + '<div style="flex:1">' + (q ? this.qHtml(q, rv) : '') + (line || '') + '</div></div>');
+    await this.gate([id], name + ' — head to head', 'Playing for ' + this.money(offer.money) + '. Get home before you are caught.');
+    if (!this.active) return;
     draw(null, null, '<div class="ch-title">Head to head!</div>');
     await this.say('Head to head. ' + name + ', get home before ' + this.chaser.nick + ' catches you.');
     await this.sleep(1000);
@@ -513,7 +541,8 @@ const Chase = {
     this.sendAll({ k: 'wait', text: '🏁 Final Chase for ' + this.money(pot) + ' — get ready!' });
     await this.say(lazarus ? 'Nobody made it home, so you get one last chance, for ' + this.pounds(pot) + '.' : 'The final chase. ' + names + ', playing for ' + this.pounds(pot) + '.');
     await this.say('You have two minutes. The questions are on your phones, not read out, so go as fast as you can. The first right answer moves you on a step. You start with ' + team.length + (team.length === 1 ? ' step.' : ' steps.'));
-    await this.sleep(1000);
+    await this.gate(team, 'The Final Chase', 'Two minutes. Questions on your phones — go fast!');
+    if (!this.active) return;
     await this.countIn('🏁 Final Chase');
 
     // --- the team's run
@@ -545,7 +574,8 @@ const Chase = {
     await this.sleep(1500);
     await this.say('Time\'s up! You\'ve set a target of ' + target + '. ' + this.chaser.nick + ' needs ' + target + ' right answers in two minutes to catch you.');
     await this.say('If the Chaser gets one wrong, you get a pushback on your phones. Get it right and you push them back a step.');
-    await this.sleep(800);
+    await this.gate(team, this.chaser.nick + '\'s chase', 'Be ready for pushbacks on your phone.');
+    if (!this.active) return;
     await this.countIn('⛓️ ' + this.chaser.nick + '\'s chase');
 
     // --- the Chaser's run, with pushbacks. The clock is the Chaser's own
@@ -643,6 +673,11 @@ const ChasePhone = {
         '<div class="muted">' + esc(msg.name) + '</div><p style="font-size:.9rem">' + esc(msg.bio) + '</p>' +
         '<div style="font-size:.9rem"><b style="color:#5fd68b">Strong:</b> ' + msg.strong.map(esc).join(', ') + '<br><b style="color:#ff7a7a">Weak:</b> ' + msg.weak.map(esc).join(', ') + '</div>');
       return;
+    }
+    if (k === 'ready') {
+      this.show('<div class="rc-kicker">⏸ ' + esc(msg.label) + '</div><div style="margin:8px 0">' + esc(msg.text) + '</div>' +
+        '<button class="btn big green" style="width:100%;font-size:1.4rem" onclick="ChasePhone.send({type:\'chaseReady\'});ChasePhone.show(\'<div class=rc-name>✅ Ready — waiting…</div>\')">✅ I\'m ready</button>');
+      Player.vibe && Player.vibe([60, 40, 60]); return;
     }
     if (k === 'fb') { this.show('<div class="rc-name" style="font-size:1.6rem">' + (msg.ok ? '✅ Right!' : '❌ It was ' + esc(msg.answer)) + '</div>'); return; }
     if (k === 'wait') { this.show('<div class="rc-name" style="font-size:1.2rem">' + esc(msg.text) + '</div>'); return; }

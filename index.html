@@ -2780,6 +2780,7 @@ const Host = {
     if (msg.type === 'bingoJoin') { Bingo.join(conn.peer, msg.count); return; }
     if (msg.type === 'bingoClaim') { Bingo.claim(conn.peer, msg); return; }
     if (msg.type === 'chaseAns') { Chase.answer(conn.peer, msg); return; }
+    if (msg.type === 'chaseReady') { Chase.readyUp(conn.peer); return; }
     if (msg.type === 'chaseOffer') { Chase.offerPick(conn.peer, msg.pick); return; }
     if (msg.type === 'chaseCat') { if (Chase.catFor && Chase.catFor.id === conn.peer) Chase.catFor.set(msg.cat); return; }
     if (msg.type === 'cheekyVote') { p.cheeky = !!msg.yes; Forfeit.note(); return; }
@@ -2930,6 +2931,7 @@ const Host = {
       Chase.finalTeam = (Chase.finalTeam || []).map(x => x === oldId ? newId : x);
       if (Chase.cur && Chase.cur.who && Chase.cur.who.has(oldId)) { Chase.cur.who.delete(oldId); Chase.cur.who.add(newId); }
       ['offerFor', 'catFor'].forEach(k => { if (Chase[k] && Chase[k].id === oldId) Chase[k].id = newId; });
+      [Chase.gateWho, Chase.ready].forEach(set => { if (set && set.has(oldId)) { set.delete(oldId); set.add(newId); } });
     }
     if (Bingo.joined && Bingo.joined.has(oldId)) { Bingo.joined.delete(oldId); Bingo.joined.add(newId); }
     (Bingo.winners || []).forEach(w => { if (w.id === oldId) w.id = newId; });
