@@ -3719,19 +3719,31 @@ const Host = {
       Sound.say(middle.length === 1 ? 'In fourth place, ' + middle[0].name
                                     : 'Then ' + middle.map(m => m.name).join(', '));
     }]);
-    if (rows[2]) steps.push([middle.length ? 3400 : 3200, () => {
+    // everyone level on the top score shares the win — they don't get read
+    // out as "second" and "third" first
+    const tied = rows.filter(r => r.score === rows[0].score);
+    const shared = tied.length > 1;
+    if (rows[2] && !(shared && tied.length > 2)) steps.push([middle.length ? 3400 : 3200, () => {
       this.broadcast({ type: 'finale', stage: 'place', place: 3, row: rows[2] });
       const v = this.voiceFor(rows[2].name);
       Sound.say('In third place, ' + rows[2].name, v.voice, v.style);
     }]);
-    if (rows[1]) steps.push([3400, () => {
+    if (rows[1] && !shared) steps.push([3400, () => {
       this.broadcast({ type: 'finale', stage: 'place', place: 2, row: rows[1] });
       const v = this.voiceFor(rows[1].name);
       Sound.say('In second place, ' + rows[1].name, v.voice, v.style);
     }]);
     steps.push([3400, () => {
-      this.broadcast({ type: 'finale', stage: 'winner', row: rows[0] });
       Sound.buzz('fanfare');
+      if (shared) {
+        const names = tied.map(r => r.name);
+        const both = names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+        this.broadcast({ type: 'finale', stage: 'winner', row: Object.assign({}, rows[0], { name: names.join(' & ') }), tied: names });
+        setTimeout(() => Sound.say('It\'s a dead heat! ' + both + ' share the win, with ' + rows[0].score + ' points each!'), 900);
+        $('phaseBanner').textContent = '🤝 Dead heat — ' + names.join(' & ') + ' on ' + rows[0].score;
+        return;
+      }
+      this.broadcast({ type: 'finale', stage: 'winner', row: rows[0] });
       const v = this.voiceFor(rows[0].name);
       setTimeout(() => Sound.say('And the winner is, ' + rows[0].name + '! ' + rows[0].name + ' ' +
         this.quip('winner'), v.voice, v.style), 900);
@@ -7348,7 +7360,8 @@ const Hall = {
     rows.forEach((r, i) => {
       const e = this.entry(r.name);
       e.games++;
-      if (i === 0 && rows.length > 1) e.gameWins++;
+      // a shared top score is a draw, not a win for whoever sorted first
+      if (i === 0 && rows.length > 1 && r.score > rows[1].score) e.gameWins++;
     });
     if (fastest && fastest.avg != null) {
       const e = this.entry(fastest.name);
@@ -8415,8 +8428,11 @@ const Night = {
   showAfter() {
     const box = $('afterNight');
     if (!box) return;
-    const top = Host.boardRows()[0];
-    $('afterHead').textContent = top ? '🏆 ' + top.name + ' won this game with ' + top.score : 'That’s the night';
+    const rows = Host.boardRows(), top = rows[0];
+    const level = top ? rows.filter(r => r.score === top.score) : [];
+    $('afterHead').textContent = !top ? 'That’s the night'
+      : level.length > 1 ? '🤝 Dead heat — ' + level.map(r => r.name).join(' & ') + ' on ' + top.score
+      : '🏆 ' + top.name + ' won this game with ' + top.score;
     // the table as it will stand once this game is banked
     const lt = Host.leagueTable(true);
     $('afterOverall').textContent = lt.length ? 'League: ' + lt.map(r => r.name + ' ' + r.pts + ' pts').join(' · ') : '';
@@ -10184,6 +10200,14 @@ const Player = {
         esc(msg.row.name) + ' <b>' + msg.row.score + '</b>' + (isMe(msg.row) ? ' — that’s you' : '') + '</div>' + (this._finaleHtml || '');
       el.innerHTML = '<div class="fin-title">🏁 Final scores</div>' + this._finaleHtml;
       this.vibe([80]);
+      return;
+    }
+    if (msg.stage === 'winner' && msg.tied) {
+      const mine = msg.tied.some(n => String(n).toLowerCase() === me);
+      el.innerHTML = '<div class="fin-win' + (mine ? ' me' : '') + '">🤝<div class="fin-name">' + esc(msg.tied.join(' & ')) + '</div>' +
+        '<div class="fin-score">' + msg.row.score + ' points each</div>' +
+        '<div class="fin-sub">' + (mine ? 'Dead heat — you share the win!' : 'share the win') + '</div></div>' + (this._finaleHtml || '');
+      this.vibe(mine ? [120, 60, 120, 60, 300] : [150]);
       return;
     }
     if (msg.stage === 'winner') {
