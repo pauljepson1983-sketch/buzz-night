@@ -387,14 +387,18 @@ const Chase = {
   /* Nothing starts until the people involved say they're ready — someone
      might be at the door. Phones get an "I'm ready" button; the laptop has
      a Start button as an override. */
-  async gate(who, label, line) {
+  async gate(who, label, line, all) {
     if (!this.active) return;
     this.ready = new Set();
-    this.gateWho = new Set(who.filter(id => Host.isPresent(Host.players[id])));
+    // all: wait for everyone named, even a phone that has dropped — they can
+    // scan back in (a rejoin is swapped in by Host and gets the button)
+    this.gateAll = !!all;
+    this.gateWho = new Set(all ? who.filter(id => Host.players[id]) : who.filter(id => Host.isPresent(Host.players[id])));
     const names = [...this.gateWho].map(id => this.nameOf(id)).join(' and ');
     const draw = () => this.view(this.head() + '<div class="ch-title">⏸ ' + esc(label) + '</div>' +
       '<div class="muted" style="font-size:1.1rem">Waiting for ' + esc(names) + ' to press <b>I\'m ready</b> on ' + (this.gateWho.size > 1 ? 'their phones' : 'their phone') +
       ' (' + this.ready.size + ' of ' + this.gateWho.size + ')</div>' +
+      ([...this.gateWho].filter(id => !Host.isPresent(Host.players[id])).map(id => '<div class="ch-title" style="font-size:1.1rem">📵 ' + esc(this.nameOf(id)) + '\'s phone isn\'t connected — scan the QR code to rejoin</div>').join('')) +
       '<button class="btn big green mt" onclick="Chase.goNow()">▶ Start now</button>');
     draw();
     Object.keys(Host.players).forEach(id => this.send(id, this.gateWho.has(id)
@@ -402,7 +406,12 @@ const Chase = {
       : { k: 'wait', text: '⏸ ' + label + ' — waiting for ' + names }));
     await this.say(names + ', press ready.');
     this.gateDraw = draw;
-    while (this.active && this.gateWho && [...this.gateWho].some(id => !this.ready.has(id) && Host.isPresent(Host.players[id]))) await this.sleep(200);
+    let lastDraw = 0;
+    while (this.active && this.gateWho && [...this.gateWho].some(id => !this.ready.has(id) && (this.gateAll || Host.isPresent(Host.players[id])))) {
+      if (this.gateAll && Date.now() - lastDraw > 1500) { lastDraw = Date.now(); draw(); }   // keep the "not connected" line current
+      await this.sleep(200);
+    }
+    this.gateAll = false;
     this.gateWho = null; this.gateDraw = null;
   },
   /* Whose turn it is, once their phone is actually there. A phone that has
@@ -615,7 +624,7 @@ const Chase = {
     this.sendAll({ k: 'wait', text: '🏁 Final Chase for ' + this.money(pot) + ' — get ready!' });
     await this.say(lazarus ? 'Nobody made it home, so you get one last chance, for ' + this.pounds(pot) + '.' : 'The final chase. ' + names + ', playing for ' + this.pounds(pot) + '.');
     if (this.firstTime('final')) await this.say('You have two minutes. The questions are on your phones, not read out, so go as fast as you can. The first right answer moves you on a step. You start with ' + team.length + (team.length === 1 ? ' step.' : ' steps.'));
-    await this.gate(team, 'The Final Chase', 'Two minutes. Questions on your phones — go fast!');
+    await this.gate(team, 'The Final Chase', 'Two minutes. Questions on your phones — go fast!', true);
     if (!this.active) return;
     await this.countIn('🏁 Final Chase');
 
