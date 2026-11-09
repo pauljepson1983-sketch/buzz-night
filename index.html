@@ -8183,7 +8183,9 @@ const Night = {
     $('nightStatus').textContent = 'Getting the music ready…';
     // a head start on the music, but never hold the room up for long: what
     // isn't ready yet carries on loading in the background
-    await Promise.race([this.prefetch(), new Promise(r => setTimeout(r, 20000))]);
+    const MUSIC = ['covers', 'themes', 'songs', 'years', 'tv'];
+    if (this.plan.some(r => MUSIC.includes(r.mode) && !r._prebuilt))
+      await Promise.race([this.prefetch(), new Promise(r => setTimeout(r, 20000))]);
     this.running = true; this.idx = -1;
     // pressing start is the gesture that lets us hold the tab awake for the
     // rest of the night
