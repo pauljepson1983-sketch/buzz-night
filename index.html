@@ -14,7 +14,7 @@
      100KB, so re-fetching it costs nothing next to spending an evening
      wondering why an edit has not appeared. -->
 <script>document.write('<script src="questions.js?v=' + Math.floor(Date.now() / 60000) + '"><\/script>');</script>
-<script>['itunes.js', 'uk-hits.js', 'chasers.js', 'chase-questions.js', 'chase.js', 'mrmrs.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
+<script>['itunes.js', 'uk-hits.js', 'speed.js', 'chasers.js', 'chase-questions.js', 'chase.js', 'mrmrs.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
 <style>
   :root {
     --bg: #14082b;
@@ -488,6 +488,9 @@
   /* Buzz and name it. The buzzer has to be the biggest thing on the screen —
      it is a race, and hunting for a small button loses it. */
   #bnBox { margin-top: 10px; text-align: center }
+  #quizArt.zoomout { animation-name: bnZoomOut; animation-timing-function: ease-out; animation-fill-mode: both }
+  @keyframes bnZoomOut { from { transform: scale(6) } to { transform: scale(1) } }
+  #quizArtWrap { overflow: hidden }
   #bnBuzz { width: 100%; padding: 30px 12px; font-size: 1.6rem; font-weight: 800;
             border-radius: 16px; border: none; color: #2b0016;
             background: linear-gradient(180deg,#ff5fae,#e11d74); box-shadow: 0 6px 0 #8d0f47 }
@@ -916,6 +919,15 @@
             <button class="btn ghost small" onclick="Night.quickAdd('bingo')">🎱 Bingo</button>
             <button class="btn ghost small" onclick="Night.quickAdd('chase')">⛓️ The Chase</button>
             <button class="btn ghost small" onclick="Night.quickAdd('mrmrs')">💍 Mr &amp; Mrs</button>
+            <span style="flex-basis:100%;font-size:.8rem" class="muted">⚡ Speed rounds — fastest finger first, no Spotify needed:</span>
+            <button class="btn ghost small" onclick="Night.quickAdd('zoomout')">🔍 Zoom out</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('flashlogo')">⚡ Flash logo</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('flags')">🏳️ Flag flash</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('memgrid')">🧠 Memory grid</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('clash')">🎨 Colour clash</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('green')">🟢 Wait for green</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('maths')">➗ Quick maths</button>
+            <button class="btn ghost small" onclick="Night.quickAdd('emojifilms')">🎬 Emoji films</button>
             <button class="btn ghost small" onclick="Night.quickAdd('buzzname')">🎤 Buzz and name it</button>
             <button class="btn ghost small" onclick="Night.quickAdd('guess')">🎯 Closest wins</button>
             <button class="btn ghost small" onclick="Night.quickAdd('faces')">⭐ Faces</button>
@@ -5953,6 +5965,7 @@ const Quiz = {
     if (this.mode === 'duel') return await this.buildDuel(count);
     if (this.mode === 'places') return await this.buildPlaces(count);
     if (this.mode === 'logos') return await this.buildLogos(count);
+    if (window.Speed && Speed.has(this.mode)) return await Speed.build(this.mode, count);
     if (this.mode === 'quickfire') return this.buildQuickfire(count);
     if (this.mode === 'guess') return this.buildGuess(count);
     if (this.mode === 'tv') return this.toQuestions(await this.buildTv(decade, count), count);
@@ -6059,6 +6072,7 @@ const Quiz = {
     const label = this.mode === 'covers'
       ? ([style, extra, decadeLabel].filter(Boolean).join(', ') || 'that')
       : SOURCE[this.mode]
+      || (window.Speed && Speed.has(this.mode) ? 'the speed round' : '')
       || ('films' + (decadeLabel ? ', ' + decadeLabel : ''));
     try {
       let qs;
@@ -6096,7 +6110,7 @@ const Quiz = {
         if (!this.questions.length) throw new Error('Could not find playable tracks for that.');
       } else if (this.mode === 'places') {
         this.questions = qs;
-      } else if (this.mode === 'quickfire' || this.mode === 'guess' || this.mode === 'duel') {
+      } else if (this.mode === 'quickfire' || this.mode === 'guess' || this.mode === 'duel' || (window.Speed && Speed.has(this.mode))) {
         this.questions = qs;
       } else if (['themes', 'years', 'songs', 'tv'].includes(this.mode)) {
         this.questions = await this.clipsReady(qs.filter(q => q.uri));
@@ -6253,7 +6267,9 @@ const Quiz = {
     if (this.mode === 'duel') { this.duelAsk(); return; }
     const audioRound = ['themes', 'years', 'songs', 'tv', 'buzzname'].includes(this.mode);
     // audio rounds have no picture to flash
-    const flash = audioRound ? 0 : this.flashMs;
+    // speed rounds set their own flash per question (a flag is up 1.2s, a
+    // memory grid 3s, a colour clash not at all)
+    const flash = audioRound ? 0 : (q.flashMs != null ? q.flashMs : this.flashMs);
     // Music used to start the instant the question went out, with the clock
     // already running — people were still looking down when the recognisable
     // bit played. A three-count gives the room a moment to listen up, and the
@@ -6279,6 +6295,7 @@ const Quiz = {
       noun: this.NOUNS[this.mode] || 'Question',
       roundLabel: this.roundLabel || '',
       img: q.img || null, logo: this.mode === 'logos', words: !!q.words,
+      fx: q.fx || null, promptLate: !!q.promptLate, logoStyle: ['zoomout', 'flashlogo'].includes(this.mode),
       options: q.options, flashMs: flash, seconds: this.seconds,
       listen: audioRound, leadIn
     });
@@ -8061,7 +8078,7 @@ const Night = {
       // typing digits takes longer than tapping one of four options
       // buzzname is not a race against a clock — the song plays until
       // someone buzzes, so this is only the backstop
-      secs: mode === 'guess' ? 20 : mode === 'places' ? 25 : mode === 'buzzname' ? 30 : mode === 'duel' ? 15 : 10,
+      secs: (window.Speed && Speed.has(mode)) ? Speed.MODES[mode].secs : mode === 'guess' ? 20 : mode === 'places' ? 25 : mode === 'buzzname' ? 30 : mode === 'duel' ? 15 : 10,
       flash: mode === 'faces' ? 2000 : 3000,
       startAt: 'skip',
       crop: 'crop',
@@ -9051,14 +9068,18 @@ const Player = {
     // Emptied, not merely hidden. A phone that reconnects mid-round never
     // receives quizStart, so it never ran the clear there and the last
     // Fastest finger question sat on screen through the following round.
-    if (msg.prompt) { prompt.textContent = msg.prompt; prompt.classList.remove('hidden'); }
+    if (msg.prompt && !msg.promptLate) { prompt.textContent = msg.prompt; prompt.classList.remove('hidden'); }
     else { prompt.textContent = ''; prompt.classList.add('hidden'); }
+    // zoom out: start in close and pull back over the answer time
+    const art = $('quizArt');
+    art.classList.remove('zoomout'); art.style.animationDuration = '';
+    if (msg.fx === 'zoom') { void art.offsetWidth; art.style.animationDuration = Math.max(4, (msg.seconds || 10) - 1) + 's'; art.classList.add('zoomout'); }
     // flash the cover, then drop it away — the options only appear afterwards
     // so nobody can sit and compare the picture against the answers
     if (msg.img) {
       $('quizArt').src = msg.img;
-      $('quizArtWrap').classList.toggle('logo', !!msg.logo);
-      $('quizArt').classList.toggle('logo', !!msg.logo);
+      $('quizArtWrap').classList.toggle('logo', !!(msg.logo || msg.logoStyle));
+      $('quizArt').classList.toggle('logo', !!(msg.logo || msg.logoStyle));
       $('quizArtWrap').classList.add('showing');
     } else {
       $('quizArtWrap').classList.remove('showing');
@@ -9074,7 +9095,8 @@ const Player = {
          purpose — leaving those on screen next to four titles turns the
          round into reading rather than recognising. A logo is the opposite:
          the mark IS the question, so hiding it just tests memory. */
-      const hasPic = !!msg.img && !!msg.logo;
+      const hasPic = !!msg.img && (!!msg.logo || msg.fx === 'keep' || msg.fx === 'zoom');
+      if (msg.promptLate && msg.prompt) { $('quizPrompt').textContent = msg.prompt; $('quizPrompt').classList.remove('hidden'); }
       $('quizArtWrap').classList.toggle('showing', hasPic);
       if (msg.listen) this.setStatus('🎧 Listen…');
       // a mark with the name in it gets the scattered treatment instead
