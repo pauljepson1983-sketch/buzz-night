@@ -14,7 +14,7 @@
      100KB, so re-fetching it costs nothing next to spending an evening
      wondering why an edit has not appeared. -->
 <script>document.write('<script src="questions.js?v=' + Math.floor(Date.now() / 60000) + '"><\/script>');</script>
-<script>['itunes.js', 'uk-hits.js', 'speed.js', 'chasers.js', 'chase-questions.js', 'chase.js', 'mrmrs.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
+<script>['itunes.js', 'songbank.js', 'uk-hits.js', 'speed.js', 'chasers.js', 'chase-questions.js', 'chase.js', 'mrmrs.js'].forEach(f => document.write('<script src="' + f + '?v=' + Math.floor(Date.now() / 60000) + '"><\/script>'));</script>
 <style>
   :root {
     --bg: #14082b;
@@ -4835,6 +4835,21 @@ const Quiz = {
       try {
         await Spot.playUri(q.uri, this.startOffset(q.dur));
         this.bnPlayedAt = Date.now();
+        /* Listening check: a clip that hasn't actually started after a couple
+           of seconds gets one more push, then the question is skipped — a
+           silent question is worse than one fewer. */
+        if (typeof Tunes !== 'undefined' && Tunes.active && this.mode !== 'buzzname') {
+          const idx = this.idx;
+          setTimeout(() => {
+            if (!this.active || this.idx !== idx || Tunes.playing() || Tunes.hushed) return;
+            try { Tunes.audio.play(); } catch (e) {}
+            setTimeout(() => {
+              if (!this.active || this.idx !== idx || Tunes.playing() || Tunes.hushed) return;
+              $('quizStatus').textContent = '⚠ That clip wouldn\'t play — skipped it.';
+              this.skipQuestion();
+            }, 2000);
+          }, 2500);
+        }
         // while this one plays, fetch the next clip so it starts instantly
         const nx = this.questions && this.questions[(this.idx || 0) + 1];
         if (nx && nx.uri && typeof Tunes !== 'undefined' && (Tunes.active || String(nx.uri).indexOf('itunes:') === 0)) Tunes.preload(nx.uri);
@@ -4877,6 +4892,10 @@ const Quiz = {
   },
 
   async buildBuzzName(decade, count, style, extra) {
+    if (window.SongBank && SongBank.ready()) {
+      const qs = SongBank.buzz(decade, count);
+      if (qs.length >= 2) { this.bnWidened = ''; this.available = qs.length; return qs; }
+    }
     // no flavour picked: the British hits list (with the era, if one is set)
     if (!style && !extra && (window.UK_HITS || []).length) {
       try {
@@ -5969,6 +5988,13 @@ const Quiz = {
     if (window.Speed && Speed.has(this.mode)) return await Speed.build(this.mode, count);
     if (this.mode === 'quickfire') return this.buildQuickfire(count);
     if (this.mode === 'guess') return this.buildGuess(count);
+    // the checked song bank: no searching, no Spotify
+    if (window.SongBank && SongBank.ready()) {
+      if (this.mode === 'tv' && (SONG_BANK.tv || []).length >= 8) return this.toQuestions(SongBank.tv(count + 8), count);
+      if (this.mode === 'songs') return this.toQuestions(SongBank.songs(decade, style, count), count);
+      if (this.mode === 'years') return SongBank.years(this, decade, style, count);
+      if (this.mode === 'themes' && (SONG_BANK.films || []).length >= 8) return this.toQuestions(SongBank.films(count + 8), count);
+    }
     if (this.mode === 'tv') return this.toQuestions(await this.buildTv(decade, count), count);
     if (this.mode === 'songs') return await this.buildSongs(decade, count, style, extra);
     if (this.mode === 'faces') return this.toQuestions(await this.buildFaces(decade, count), count);
@@ -6233,8 +6259,11 @@ const Quiz = {
      come in halfway through. So the round finds all its clips first, and
      drops any song iTunes has no clip for rather than asking it in silence. */
   async clipsReady(list) {
-    const tunes = typeof Tunes !== 'undefined' && Spot.useTunes();
+    const bank = list.some(q => String(q.uri).indexOf('itunes:') === 0);
+    const tunes = typeof Tunes !== 'undefined' && (Spot.useTunes() || bank);
     if (!tunes) return list;
+    $('quizStatus').textContent = '🎵 Getting the clips ready…';
+    try { await Tunes.lookup(list.map(q => q.uri)); } catch (e) {}
     const out = [];
     for (let i = 0; i < list.length; i++) {
       $('quizStatus').textContent = '🎵 Getting the clips ready… ' + (i + 1) + ' of ' + list.length;
@@ -7306,6 +7335,7 @@ const Library = {
   },
   async step() {
     if (!this.idle() || Date.now() < (Spot.rateLimitedUntil || 0) || Spot.useTunes()) return;
+    if (window.SongBank && SongBank.ready()) return;   // the rounds don't use this list any more
     if (this.calls().fill >= this.FILL_DAILY_CAP) return;
     // half the time, quietly look up a TV theme nobody has looked up yet
     if (Math.random() < 0.35 && window.TVSHOWS) {
@@ -7335,6 +7365,13 @@ const Library = {
   },
   render() {
     const el = $('libNote'); if (!el) return;
+    /* With the checked song bank loaded, the music rounds never use this
+       Spotify list — so say what they DO use, and don't fill it. */
+    if (window.SongBank && SongBank.ready()) {
+      el.innerHTML = '🎵 <b>Song bank: ' + SONG_BANK.songs.length + ' songs</b> · ' + (SONG_BANK.tv || []).length + ' TV themes · ' + (SONG_BANK.films || []).length +
+        ' film themes <span class="muted">— each one checked; clips come from iTunes, no Spotify needed</span>';
+      return;
+    }
     const st = this.stats(), c = this.calls();
     const decs = Object.entries(st.by).filter(([k]) => +k.slice(0, 4) >= 1960).sort().map(([k, v]) => k.slice(2) + ' ' + v).join(' · ');
     const state = !(Spot.token || store.get('spotify_refresh')) ? 'connect Spotify to start filling'
@@ -7991,7 +8028,7 @@ const Night = {
               if (seen.has(q.uri)) return false; seen.add(q.uri); return true;
             });
             // with Spotify out, find the clips now too, so the round starts at once
-            const playable = (typeof Tunes !== 'undefined' && Spot.useTunes()) ? await Quiz.clipsReady(fresh) : fresh;
+            const playable = (typeof Tunes !== 'undefined' && (Spot.useTunes() || fresh.some(q => String(q.uri).indexOf('itunes:') === 0))) ? await builder.clipsReady(fresh) : fresh;
             if (playable.length >= 4) { r._prebuilt = playable; playable.forEach(q => Seen.nightUsed.add(Seen.keyOf(q))); }
           } catch (e) { /* the round will simply build itself when it starts */ }
           finally { this._itemP = null; release(); }

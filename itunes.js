@@ -125,6 +125,11 @@
     clean(s) { return String(s || '').toLowerCase().replace(/\(.*?\)|\[.*?\]| - .*$|feat\..*$|remaster.*$/g, '').replace(/[^a-z0-9 ]/g, '').trim(); },
     async resolve(uri) {
       if (this.clips[uri]) return this.clips[uri];
+      if (String(uri).indexOf('itunes:') === 0) {
+        await this.lookup([uri]);
+        if (this.clips[uri]) return this.clips[uri];
+        throw new Error('That clip is no longer on iTunes.');
+      }
       const m = this.metaFor(uri); if (!m) throw new Error('No details for this song to find it without Spotify.');
       const key = this.clean(m.n) + '|' + this.clean(m.a);
       const saved = load(RES_KEY); if (saved[key]) return (this.clips[uri] = saved[key]);
@@ -196,4 +201,57 @@
     playing() { return !!(this.audio && !this.audio.paused); }
   };
   window.Tunes = Tunes;
+})();
+
+/* SongBank — the music rounds' own checked list (songbank.js), so a round
+   never has to search anything. Each song carries Apple's id; one batched
+   lookup per round turns ten ids into ten clip links. Spotify isn't touched. */
+(function () {
+  const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const rank = (mode, items) => (window.Seen && Seen.rank) ? Seen.rank(mode, items) : shuffle(items);
+  window.SongBank = {
+    ready() { return !!(window.SONG_BANK && SONG_BANK.songs && SONG_BANK.songs.length > 50); },
+    pick(decade, style, n, tag) {
+      const [lo, hi] = decade ? decade.split('-').map(Number) : [0, 9999];
+      let list = SONG_BANK.songs.filter(s => s.y >= lo && s.y <= hi);
+      if (style) { const st = list.filter(s => s.g.includes(style)); if (st.length >= Math.min(n, 8)) list = st; }
+      if (tag) { const tg = list.filter(s => s.g.includes(tag)); if (tg.length >= Math.min(n, 8)) list = tg; }
+      if (list.length < 6) list = SONG_BANK.songs.slice();   // era too thin: anything well known
+      return shuffle(list).slice(0, n).map(s => ({
+        title: s.t, artist: s.a, label: s.t + ' — ' + s.a, year: s.y, uri: 'itunes:' + s.id,
+        dur: 30000, url: s.art, pop: 100, seenKey: s.t + ' — ' + s.a
+      }));
+    },
+    // songs: enough for decoys too (toQuestions draws its three wrong answers from the pile)
+    songs(decade, style, count) { return this.pick(decade, style, Math.max(count * 3, 24)); },
+    years(quiz, decade, style, count) {
+      const songs = rank('years', this.pick(decade, style, Math.max(count * 3, 24))).slice(0, count);
+      const now = new Date().getFullYear();
+      return songs.map(s => {
+        const spread = new Set(); let g = 0;
+        while (spread.size < 3 && g++ < 200) {
+          const y = s.year + (Math.random() < 0.5 ? -1 : 1) * (1 + Math.floor(Math.random() * 6));
+          if (y !== s.year && y >= 1950 && y <= now) spread.add(y);
+        }
+        const options = shuffle([s.year, ...spread].map(String));
+        return { uri: s.uri, dur: s.dur, url: s.url, answer: String(s.year), title: s.label, seenKey: s.label,
+                 options, correct: options.indexOf(String(s.year)) };
+      });
+    },
+    buzz(decade, count) {
+      return rank('buzzname', this.pick(decade, '', Math.max(count * 3, 20), 'uk')).slice(0, count)
+        .map(s => ({ uri: s.uri, dur: s.dur, label: s.label, answer: s.title, artist: s.artist, kind: 'buzzname', seenKey: 'uk:' + s.label }));
+    },
+    tv(n) { return shuffle(SONG_BANK.tv || []).slice(0, n).map(t => ({ label: t.s, uri: 'itunes:' + t.id, dur: 30000, url: null })); },
+    films(n) { return shuffle(SONG_BANK.films || []).slice(0, n).map(f => ({ label: f.f, uri: 'itunes:' + f.id, dur: 30000, url: f.art })); }
+  };
+
+  /* one request for a whole round's clips */
+  Tunes.lookup = async function (uris) {
+    const ids = [...new Set(uris.filter(u => String(u).indexOf('itunes:') === 0 && !this.clips[u]).map(u => String(u).slice(7)))];
+    for (let i = 0; i < ids.length; i += 50) {
+      const j = await this.get('https://itunes.apple.com/lookup?' + new URLSearchParams({ id: ids.slice(i, i + 50).join(','), country: 'gb' }));
+      (j && j.results || []).forEach(r => { if (r.previewUrl) this.clips['itunes:' + r.trackId] = r.previewUrl; });
+    }
+  };
 })();
