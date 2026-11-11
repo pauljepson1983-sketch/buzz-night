@@ -973,7 +973,9 @@ window.MAPS = {
   aus:     { name: 'Australia',         file: 'Australia location map.svg',                            proj: 'flat', n: -9,    s: -44.5, w: 111.5, e: 155 , zoom: 5 },
   brazil:  { name: 'Brazil',            file: 'Brazil location map.svg',                               proj: 'flat', n: 6,     s: -34,   w: -74.5, e: -32 , zoom: 5 },
   usa:     { name: 'the United States', file: 'Usa edcp location map.svg',                             proj: 'usa' , zoom: 6 },
-  europe:  { name: 'Europe',            file: 'Europe location map.svg',                               proj: 'europe' , zoom: 5 }
+  // a flat (equirectangular) map, 82N–28N, 25W–54E, per its Wikimedia file page — it was
+  // being read with the curved formula of a DIFFERENT Europe map, so every pin was off
+  europe:  { name: 'Europe',            file: 'Europe location map.svg',                               proj: 'flat', n: 82, s: 28, w: -25, e: 54, zoom: 5 }
 };
 
 /* name, latitude, longitude, which map. Add freely — a place only needs a
