@@ -7182,6 +7182,7 @@ const Bingo = {
     while (Date.now() < (this.holdUntil || 0)) await new Promise(r => setTimeout(r, 200));
     const wasActive = this.active;
     this.active = false;
+    Quiz.forfeitSafe = { at: Night.idx, ids: new Set(this.winners.map(w => w.id)) };
     const summary = this.winners.length
       ? this.winners.map(w => w.prize + ': ' + w.name).join(' · ')
       : 'Nobody claimed a prize.';
@@ -7823,10 +7824,23 @@ const Forfeit = {
     const fits = t => !this.isLater(t);
     const here = Object.entries(Host.players).filter(([id, p]) => Host.isPresent(p));
     const g = id => (Quiz.roundGains && Quiz.roundGains[id]) || 0;
+    /* Bingo: anyone who won a prize is safe. Lowest points used to decide it,
+       so a shared line lost to line-plus-full-house and its winner did the
+       forfeit. If everyone won something, nobody does one. */
+    const safe = Quiz.forfeitSafe && Quiz.forfeitSafe.at === Night.idx ? Quiz.forfeitSafe.ids : null;
+    if (safe) {
+      const open = here.filter(([id]) => !safe.has(id));
+      if (!open.length) {
+        Host.broadcast({ type: 'forfeitWatch', who: '', text: 'Everyone won a prize — nobody does a forfeit this round.' });
+        return Promise.resolve();
+      }
+      here.splice(0, here.length, ...open);
+    }
     const low = Math.min(...here.map(([id]) => g(id)));
     const high = Math.max(...here.map(([id]) => g(id)));
     const losers = here.filter(([id]) => g(id) === low);
-    if (low === high || losers.length !== 1) {
+    // after the bingo filter, the one person who won nothing IS the loser
+    if ((low === high && !(safe && here.length === 1)) || losers.length !== 1) {
       Host.broadcast({ type: 'forfeitWatch', who: '', text: 'A draw — nobody does a forfeit this round.' });
       return Promise.resolve();
     }
@@ -8853,7 +8867,7 @@ const Player = {
       case 'mm': MrMrsPhone.on(msg); break;
       case 'bingoTickets': this.bingoTickets(msg); break;
       case 'bingoCall': this.bingoCall(msg); break;
-      case 'bingoResult': this.bingoNote(msg.text, msg.bad); if (msg.stage) { const s = $('bgStage'); if (s) s.textContent = 'Playing for: ' + msg.stage; const m = $('bgMeans'); if (m && msg.means) m.textContent = 'Looking for: ' + msg.means; } break;
+      case 'bingoResult': this.bingoNote(msg.text, msg.bad); if (msg.stage) { const gl = $('bgGoal'); if (gl) gl.textContent = '🎯 PLAYING FOR: ' + String(msg.stage).toUpperCase(); const s = $('bgStage'); if (s) s.textContent = 'Next up'; const m = $('bgMeans'); if (m && msg.means) m.textContent = 'Looking for: ' + msg.means; } break;
       case 'bingoWin': {
         // full-screen card on every phone: can't be scrolled past, stays till OK
         const wins = msg.wins || [{ name: msg.name, prize: msg.prize, grid: msg.grid, rows: msg.rows, ti: msg.ti }];
@@ -8867,7 +8881,17 @@ const Player = {
           wins.map(w => '<div style="margin:8px 0"><div style="font-weight:700;margin-bottom:4px">' + esc(w.name) + '’s winning ticket</div>' +
             Bingo.ticketHtml(w.grid, { colour: Bingo.COLOURS[w.ti % 6], called: new Set(msg.called), showCalled: true, rows: w.rows, h: 34, fs: 1, title: 'WINNING TICKET' }) + '</div>').join('') +
           (msg.next ? '<div class="muted" style="margin:8px 0">Next: playing for ' + esc(msg.next) + '</div>' : '') +
-          '<button class="btn" style="position:fixed;left:16px;right:16px;bottom:16px;font-size:1.2rem" onclick="document.getElementById(\'bgWinOv\').remove()">OK</button>';
+          '<button id="bgWinOk" class="btn" style="position:fixed;left:16px;right:16px;bottom:16px;font-size:1.2rem" onclick="document.getElementById(\'bgWinOv\').remove()">Back to my tickets (6)</button>';
+        /* It used to stay up until OK was pressed, which left everyone else
+           unable to dab the number that had just been called. It now closes
+           itself (calling is paused while it shows, so nothing is missed). */
+        clearInterval(this._bgWinT);
+        let left = 6;
+        this._bgWinT = setInterval(() => {
+          left--;
+          const ok = $('bgWinOk'); if (ok) ok.textContent = 'Back to my tickets (' + left + ')';
+          if (left <= 0) { clearInterval(this._bgWinT); const o = $('bgWinOv'); if (o) o.remove(); }
+        }, 1000);
         this.vibe(mine ? [80, 60, 80] : 60);
         break;
       }
@@ -10912,6 +10936,7 @@ const Player = {
     const tix = msg.tickets.map((g, ti) => Bingo.ticketHtml(g, { interactive: true, ti, colour: Bingo.COLOURS[ti % 6],
       title: 'TICKET ' + (ti + 1) + (many ? ' of 6' : ''), h: many ? 34 : 40, fs: many ? .95 : 1.05 })).join('');
     el.innerHTML = '<div class="card" style="text-align:center;padding:10px">' +
+      '<div id="bgGoal" style="font-size:1.35rem;font-weight:900;background:#ffd23f;color:#241a04;border-radius:10px;padding:6px 8px;margin-bottom:6px">🎯 PLAYING FOR: ' + esc(String(msg.stage || '').toUpperCase()) + '</div>' +
       '<div class="row" style="align-items:center;justify-content:center;gap:12px"><div id="bgNum" style="font-size:2.6rem;font-weight:900">–</div>' +
       '<div style="text-align:left"><div id="bgCall" style="font-size:1rem"></div><div id="bgStage" class="muted" style="font-size:.85rem">Playing for: ' + esc(msg.stage) + '</div></div></div>' +
       '<div id="bgMeans" style="font-size:.9rem;font-weight:700;color:#ffd23f;margin-top:2px">Looking for: ' + esc((Bingo.STAGES.find(x => x.name === msg.stage) || Bingo.STAGES[0]).means) + '</div>' +
@@ -10934,7 +10959,8 @@ const Player = {
     const a = $('bgNum'), c = $('bgCall');
     if (a) a.textContent = msg.n;
     if (c) c.textContent = msg.call || '';
-    const s = $('bgStage'); if (s && msg.stage) s.textContent = 'Playing for: ' + msg.stage + ' · ' + msg.count + ' called';
+    const s = $('bgStage'); if (s && msg.stage) s.textContent = msg.count + ' called';
+    const gl = $('bgGoal'); if (gl && msg.stage) gl.textContent = '🎯 PLAYING FOR: ' + String(msg.stage).toUpperCase();
     const m = $('bgMeans'); if (m && msg.means) m.textContent = 'Looking for: ' + msg.means;
     this.vibe(20);
   },
