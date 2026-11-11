@@ -618,6 +618,8 @@ const Chase = {
     }
     if (!team.length) return;
     this.finalTeam = team; this.pot = pot;
+    // every question of the final, kept so the room can check it was fair
+    this.review = { team: [], chaser: [], push: [], chaser_name: this.chaser.nick, level: this.level };
     const names = team.map(id => this.nameOf(id)).join(' and ');
     this.view(this.head() + '<div class="ch-big">🏁 FINAL CHASE</div><div class="ch-title">' + esc(names) + ' playing for ' + this.money(pot) +
       (lazarus ? ' — nobody got home, so this is a second chance' : '') + '</div><div class="muted" style="font-size:1.1rem">Two minutes. Answer on your phones — the first right answer moves you a step. One step head start for each player.</div>');
@@ -646,6 +648,7 @@ const Chase = {
       if (!this.active) break;
       const ok = team.some(id => ans[id] === q.correct);
       const wrong = !ok && Object.keys(ans).length > 0;
+      this.review.team.push({ q: q.q, a: q.a, d: q.d, c: q.c, ok, said: Object.keys(ans).length ? q.opts[ans[Object.keys(ans)[0]]] : null });
       if (ok) target++;
       this.view(this.head() + '<div class="ch-final"><div><div class="muted">Your steps</div><div class="ch-big">' + target + '</div></div>' +
         '<div><div class="muted">Clock</div><div class="ch-big ch-clock">' + secsLeft() + 's</div></div></div>' + this.track(target, 0, 'run') + this.qHtml(q, { show: 'all' }) +
@@ -709,6 +712,7 @@ const Chase = {
       try { speechSynthesis.cancel(); } catch (e) {}
       if (!this.active || leftMs() <= 0) break;         // time up mid-question: doesn't count
       await this.taunt(q.opts[cPick]);
+      this.review.chaser.push({ q: q.q, a: q.a, d: q.d, c: q.c, ok: hit, said: q.opts[cPick] });
       if (hit) { got++; draw(q, { c: cPick, show: 'all' }); trackOut(); await this.sleep(400); continue; }
 
       // pushback: the clock stops until it's settled
@@ -726,6 +730,7 @@ const Chase = {
       if (!this.active) break;
       const ok = team.some(id => ans[id] === pq.correct);
       const pushed = ok && got > 0;
+      this.review.push.push({ q: pq.q, a: pq.a, d: pq.d, c: pq.c, ok, pushed });
       if (pushed) { got--; pushes++; }
       const line = pushed ? '✅ Pushed back!' : ok ? '✅ Right — but nothing to push back yet' : '❌ No pushback — it was ' + pq.a;
       draw(pq, { show: 'all' }, '<div class="ch-title">' + esc(line) + '</div>');
@@ -774,8 +779,39 @@ const Chase = {
     if (this.used && this.used.length) Seen.mark('chase', this.used);
     Host.snapshotRound('The Chase');
     Host.pushBoard();
+    const rb = $('chaseReviewBtn');
+    if (rb && this.review && (this.review.team.length || this.review.chaser.length)) rb.classList.remove('hidden');
     setTimeout(() => { const el = $('chaseHost'); if (el && !this.active) el.classList.add('hidden'); }, 12000);
     return true;
+  },
+  /* The final, question by question, both sides — so "the Chaser got the
+     easy ones" can be checked rather than argued about. */
+  showReview() {
+    const R = this.review; if (!R) return;
+    const el = $('chaseHost'); if (!el) return;
+    const D = { e: 'Easy', m: 'Medium', h: 'Hard' }, W = { e: 1, m: 2, h: 3 };
+    const mix = list => {
+      const n = { e: 0, m: 0, h: 0 }; list.forEach(x => n[x.d] = (n[x.d] || 0) + 1);
+      const avg = list.length ? list.reduce((s, x) => s + (W[x.d] || 2), 0) / list.length : 0;
+      return n.e + ' easy · ' + n.m + ' medium · ' + n.h + ' hard' + (list.length ? ' <span class="muted">(toughness ' + avg.toFixed(2) + ' of 3)</span>' : '');
+    };
+    const right = list => list.filter(x => x.ok).length + ' of ' + list.length + ' right';
+    const tag = d => '<span style="font-size:.7rem;font-weight:800;padding:1px 6px;border-radius:8px;background:' +
+      (d === 'e' ? '#2e7d32' : d === 'h' ? '#c62828' : '#9a6b00') + ';color:#fff">' + (D[d] || '?') + '</span>';
+    const rows = list => list.map((x, i) => '<div style="padding:5px 0;border-bottom:1px solid #ffffff1a;font-size:.9rem">' +
+      (x.ok ? '✅' : '❌') + ' ' + tag(x.d) + ' <span class="muted">' + esc(CHASE_CATS[x.c] || '') + '</span><br>' + esc(x.q) +
+      '<br><b>' + esc(x.a) + '</b>' + (!x.ok && x.said ? ' <span class="muted">— said ' + esc(x.said) + '</span>' : !x.ok && !x.said ? ' <span class="muted">— no answer</span>' : '') + '</div>').join('');
+    const col = (title, list, sub) => '<div style="flex:1;min-width:260px;background:#ffffff0d;border-radius:12px;padding:10px">' +
+      '<div class="ch-title" style="font-size:1.1rem">' + title + '</div><div>' + right(list) + '</div><div style="margin:2px 0 6px">' + mix(list) + '</div>' + (sub || '') +
+      '<div style="max-height:52vh;overflow-y:auto">' + rows(list) + '</div></div>';
+    el.classList.remove('hidden');
+    el.innerHTML = '<div class="chase-wrap"><div class="ch-big" style="font-size:1.6rem">📋 The Final Chase, question by question</div>' +
+      '<div class="muted" style="margin-bottom:8px">Level: ' + esc((this.LEVELS[R.level] || {}).label || 'Normal') + ' — both sides drew from the same easy / medium / hard mix.</div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;text-align:left">' +
+      col('🏃 Your run', R.team) +
+      col('⛓️ ' + esc(R.chaser_name) + '’s run', R.chaser, R.push.length ? '<div class="muted" style="font-size:.85rem">Pushbacks: ' + R.push.filter(x => x.pushed).length + ' of ' + R.push.length + ' won</div>' : '') +
+      '</div><button class="btn mt" onclick="document.getElementById(\'chaseHost\').classList.add(\'hidden\')">Close</button></div>';
+    el.scrollIntoView({ block: 'start' });
   },
   stop() { this.active = false; ChaseMusic.stop(true); try { speechSynthesis.cancel(); } catch (e) {} if (this.cur) this.settle(); }
 };

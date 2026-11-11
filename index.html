@@ -757,6 +757,7 @@
             </div>
           </div>
         </details>
+        <button class="btn ghost small hidden" id="chaseReviewBtn" onclick="Chase.showReview()">📋 Review the last Final Chase</button>
         <p class="mt" id="nightStatus" style="font-size:1rem">Nothing planned yet — set up a round below and add it.</p>
       <div id="quizHostView" class="hidden" style="margin-top:10px;font-size:1rem"></div>
       <div id="bingoHost" class="hidden" style="margin-top:10px"></div>
@@ -1094,7 +1095,7 @@
           <h2 class="grow">🏆 Leaderboard <span id="readyCount" class="muted" style="font-size:.8rem"></span></h2>
           <label class="muted" style="font-size:.85rem"><input type="checkbox" id="teamToggle" onchange="App.toggleTeams(this.checked)"> Team mode</label>
         </div>
-        <table id="scoreTable"><thead><tr><th>Player</th><th id="teamCol" class="hidden">Team</th><th>Game</th><th>League (total)</th><th>Right %</th><th>Avg answer</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="scoreTable"><thead><tr><th>Player</th><th id="teamCol" class="hidden">Team</th><th>Rounds</th><th>Points</th><th>League (total)</th><th>Right %</th><th>Avg answer</th><th></th></tr></thead><tbody></tbody></table>
         <div class="row mt">
           <button class="btn small alt" onclick="App.pushLeaderboard()">📣 Show on phones</button>
           <button class="btn ghost small" onclick="App.resetScores()">Reset scores</button>
@@ -3356,10 +3357,10 @@ const Host = {
      anything else 0. The overall table ranks on league points, so one
      thrashing cannot decide the night; raw points only break a tie. */
   leagueFor(p) {
-    const ps = Object.values(this.players);
-    const best = Math.max(0, ...ps.map(x => x.score || 0));
-    if (best <= 0 || p.score !== best) return 0;
-    return ps.filter(x => x.score === best).length > 1 ? 1 : 3;
+    const ps = Object.values(this.players).slice().sort((a, b) => this.rank(a, b));
+    const top = ps[0];
+    if (!top || ((top.rw || 0) <= 0 && (top.score || 0) <= 0) || !this.level(p, top)) return 0;
+    return ps.filter(x => this.level(x, top)).length > 1 ? 1 : 3;
   },
   leagueTable(includeCurrent) {
     return Object.values(this.players).map(p => ({
@@ -3375,14 +3376,14 @@ const Host = {
       p.played = (p.played || 0) + 1;
       p.league = (p.league || 0) + got.get(p);
       p.overall = (p.overall || 0) + (p.score || 0);
-      p.score = 0;
+      p.score = 0; p.rw = 0;
     });
     this.prevBoard = null;
     this.history = [];   // the finale race replays THIS game's rounds only
     this.renderScores(); this.pushBoard(); this.saveGame();
   },
   resetScores() {
-    Object.values(this.players).forEach(p => { p.score = 0; p.overall = 0; p.wins = 0; p.league = 0; p.draws = 0; p.played = 0; p.reactions = []; p.stats = this.blankStats(); });
+    Object.values(this.players).forEach(p => { p.score = 0; p.rw = 0; p.overall = 0; p.wins = 0; p.league = 0; p.draws = 0; p.played = 0; p.reactions = []; p.stats = this.blankStats(); });
     this.history = [];
     this.renderScores();
     this.pushBoard();
@@ -3416,8 +3417,28 @@ const Host = {
       return Object.values(teams).sort((a, b) => b.score - a.score);
     }
     return Object.values(this.players)
-      .map(p => ({ name: p.name, score: p.score, overall: this.overallOf(p), league: p.league || 0, wins: p.wins || 0, acc: this.statLine(p).acc, avgMs: this.statLine(p).avg, avg: this.avgFor(p), avatar: p.avatar || null, photo: p.photo || null }))
-      .sort((a, b) => b.score - a.score);
+      .map(p => ({ name: p.name, score: p.score, rw: p.rw || 0, overall: this.overallOf(p), league: p.league || 0, wins: p.wins || 0, acc: this.statLine(p).acc, avgMs: this.statLine(p).avg, avg: this.avgFor(p), avatar: p.avatar || null, photo: p.photo || null }))
+      .sort((a, b) => this.rank(a, b));
+  },
+  /* Rounds won decides it (like sets in darts); points only break a tie.
+     Points alone meant whoever got ahead early stayed ahead — winning a
+     round by 30 barely dented a 100-point gap. Team mode stays on points. */
+  rank(a, b) { return this.teamMode ? b.score - a.score : ((b.rw || 0) - (a.rw || 0)) || (b.score - a.score); },
+  level(a, b) { return (a.rw || 0) === (b.rw || 0) && a.score === b.score; },
+  // after every round: its top scorer takes the round; a tied round is half each
+  awardRound(label) {
+    if (this.teamMode) return null;
+    const g = Quiz.roundGains || {};
+    const here = Object.keys(this.players).filter(id => g[id] != null || this.isPresent(this.players[id]));
+    const best = Math.max(...here.map(id => g[id] || 0));
+    if (!here.length || best <= 0) return null;
+    const top = here.filter(id => (g[id] || 0) === best);
+    top.forEach(id => { const p = this.players[id]; p.rw = (p.rw || 0) + (top.length > 1 ? 0.5 : 1); });
+    const names = top.map(id => this.players[id].name);
+    const tally = this.boardRows().map(r => r.name + ' ' + (r.rw || 0)).join(' · ');
+    const line = (top.length > 1 ? '🤝 Round shared by ' + names.join(' & ') : '🏆 Round to ' + names[0]) + ' — rounds: ' + tally;
+    this.renderScores(); this.pushBoard(); this.saveGame();
+    return line;
   },
 
   avgFor(p) {
@@ -3551,9 +3572,11 @@ const Host = {
         overall: r.overall, league: r.league || 0, wins: r.wins || 0, acc: r.acc, avgMs: r.avgMs,
         pos,
         move: (was == null) ? 0 : (was - pos),
+        rw: r.rw || 0, rwGap: i === 0 ? 0 : (rows[i - 1].rw || 0) - (r.rw || 0),
         gap: i === 0 ? 0 : rows[i - 1].score - r.score,
         chasing: i === 0 ? null : rows[i - 1].name,
         lead: i === 0 && rows[1] ? r.score - rows[1].score : 0,
+        rwLead: i === 0 && rows[1] ? (r.rw || 0) - (rows[1].rw || 0) : 0,
         avg: r.avg == null ? null : r.avg,
         avatar: r.avatar || null, photo: r.photo || null
       };
@@ -3588,7 +3611,7 @@ const Host = {
     }
     const tbody = $('scoreTable').querySelector('tbody');
     tbody.innerHTML = '';
-    const entries = Object.entries(this.players).sort((a, b) => b[1].score - a[1].score);
+    const entries = Object.entries(this.players).sort((a, b) => this.rank(a[1], b[1]));
     entries.forEach(([id, p]) => {
       const sl = this.statLine(p);
       const avg = sl.avg != null ? secs(sl.avg) : '—';
@@ -3603,7 +3626,7 @@ const Host = {
       const face = p.photo ? '<img src="'+p.photo+'" style="width:22px;height:22px;border-radius:50%;object-fit:cover;vertical-align:middle">' : (p.avatar || '');
       tr.innerHTML = `<td>${face} ${esc(p.name)} ${state}</td>
         <td class="${this.teamMode ? '' : 'hidden'}"><button class="btn small ghost" onclick="Host.cycleTeam('${id}')">${p.team || '—'}</button></td>
-        <td><b>${p.score}</b></td><td><b>${p.league || 0} pts</b> <span class="muted">(${this.overallOf(p)}${p.wins ? ' · 🏆' + p.wins : ''})</span></td><td>${acc}</td><td class="muted">${avg}</td>
+        <td><b style="font-size:1.2rem">${(p.rw || 0)}</b></td><td>${p.score}</td><td><b>${p.league || 0} pts</b> <span class="muted">(${this.overallOf(p)}${p.wins ? ' · 🏆' + p.wins : ''})</span></td><td>${acc}</td><td class="muted">${avg}</td>
         <td><button class="btn small ghost" onclick="Host.adjust('${id}')">±</button></td>`;
       tbody.appendChild(tr);
     });
@@ -3736,7 +3759,7 @@ const Host = {
     }]);
     // everyone level on the top score shares the win — they don't get read
     // out as "second" and "third" first
-    const tied = rows.filter(r => r.score === rows[0].score);
+    const tied = rows.filter(r => this.level(r, rows[0]));
     const shared = tied.length > 1;
     if (rows[2] && !(shared && tied.length > 2)) steps.push([middle.length ? 3400 : 3200, () => {
       this.broadcast({ type: 'finale', stage: 'place', place: 3, row: rows[2] });
@@ -3754,7 +3777,7 @@ const Host = {
         const names = tied.map(r => r.name);
         const both = names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
         this.broadcast({ type: 'finale', stage: 'winner', row: Object.assign({}, rows[0], { name: names.join(' & ') }), tied: names });
-        setTimeout(() => Sound.say('It\'s a dead heat! ' + both + ' share the win, with ' + rows[0].score + ' points each!'), 900);
+        setTimeout(() => Sound.say('It\'s a dead heat! ' + both + ' share the win, with ' + (rows[0].rw || 0) + ' rounds and ' + rows[0].score + ' points each!'), 900);
         $('phaseBanner').textContent = '🤝 Dead heat — ' + names.join(' & ') + ' on ' + rows[0].score;
         return;
       }
@@ -3762,7 +3785,7 @@ const Host = {
       const v = this.voiceFor(rows[0].name);
       setTimeout(() => Sound.say('And the winner is, ' + rows[0].name + '! ' + rows[0].name + ' ' +
         this.quip('winner'), v.voice, v.style), 900);
-      $('phaseBanner').textContent = '🏆 ' + rows[0].name + ' wins with ' + rows[0].score;
+      $('phaseBanner').textContent = '🏆 ' + rows[0].name + ' wins — ' + (rows[0].rw || 0) + ' rounds' + (this.teamMode ? '' : ', ' + rows[0].score + ' points');
     }]);
     steps.push([3800, () => {
       this.broadcast({ type: 'finale', stage: 'podium', rows: rows.slice(0, 3) });
@@ -7507,7 +7530,7 @@ const Hall = {
       const e = this.entry(r.name);
       e.games++;
       // a shared top score is a draw, not a win for whoever sorted first
-      if (i === 0 && rows.length > 1 && r.score > rows[1].score) e.gameWins++;
+      if (i === 0 && rows.length > 1 && !Host.level(r, rows[1])) e.gameWins++;
     });
     if (fastest && fastest.avg != null) {
       const e = this.entry(fastest.name);
@@ -8593,10 +8616,13 @@ const Night = {
       this.idx--;              // runNext() adds one back, landing on this round
       return this.runNext();
     }
+    // whoever took the round gets it (rounds won decide the night)
+    const roundLine = Host.awardRound();
+    if (roundLine) { Sound.say(roundLine.replace(/^\S+\s/, '').replace(/ — rounds:.*/, '') + '.'); }
     // breathing room on the leaderboard between rounds
     Host.pushBoard();
     const forfeitDone = Forfeit.afterRound(n);
-    $('nightStatus').textContent = 'Round ' + n + ' done — next one shortly…';
+    $('nightStatus').textContent = (roundLine ? roundLine + ' · ' : '') + 'Round ' + n + ' done — next one shortly…';
     await Promise.all([this.wait(6000), forfeitDone]);
     if (!this.running) return;
     return this.runNext();
@@ -8644,10 +8670,10 @@ const Night = {
     const box = $('afterNight');
     if (!box) return;
     const rows = Host.boardRows(), top = rows[0];
-    const level = top ? rows.filter(r => r.score === top.score) : [];
+    const level = top ? rows.filter(r => Host.level(r, top)) : [];
     $('afterHead').textContent = !top ? 'That’s the night'
       : level.length > 1 ? '🤝 Dead heat — ' + level.map(r => r.name).join(' & ') + ' on ' + top.score
-      : '🏆 ' + top.name + ' won this game with ' + top.score;
+      : '🏆 ' + top.name + ' won this game — ' + (top.rw || 0) + ' rounds, ' + top.score + ' points';
     // the table as it will stand once this game is banked
     const lt = Host.leagueTable(true);
     $('afterOverall').textContent = lt.length ? 'League: ' + lt.map(r => r.name + ' ' + r.pts + ' pts').join(' · ') : '';
@@ -10626,16 +10652,18 @@ const Player = {
         : '<span class="mv same">–</span>';
       let note = '';
       if (isMe) {
-        if (r.pos === 1) note = r.lead > 0 ? 'Leading by ' + r.lead : 'Top — but it’s level';
+        const rnd = n => n + ' round' + (n === 1 ? '' : 's');
+        if (r.pos === 1) note = r.rwLead > 0 ? 'Leading by ' + rnd(r.rwLead) : r.lead > 0 ? 'Level on rounds — ahead on points by ' + r.lead : 'Top — but it’s level';
+        else if (r.rwGap > 0) note = rnd(r.rwGap) + ' behind ' + r.chasing;
         else if (r.gap === 0) note = 'Level with ' + r.chasing;
-        else note = r.gap + ' behind ' + r.chasing;
+        else note = 'Level on rounds — ' + r.gap + ' points behind ' + r.chasing;
         if (r.acc != null) note += ' · ' + r.acc + '% right' + (r.avgMs != null ? ' · avg ' + secs(r.avgMs) : '');
       }
       return '<div class="lb-row' + (isMe ? ' me' : '') + '">' +
         '<span class="lb-pos">' + medal(r.pos) + '</span>' +
         arrow +
         '<span class="lb-name">' + esc(r.name) + (isMe ? ' <b>(you)</b>' : '') + '</span>' +
-        '<span class="lb-score">' + r.score +
+        '<span class="lb-score">' + (msg.teamMode ? r.score : (r.rw || 0) + '<small style="font-size:.7rem;font-weight:600;opacity:.8"> rounds</small><small style="display:block;font-size:.7rem;opacity:.75;font-weight:600">' + r.score + ' pts</small>') +
           (r.league
             ? '<small style="display:block;font-size:.7rem;opacity:.75;font-weight:600">' + (r.league || 0) + ' league pts' + (r.wins ? ' · 🏆' + r.wins : '') + '</small>' : '') +
         '</span>' +
