@@ -6048,7 +6048,6 @@ const Quiz = {
        no questions and no Bank button. So wait for any build in progress to
        finish; it then holds off until this round is over. */
     this._starting = true; this._startingAt = Date.now();
-    try { await Night.prefetchIdle(); } catch (e) {}
     this.mode = c.mode;
     const decade = c.decade, style = c.style, extra = c.extra;
     const topic = [style, extra, decade ? 'year:' + decade : ''].filter(Boolean).join(' ').trim();
@@ -7971,7 +7970,8 @@ const Night = {
       let done = 0;
       for (const r of todo) {
         // never build while a round is starting or running: they share Quiz.mode
-        while (Quiz.active || (Quiz._starting && Date.now() - (Quiz._startingAt || 0) < 90000)) await pause(1000);
+        // builds on its own copy of the round engine (below), so it no longer
+        // has to stop while a round is played — a speed break is music time
         note('🎵 Getting the music ready… ' + done + ' of ' + todo.length);
         for (let attempt = 0; attempt < 2 && !r._prebuilt; attempt++) {
           /* A short Spotify slow-down is worth sitting out. Its account quota
@@ -7980,11 +7980,12 @@ const Night = {
           const wait = Spot.useTunes() ? 0 : (Spot.rateLimitedUntil || 0) - Date.now();
           if (wait > 0 && wait < 3 * 60000) { note('🎵 Spotify asked us to wait — ' + Math.ceil(wait / 1000) + 's'); await pause(wait + 500); }
           if (Spot.useTunes()) note('🎵 Getting the music ready from iTunes… ' + done + ' of ' + todo.length);
-          const keep = Quiz.mode;
-          Quiz.mode = r.mode;
+          /* A private copy of the round engine with its own mode. Borrowing the
+             live one is what once turned a duel into a covers round. */
+          const builder = Object.create(Quiz); builder.mode = r.mode;
           let release; this._itemP = new Promise(res => { release = res; });
           try {
-            const qs = await Quiz.buildChunk(r.decade, r.count, r.style, r.extra, r.decade ? r.decade.slice(0, 4) + 's' : '');
+            const qs = await builder.buildChunk(r.decade, r.count, r.style, r.extra, r.decade ? r.decade.slice(0, 4) + 's' : '');
             // the same song can't headline two rounds: key on the track itself
             const fresh = (qs || []).filter(q => q.uri).filter(q => {
               if (seen.has(q.uri)) return false; seen.add(q.uri); return true;
@@ -7993,7 +7994,7 @@ const Night = {
             const playable = (typeof Tunes !== 'undefined' && Spot.useTunes()) ? await Quiz.clipsReady(fresh) : fresh;
             if (playable.length >= 4) { r._prebuilt = playable; playable.forEach(q => Seen.nightUsed.add(Seen.keyOf(q))); }
           } catch (e) { /* the round will simply build itself when it starts */ }
-          finally { Quiz.mode = keep; this._itemP = null; release(); }
+          finally { this._itemP = null; release(); }
         }
         done++;
         await pause(2500);   // spread the calls out — that is the whole point
