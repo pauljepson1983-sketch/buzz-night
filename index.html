@@ -720,6 +720,7 @@
         <option value="mix">🎲 Mix — a different style each round</option>
       </select>
       <span class="muted">— adults only; every phone has to say yes</span> <span id="cheekyNote" class="muted"></span></label>
+    <label style="display:block;font-size:.95rem;margin-bottom:8px"><input type="checkbox" id="autoSpeed" onchange="Night.setAutoSpeed(this.checked)"> ⚡ Speed round between each main round <span class="muted">— a quick 5-question mini game, a different one each time</span></label>
         <div class="row">
           <button class="btn big green" id="nightGoBtn" onclick="Night.start()">▶ Start the night</button>
           <button class="btn big green hidden" id="nightNextBtn" onclick="Night.go()">▶ Start this round</button>
@@ -8004,6 +8005,30 @@ const Night = {
     return this._prefetchP;
   },
 
+  /* Speed breaks: a random 5-question speed round between each pair of main
+     rounds, all different. Put into the running order itself so they can be
+     seen, moved or deleted like any other round; unticking takes them out. */
+  setAutoSpeed(on) {
+    store.set('auto_speed', on ? '1' : '0');
+    this.plan = this.plan.filter(r => !r._auto);
+    if (on && window.Speed) {
+      const pool = Quiz.shuffle(Object.keys(Speed.MODES));
+      const out = [];
+      this.plan.forEach((r, i) => {
+        out.push(r);
+        const isMain = !Speed.has(r.mode);
+        const nextMain = this.plan[i + 1] && !Speed.has(this.plan[i + 1].mode);
+        if (isMain && nextMain && pool.length) {
+          const d = this.defaultsFor(pool.shift()); d.count = 5; d._auto = true; out.push(d);
+        }
+      });
+      this.plan = out;
+    }
+    this.save(); this.render();
+    const n = this.plan.filter(r => r._auto).length;
+    $('nightStatus').textContent = on ? (n ? '⚡ ' + n + ' speed round' + (n === 1 ? '' : 's') + ' slotted in between your main rounds.' : '⚡ Add at least two main rounds and the speed breaks go between them.') : 'Speed breaks taken out.';
+  },
+
   // resolves once no background build is mid-flight
   prefetchIdle() { return this._itemP || Promise.resolve(); },
 
@@ -8210,6 +8235,7 @@ const Night = {
 
   render() {
     const el = $('nightList');
+    const ab = $('autoSpeed'); if (ab) ab.checked = store.get('auto_speed') === '1';
     /* the builder folds away once there's a night planned, and opens again
        when it's empty — but only when that changes, so opening it yourself
        to add a round isn't snapped shut by the next redraw */
@@ -8278,6 +8304,8 @@ const Night = {
     if (!Host.peer) { alert('Create the room first.'); return; }
     if (!this.plan.length) { alert('Add some rounds first.'); return; }
     if (this.running) return;
+    // speed breaks ticked but this plan was built since: slot them in now
+    if (store.get('auto_speed') === '1' && !this.plan.some(r => r._auto)) this.setAutoSpeed(true);
     // whatever route the night was opened by, make sure the music is fetched
     // (spaced out) before round one rather than in a burst at each round
     $('nightStatus').textContent = 'Getting the music ready…';
